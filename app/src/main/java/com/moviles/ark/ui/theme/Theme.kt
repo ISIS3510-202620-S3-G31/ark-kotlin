@@ -22,7 +22,7 @@ private val ColorScheme = lightColorScheme(
 //MaterialTheme es un proveedor de estilos pa inyectarle mis colores y fuentes a todos sin ir uno por uno
 @Composable
 //le paso una funcion como parametro
-fun Theme(content: @Composable () -> Unit): Unit {
+fun AppTheme(content: @Composable () -> Unit): Unit {
     MaterialTheme(
         colorScheme = ColorScheme,
         typography = Typography,
