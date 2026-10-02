@@ -1,8 +1,6 @@
 package com.moviles.ark.data.repositories
 
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.FirebaseUser
-import com.google.firebase.auth.userProfileChangeRequest
 import com.google.firebase.firestore.FirebaseFirestore
 import com.moviles.ark.domain.models.User
 import com.moviles.ark.domain.repositories.AuthRepository
@@ -14,25 +12,21 @@ class AuthRepositoryImpl(
 ) : AuthRepository {
 
     // Firebase saves the session on the device, so this works offline
-    override fun getCurrentUser(): User? = auth.currentUser?.toUser()
+    override fun isLoggedIn(): Boolean = auth.currentUser != null
 
-    override suspend fun login(email: String, password: String): Result<User> = runCatching {
-        val result = auth.signInWithEmailAndPassword(email.trim(), password).await()
-        result.user!!.toUser()
+    override suspend fun login(email: String, password: String): Result<Unit> = runCatching {
+        auth.signInWithEmailAndPassword(email.trim(), password).await()
+        Unit
     }
 
-    override suspend fun register(name: String, age: Int, email: String, password: String): Result<User> = runCatching {
-        val result = auth.createUserWithEmailAndPassword(email.trim(), password).await()
-        val user = result.user!!
-        user.updateProfile(userProfileChangeRequest { displayName = name.trim() }).await()
-        // Firebase Auth has no age field, so the profile data is saved in Firestore
-        firestore.collection("users").document(user.uid)
-            .set(mapOf("name" to name.trim(), "age" to age, "email" to email.trim()))
+    override suspend fun registerUser(user: User): Result<Unit> = runCatching {
+        val result = auth.createUserWithEmailAndPassword(user.email.trim(), user.password).await()
+        // the password stays in Firebase Auth, Firestore only gets the profile
+        firestore.collection("users").document(result.user!!.uid)
+            .set(mapOf("name" to user.name.trim(), "age" to user.age, "email" to user.email.trim()))
             .await()
-        user.toUser().copy(name = name.trim())
+        Unit
     }
 
     override fun logout() = auth.signOut()
-
-    private fun FirebaseUser.toUser() = User(uid, displayName.orEmpty(), email.orEmpty())
 }
