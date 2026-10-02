@@ -5,26 +5,29 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.moviles.ark.ui.screens.LoginRoute
+import com.moviles.ark.ui.screens.RegisterScreen
 
 @Composable
 fun AppNavigation() {
-    //  El controlador que gestiona el historial de pantallas
+    //el controlador que gestiona el historial de pantallas
     val navController = rememberNavController()
 
-    //  El contenedor que define qué pantalla mostrar según la ruta
-    NavHost(
-        navController = navController,
-        startDestination = "login_screen" //  Ruta inicial TODO no se si la  vamos a dejar asi
-    ) {
-        // Ruta de Login
+    //el contenedor que define que pantalla mostrar segun la ruta
+    NavHost(navController = navController, startDestination = "register_screen") {
+        //ruta de login
         composable("login_screen") {
-            LoginRoute(
-                onNavigateToRegister = {
-                    navController.navigate("register_screen")
-                }
-            )
+            LoginRoute(onNavigateToRegister = {
+                navController.navigate("register_screen")
+            })
         }
 
-
+        //ruta de registro
+        composable("register_screen") {
+            RegisterScreen(
+                //se deja entre llaves para guardarla y ejecutarla cuando toque log in
+                onNavigateToLogin = {navController.navigate("login_screen") },
+                onRegisterSuccess = {navController.navigate("login_screen") }
+            )
+        }
     }
 }
