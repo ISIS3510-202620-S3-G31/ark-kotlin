@@ -4,29 +4,52 @@ import androidx.compose.runtime.Composable
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.moviles.ark.domain.repositories.AuthRepository
+import com.moviles.ark.ui.screens.HomeScreen
 import com.moviles.ark.ui.screens.LoginRoute
+import com.moviles.ark.ui.screens.MoodCheckInScreen
 import com.moviles.ark.ui.screens.RegisterScreen
 
 @Composable
-fun AppNavigation() {
-    //el controlador que gestiona el historial de pantallas
+fun AppNavigation(
+    authRepository: AuthRepository? = null
+) {
     val navController = rememberNavController()
+    //si ya hay una sesion activa en el celular entra directo a home
+    val isUserLoggedIn = authRepository?.isLoggedIn() ?: false
+    val startRoute = if (isUserLoggedIn) "home_screen" else "register_screen"
 
-    //el contenedor que define que pantalla mostrar segun la ruta
-    NavHost(navController = navController, startDestination = "register_screen") {
-        //ruta de login
-        composable("login_screen") {
-            LoginRoute(onNavigateToRegister = {
-                navController.navigate("register_screen")
-            })
-        }
-
-        //ruta de registro
+    NavHost(navController = navController, startDestination = startRoute) {
         composable("register_screen") {
             RegisterScreen(
-                //se deja entre llaves para guardarla y ejecutarla cuando toque log in
-                onNavigateToLogin = {navController.navigate("login_screen") },
-                onRegisterSuccess = {navController.navigate("login_screen") }
+                onNavigateToLogin = { navController.navigate("login_screen") },
+                onRegisterSuccess = { navController.navigate("login_screen") }
+            )
+        }
+        composable("login_screen") {
+            LoginRoute(
+                onNavigateToRegister = { navController.navigate("register_screen") },
+                onLoginSuccess = {
+                    navController.navigate("home_screen") {
+                        popUpTo("login_screen") { inclusive = true }
+                    }
+                }
+            )
+        }
+        composable("home_screen") {
+            HomeScreen(
+                onLogout = {
+                    authRepository?.logout()
+                    navController.navigate("login_screen") {
+                        popUpTo(0)
+                    }
+                }
+            )
+        }
+        composable("checkin_screen") {
+            MoodCheckInScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onCheckInSaved = { navController.popBackStack() }
             )
         }
     }
