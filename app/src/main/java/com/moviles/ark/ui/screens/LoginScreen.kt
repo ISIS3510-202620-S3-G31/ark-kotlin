@@ -3,9 +3,13 @@ import androidx.compose.runtime.Composable
 import com.moviles.ark.R
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.TextField
@@ -15,8 +19,15 @@ import com.moviles.ark.ui.viewmodels.LoginUiState
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -31,43 +42,72 @@ fun LoginScreen(uiState: LoginUiState,
                 onLoginClick: () -> Unit,
                 onNavigateToRegister:() -> Unit // Esta es pura de UI porque
 ) {
-    // Como va una cosa debajo de la otra lo que hago es usar Colum
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Image(
-            painter = painterResource(id =  R.drawable.ic_mascot_log), // R es una clase que todo lo que yo guarde en res le va a asignar un id y lo va a guardar para que yo lo pueda usar despues
-            contentDescription = "Mascota de la aplicación" // esto pa ahcernos asecibles
-        )
-        TextField(
-            value = uiState.email, // Texto actual -- si lo dejo como value="" nunca cambiara asi el usuario escriba
-            onValueChange = onEmailChange, // nuevoTexto es la variable donde nos entrega el texto actualizado cada vez que el usuario escribe algo
-            label = { Text("Email") }
-        )
-        TextField(
-            value = uiState.password,
-            onValueChange = onPasswordChange,
-            label = { Text("Password") },
-            visualTransformation = PasswordVisualTransformation()
-        )
-        Button(
-            onClick = onLoginClick,
-            enabled = !uiState.isLoading // Evita múltiples clics mientras carga
+    val fieldColors = TextFieldDefaults.colors(focusedContainerColor = Color.White, unfocusedContainerColor = Color.White)
+    var confirmPasswordVisible by remember { mutableStateOf(false) }
+
+    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        // Como va una cosa debajo de la otra lo que hago es usar Colum
+
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            if (uiState.isLoading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(24.dp),// Usamos dp porque es más facil cuando dos telefonos tiene difernte resolucion hace que to do quede proporcioinal en dif pantallas
-                    color = MaterialTheme.colorScheme.onPrimary
-                )
-            } else {
-                Text("Login")
+            Image(
+                painter = painterResource(id = R.drawable.ic_mascot_log), // R es una clase que todo lo que yo guarde en res le va a asignar un id y lo va a guardar para que yo lo pueda usar despues
+                contentDescription = "Mascota de la aplicación" // esto pa ahcernos asecibles
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+
+            //titulo con la fuente Sorean (headlineLarge) y subtitulo
+            Text("Glad you're here", style = MaterialTheme.typography.headlineLarge, color = MaterialTheme.colorScheme.onBackground)
+            Text("Take a deep breath and enter your calm space.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f))
+            Spacer(modifier = Modifier.height(20.dp))
+
+            TextField(
+                value = uiState.email, // Texto actual -- si lo dejo como value="" nunca cambiara asi el usuario escriba
+                onValueChange = onEmailChange, // nuevoTexto es la variable donde nos entrega el texto actualizado cada vez que el usuario escribe algo
+                label = { Text("Email") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                singleLine = true,
+                colors = fieldColors, modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+
+            TextField(
+                value = uiState.password,
+                onValueChange = onPasswordChange,
+                label = { Text("Password") },
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                trailingIcon = {
+                    TextButton(onClick = { confirmPasswordVisible = !confirmPasswordVisible }) {
+                        Text(if (confirmPasswordVisible) "Hide" else "Show", style = MaterialTheme.typography.labelSmall)
+                    }
+                },
+                singleLine = true,
+                colors = fieldColors, modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Button(
+                onClick = onLoginClick,
+                enabled = !uiState.isLoading // Evita múltiples clics mientras carga
+            ) {
+                if (uiState.isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),// Usamos dp porque es más facil cuando dos telefonos tiene difernte resolucion hace que to do quede proporcioinal en dif pantallas
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                } else {
+                    Text("Login")
+                }
             }
-        }
-        TextButton(
-            onClick = onNavigateToRegister
-        ) {
-            Text("Don't have an account? Sign up")
+            Spacer(modifier = Modifier.height(12.dp))
+            TextButton(
+                onClick = onNavigateToRegister
+            ) {
+                Text("Don't have an account? Sign up")
+            }
         }
     }
 }
