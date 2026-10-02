@@ -89,6 +89,12 @@ fun LoginScreen(uiState: LoginUiState,
             )
             Spacer(modifier = Modifier.height(12.dp))
 
+            // mensaje de error si el login falla
+            if (uiState.errorMessage != null) {
+                Text(text = uiState.errorMessage, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
             Button(
                 onClick = onLoginClick,
                 enabled = !uiState.isLoading // Evita múltiples clics mientras carga
@@ -113,8 +119,9 @@ fun LoginScreen(uiState: LoginUiState,
 }
 
 @Composable
-fun LoginRoute(viewModel: LoginViewModel = viewModel(),
-               onNavigateToRegister: () -> Unit) {
+fun LoginRoute(viewModel: LoginViewModel = viewModel(factory = LoginViewModel.Factory),
+               onNavigateToRegister: () -> Unit,
+               onLoginSuccess: () -> Unit = {}) {
     // Escuchamos el estado desde la UI
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -123,7 +130,7 @@ fun LoginRoute(viewModel: LoginViewModel = viewModel(),
         uiState = uiState,
         onEmailChange = viewModel::onEmailChange,
         onPasswordChange = viewModel::onPasswordChange,
-        onLoginClick = viewModel::onLoginClick,
+        onLoginClick = { viewModel.onLoginClick(onLoginSuccess) },
         onNavigateToRegister = onNavigateToRegister
     )
 }
