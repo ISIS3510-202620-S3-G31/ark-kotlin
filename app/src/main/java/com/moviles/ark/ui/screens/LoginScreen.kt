@@ -99,7 +99,7 @@ fun LoginScreenPreview() {
         val dummyUiState = LoginUiState(
             email = "usuario@ejemplo.com",
             password = "password123",
-            isLoading = true //  Empezamos simulando que NO está cargando
+            isLoading = false //  Empezamos simulando que NO está cargando
         )
 
         //  Llamamos a nuestra pantalla real pasándole los datos simulados
