@@ -8,11 +8,13 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.firestore
 import com.moviles.ark.data.local.sensors.Location
 import com.moviles.ark.data.repositories.AuthRepositoryImpl
+import com.moviles.ark.data.repositories.FakeToolRepository
 import com.moviles.ark.data.repositories.LocationRepositoryImpl
 import com.moviles.ark.data.repositories.MoodRepositoryImpl
 import com.moviles.ark.domain.repositories.AuthRepository
 import com.moviles.ark.domain.repositories.LocationRepository
 import com.moviles.ark.domain.repositories.MoodRepository
+import com.moviles.ark.domain.repositories.ToolRepository
 
 interface AppContainer {
     val auth: FirebaseAuth
@@ -20,6 +22,7 @@ interface AppContainer {
     val authRepository: AuthRepository
     val locationRepository: LocationRepository
     val moodRepository: MoodRepository
+    val toolRepository: ToolRepository
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -28,4 +31,6 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val authRepository: AuthRepository by lazy { AuthRepositoryImpl(auth, firestore) }
     override val locationRepository: LocationRepository by lazy { LocationRepositoryImpl(Location(context)) }
     override val moodRepository: MoodRepository by lazy { MoodRepositoryImpl(auth, firestore) }
+    // fake catalog until the Room implementation of #9 is ready; then only this line changes
+    override val toolRepository: ToolRepository by lazy { FakeToolRepository() }
 }
