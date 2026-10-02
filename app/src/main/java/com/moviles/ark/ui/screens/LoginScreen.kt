@@ -21,6 +21,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.ui.viewmodels.LoginViewModel
+import androidx.compose.ui.tooling.preview.Preview
+import com.moviles.ark.ui.theme.AppTheme
 
 @Composable
 fun LoginScreen(uiState: LoginUiState,
@@ -84,4 +86,30 @@ fun LoginRoute(viewModel: LoginViewModel = viewModel(),
         onLoginClick = viewModel::onLoginClick,
         onNavigateToRegister = onNavigateToRegister
     )
+}
+
+// ESTO ES PARA IR MIRANDO COMO ESTAN LAS COSAS VISUALMENTE Y ASDI PODER CORREREGIR SIN LANZAR EL EMULADOR Y TAMBIEN MIRAR LOS ESTADOS GRACUAS A PREVIEW
+
+@Preview(showBackground = true, name = "Pantalla de Login Normal")
+@Composable
+fun LoginScreenPreview() {
+    //  Importante: Envolvemos con el tema de tu App para ver los colores correctos
+    AppTheme {
+        //  Creamos un estado de "mentira" para simular lo que pasaría en la app real
+        val dummyUiState = LoginUiState(
+            email = "usuario@ejemplo.com",
+            password = "password123",
+            isLoading = true //  Empezamos simulando que NO está cargando
+        )
+
+        //  Llamamos a nuestra pantalla real pasándole los datos simulados
+        LoginScreen(
+            uiState = dummyUiState,
+            // Le pasamos funciones vacías '{}' porque en el preview no necesitamos que hagan nada
+            onEmailChange = {},
+            onPasswordChange = {},
+            onLoginClick = {},
+            onNavigateToRegister = {}
+        )
+    }
 }
