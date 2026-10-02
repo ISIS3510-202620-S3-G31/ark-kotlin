@@ -15,6 +15,7 @@ import com.moviles.ark.ui.components.BottomNavigationBar
 import com.moviles.ark.ui.screens.HomeScreen
 import com.moviles.ark.ui.screens.LoginRoute
 import com.moviles.ark.ui.screens.MoodCheckInScreen
+import com.moviles.ark.ui.screens.PhotoOfTheDayRoute
 import com.moviles.ark.ui.screens.PlaceholderScreen
 import com.moviles.ark.ui.screens.ProfileRoute
 import com.moviles.ark.ui.screens.RegisterScreen
@@ -91,6 +92,10 @@ fun AppNavigation(
                         popUpTo(navController.graph.id) { inclusive = true }
                     }
                 })
+            }
+            //herramienta foto del dia (#25); se abre desde el catalogo de herramientas
+            composable("photo_of_the_day_screen") {
+                PhotoOfTheDayRoute(onBack = { navController.popBackStack() })
             }
             composable("checkin_screen") {
                 MoodCheckInScreen(
