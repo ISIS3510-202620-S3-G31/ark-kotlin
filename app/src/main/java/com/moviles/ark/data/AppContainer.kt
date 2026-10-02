@@ -6,7 +6,9 @@ import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.firestore
 import com.moviles.ark.data.repositories.AuthRepositoryImpl
+import com.moviles.ark.data.repositories.FakeToolRepository
 import com.moviles.ark.domain.repositories.AuthRepository
+import com.moviles.ark.domain.repositories.ToolRepository
 
 // Shared dependencies for the whole app. ViewModels get what they need from here
 // instead of creating their own instances.
@@ -15,6 +17,7 @@ interface AppContainer {
     val auth: FirebaseAuth
     val firestore: FirebaseFirestore
     val authRepository: AuthRepository
+    val toolRepository: ToolRepository
 }
 
 class DefaultAppContainer : AppContainer {
@@ -22,4 +25,6 @@ class DefaultAppContainer : AppContainer {
     override val auth: FirebaseAuth by lazy { Firebase.auth }
     override val firestore: FirebaseFirestore by lazy { Firebase.firestore }
     override val authRepository: AuthRepository by lazy { AuthRepositoryImpl(auth, firestore) }
+    // fake catalog until the Room implementation of #9 is ready; then only this line changes
+    override val toolRepository: ToolRepository by lazy { FakeToolRepository() }
 }
