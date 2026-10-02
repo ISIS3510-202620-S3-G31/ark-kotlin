@@ -16,6 +16,7 @@ import com.moviles.ark.ui.screens.HomeScreen
 import com.moviles.ark.ui.screens.LoginRoute
 import com.moviles.ark.ui.screens.MoodCheckInScreen
 import com.moviles.ark.ui.screens.PlaceholderScreen
+import com.moviles.ark.ui.screens.ProfileRoute
 import com.moviles.ark.ui.screens.RegisterScreen
 import com.moviles.ark.ui.theme.BackgroundColor
 
@@ -90,9 +91,13 @@ fun AppNavigation(
             composable("stats_screen") {
                 PlaceholderScreen(title = "Stats", message = "Your progress will show up here soon.")
             }
-            //pestana profile: provisional hasta el #6
+            //pestana profile: al cerrar sesion vuelve al login y borra el historial
             composable("profile_screen") {
-                PlaceholderScreen(title = "Profile", message = "Your profile will show up here soon.")
+                ProfileRoute(onSignedOut = {
+                    navController.navigate("login_screen") {
+                        popUpTo(navController.graph.id) { inclusive = true }
+                    }
+                })
             }
             composable("checkin_screen") {
                 MoodCheckInScreen(
