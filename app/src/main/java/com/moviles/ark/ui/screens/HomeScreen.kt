@@ -48,10 +48,9 @@ import com.moviles.ark.ui.theme.TextColor
 import com.moviles.ark.ui.viewmodels.MoodCheckInViewModel
 import kotlinx.coroutines.delay
 
+//cerrar sesion se hace desde la pestana profile (#6)
 @Composable
-fun HomeScreen(
-    onLogout: () -> Unit = {}
-) {
+fun HomeScreen() {
     var showCheckInPopup by remember { mutableStateOf(false) }
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
@@ -91,15 +90,6 @@ fun HomeScreen(
                     fontWeight = FontWeight.Bold,
                     color = PrimaryColor
                 )
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color.White.copy(alpha = 0.5f))
-                        .clickable(onClick = onLogout)
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
-                ) {
-                    Text("Logout", style = MaterialTheme.typography.labelSmall, color = TextColor)
-                }
             }
             Spacer(modifier = Modifier.height(28.dp))
             Image(

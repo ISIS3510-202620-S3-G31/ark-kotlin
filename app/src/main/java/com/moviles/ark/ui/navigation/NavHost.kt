@@ -78,14 +78,7 @@ fun AppNavigation(
                 )
             }
             composable("home_screen") {
-                HomeScreen(
-                    onLogout = {
-                        authRepository?.logout()
-                        navController.navigate("login_screen") {
-                            popUpTo(0)
-                        }
-                    }
-                )
+                HomeScreen()
             }
             //pestana stats: provisional hasta el #15
             composable("stats_screen") {
