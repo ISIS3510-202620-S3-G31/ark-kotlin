@@ -5,6 +5,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Column
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.TextField
@@ -12,8 +13,11 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import com.moviles.ark.ui.viewmodels.LoginUiState
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.ui.viewmodels.LoginViewModel
@@ -46,9 +50,17 @@ fun LoginScreen(uiState: LoginUiState,
             visualTransformation = PasswordVisualTransformation()
         )
         Button(
-            onClick = onLoginClick
+            onClick = onLoginClick,
+            enabled = !uiState.isLoading // Evita múltiples clics mientras carga
         ) {
-            Text("Login")
+            if (uiState.isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),// Usamos dp porque es más facil cuando dos telefonos tiene difernte resolucion hace que to do quede proporcioinal en dif pantallas
+                    color = MaterialTheme.colorScheme.onPrimary
+                )
+            } else {
+                Text("Login")
+            }
         }
         TextButton(
             onClick = onNavigateToRegister
