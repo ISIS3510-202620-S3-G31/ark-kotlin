@@ -39,6 +39,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.R
 import com.moviles.ark.domain.models.User
+import com.moviles.ark.domain.models.UserProfile
 import com.moviles.ark.domain.repositories.AuthRepository
 import com.moviles.ark.ui.theme.AppTheme
 import com.moviles.ark.ui.viewmodels.RegisterViewModel
@@ -160,6 +161,7 @@ fun RegisterScreenPreview() {
         override suspend fun login(email: String, password: String) = Result.success(Unit)
         override suspend fun registerUser(user: User) = Result.success(Unit)
         override fun logout() {}
+        override suspend fun getProfile() = Result.success(UserProfile("", "", 0L))
     }
     AppTheme({
         RegisterScreen(viewModel = viewModel { RegisterViewModel(fakeRepository) })

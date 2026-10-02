@@ -14,6 +14,7 @@ import com.moviles.ark.data.repositories.MoodRepositoryImpl
 import com.moviles.ark.domain.repositories.AuthRepository
 import com.moviles.ark.domain.repositories.LocationRepository
 import com.moviles.ark.domain.repositories.MoodRepository
+import com.moviles.ark.data.repositories.FakeToolRepository
 import com.moviles.ark.domain.repositories.ToolRepository
 
 interface AppContainer {
