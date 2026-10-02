@@ -38,11 +38,13 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.R
+import com.moviles.ark.domain.models.User
+import com.moviles.ark.domain.repositories.AuthRepository
 import com.moviles.ark.ui.theme.AppTheme
 import com.moviles.ark.ui.viewmodels.RegisterViewModel
 
 @Composable
-fun RegisterScreen(viewModel: RegisterViewModel = viewModel(), onNavigateToLogin: () -> Unit = {}, onRegisterSuccess: () -> Unit = {}) {
+fun RegisterScreen(viewModel: RegisterViewModel = viewModel(factory = RegisterViewModel.Factory), onNavigateToLogin: () -> Unit = {}, onRegisterSuccess: () -> Unit = {}) {
     //leemos el estado de la pantalla desde el viewmodel usando .value
     val uiState = viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -124,10 +126,7 @@ fun RegisterScreen(viewModel: RegisterViewModel = viewModel(), onNavigateToLogin
             //boton para registrarse, muestra el spin de carga si isLoading es true
             Button(
                 onClick = {
-                    val success = viewModel.register()
-                    if (success) {
-                        onRegisterSuccess() //ejecutar la navegacion cuando el registro sea exitoso
-                    }
+                    viewModel.register(onSuccess = onRegisterSuccess) //ejecutar la navegacion cuando el registro sea exitoso
                 },
                 enabled = !uiState.value.isLoading,
                 modifier = Modifier.fillMaxWidth().height(50.dp)
@@ -155,7 +154,14 @@ fun RegisterScreen(viewModel: RegisterViewModel = viewModel(), onNavigateToLogin
 @Preview(showBackground = true, name = "Register Screen Preview")
 @Composable
 fun RegisterScreenPreview() {
+    //repositorio falso solo para el preview, asi no llama a firebase
+    val fakeRepository = object : AuthRepository {
+        override fun isLoggedIn() = false
+        override suspend fun login(email: String, password: String) = Result.success(Unit)
+        override suspend fun registerUser(user: User) = Result.success(Unit)
+        override fun logout() {}
+    }
     AppTheme({
-        RegisterScreen()
+        RegisterScreen(viewModel = viewModel { RegisterViewModel(fakeRepository) })
     })
 }
