@@ -8,14 +8,12 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
 import com.moviles.ark.data.repositories.FakeToolRepository
+import com.moviles.ark.domain.models.RecommendationContextResolver
+import com.moviles.ark.domain.models.RecommendationDecision
 import com.moviles.ark.domain.models.Tool
 import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.domain.repositories.MoodRepository
 import com.moviles.ark.domain.repositories.ToolRepository
-import com.moviles.ark.domain.strategies.DefaultRecommendationContextResolver
-import com.moviles.ark.domain.strategies.MoodBasedRecommendationStrategy
-import com.moviles.ark.domain.strategies.RecommendationContextResolver
-import com.moviles.ark.domain.strategies.RecommendationStrategy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,16 +24,16 @@ import kotlinx.coroutines.launch
 class HomeViewModel(
     private val toolRepository: ToolRepository,
     private val moodRepository: MoodRepository? = null,
-    private var recommendationStrategy: RecommendationStrategy = MoodBasedRecommendationStrategy(),
-    private val contextResolver: RecommendationContextResolver = DefaultRecommendationContextResolver(moodRepository),
+    //elige la estrategia de recomendacion segun el contexto del usuario (#23)
+    private val contextResolver: RecommendationContextResolver = RecommendationContextResolver(),
     initialTools: List<Tool> = FakeToolRepository.sampleTools
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
         HomeUiState(
             isLoading = false,
-            tools = recommendationStrategy.recommend(initialTools),
-            filteredTools = recommendationStrategy.recommend(initialTools)
+            tools = initialTools,
+            filteredTools = initialTools
         )
     )
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
@@ -64,11 +62,8 @@ class HomeViewModel(
                     )
                 }
                 .collect { rawTools ->
-                    val resolvedContext = contextResolver.resolveContext()
-                    val recommendedTools = recommendationStrategy.recommend(
-                        tools = rawTools,
-                        context = resolvedContext
-                    )
+                    val decision = resolveDecision()
+                    val recommendedTools = decision.strategy.recommend(rawTools, decision.context)
                     val filtered = applyCategoryFilter(recommendedTools, _uiState.value.selectedCategory)
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
@@ -114,17 +109,11 @@ class HomeViewModel(
         loadTools()
     }
 
-    fun setRecommendationStrategy(strategy: RecommendationStrategy) {
-        recommendationStrategy = strategy
-        viewModelScope.launch(Dispatchers.IO) {
-            val resolvedContext = contextResolver.resolveContext()
-            val reordered = recommendationStrategy.recommend(_uiState.value.tools, resolvedContext)
-            val filtered = applyCategoryFilter(reordered, _uiState.value.selectedCategory)
-            _uiState.value = _uiState.value.copy(
-                tools = reordered,
-                filteredTools = filtered
-            )
-        }
+    //decide la estrategia con el ultimo check-in del usuario (#23)
+    //todavia no hay repositorio de interacciones con herramientas, por eso la lista va vacia
+    private suspend fun resolveDecision(): RecommendationDecision {
+        val latestCheckIn = moodRepository?.getLatestCheckIn()?.getOrNull()
+        return contextResolver.resolve(listOfNotNull(latestCheckIn), emptyList())
     }
 
     private fun applyCategoryFilter(tools: List<Tool>, category: ToolCategory?): List<Tool> {

@@ -111,9 +111,9 @@ fun AppNavigation(
             composable("photo_of_the_day_screen") {
                 PhotoOfTheDayRoute(onBack = { navController.popBackStack() })
             }
-            //herramienta de respiracion personalizada
+            //herramienta de respiracion personalizada: provisional hasta que entre su pantalla (#19)
             composable("custom_breathing_screen") {
-                com.moviles.ark.ui.screens.CustomBreathingRoute(onBack = { navController.popBackStack() })
+                PlaceholderScreen(title = "Custom breathing", message = "This tool will be available soon.")
             }
             composable("checkin_screen") {
                 MoodCheckInScreen(
