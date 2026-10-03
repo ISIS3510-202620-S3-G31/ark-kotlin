@@ -27,6 +27,8 @@ import com.moviles.ark.domain.repositories.PhotoRepository
 import com.moviles.ark.domain.repositories.StatsRepository
 import com.moviles.ark.domain.repositories.ToolRepository
 
+import com.moviles.ark.data.local.sensors.NetworkConnectivityObserver
+
 interface AppContainer {
     val auth: FirebaseAuth
     val firestore: FirebaseFirestore
@@ -39,6 +41,7 @@ interface AppContainer {
     val analyticsRepository: AnalyticsRepository
     val toolLatencyTracker: ToolLatencyTracker
     val feedbackDao: FeedbackDao
+    val networkConnectivityObserver: NetworkConnectivityObserver
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -65,4 +68,6 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     // one tracker for the whole app: the tap on a tool and its screen live in different places (#8)
     override val toolLatencyTracker: ToolLatencyTracker by lazy { ToolLatencyTracker(analyticsRepository) }
     override val feedbackDao: FeedbackDao by lazy { database.feedbackDao() }
+    // observador reactivo de conectividad a internet (#32)
+    override val networkConnectivityObserver: NetworkConnectivityObserver by lazy { NetworkConnectivityObserver(context) }
 }
