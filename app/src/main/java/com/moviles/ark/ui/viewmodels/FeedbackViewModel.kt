@@ -16,7 +16,9 @@ import com.moviles.ark.domain.composite.Emotion
 import com.moviles.ark.domain.composite.MoodComponent
 import com.moviles.ark.domain.composite.SingleEmotion
 import com.moviles.ark.domain.models.CheckInModel
+import com.moviles.ark.domain.repositories.AnalyticsRepository
 import com.moviles.ark.domain.repositories.MoodRepository
+import com.moviles.ark.domain.repositories.ToolRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,6 +27,8 @@ import kotlinx.coroutines.launch
 class FeedbackViewModel(
     private val feedbackDao: FeedbackDao? = null,
     private val moodRepository: MoodRepository? = null,
+    private val analyticsRepository: AnalyticsRepository? = null,
+    private val toolRepository: ToolRepository? = null,
     savedStateHandle: SavedStateHandle? = null,
     initialToolId: String = ""
 ) : ViewModel() {
@@ -122,6 +126,13 @@ class FeedbackViewModel(
                     moodRepository.saveCheckIn(checkIn)
                 }
 
+                // Log tool completion event to Firebase Analytics (#34)
+                val format = toolRepository?.getToolById(state.toolId)?.format ?: "touch"
+                analyticsRepository?.logToolEntryCompleted(
+                    toolId = state.toolId.ifBlank { "custom_breathing" },
+                    toolFormat = format
+                )
+
                 privateUiState.value = privateUiState.value.copy(
                     isLoading = false,
                     isSaved = true,
@@ -144,7 +155,9 @@ class FeedbackViewModel(
                 val app = this[APPLICATION_KEY] as ArkApplication
                 FeedbackViewModel(
                     feedbackDao = app.container.feedbackDao,
-                    moodRepository = app.container.moodRepository
+                    moodRepository = app.container.moodRepository,
+                    analyticsRepository = app.container.analyticsRepository,
+                    toolRepository = app.container.toolRepository
                 )
             }
         }
