@@ -431,12 +431,20 @@ private const val MAX_THUMBNAIL_SIZE = 1080
 @Composable
 fun PhotoOfTheDayRoute(
     viewModel: PhotoOfTheDayViewModel = viewModel(factory = PhotoOfTheDayViewModel.Factory),
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onPhotoSaved: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val cameraHelper = remember { CameraHelper(context) }
     var currentPhotoUri by remember { mutableStateOf<Uri?>(null) }
+
+    LaunchedEffect(uiState.isPhotoSaved) {
+        if (uiState.isPhotoSaved) {
+            viewModel.onNavigatedToFeedback()
+            onPhotoSaved()
+        }
+    }
 
     //launcher para capturar foto con la camara del dispositivo (#31)
     val takePictureLauncher = rememberLauncherForActivityResult(

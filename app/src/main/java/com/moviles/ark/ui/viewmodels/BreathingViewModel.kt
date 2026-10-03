@@ -256,7 +256,7 @@ class BreathingViewModel(
     }
 
     //el usuario sale de la herramienta o reinicia: si termino al menos un ciclo, se guarda la sesion en el telefono (#82)
-    fun finishSession() {
+    fun finishSession(): Boolean {
         pause()
         val state = _uiState.value
         val session = BreathingSession(
@@ -268,14 +268,16 @@ class BreathingViewModel(
         //se reinicia el tiempo para que la misma sesion no se guarde dos veces
         sessionRunningMs = 0L
         //le preguntamos al modelo si la sesion cuenta antes de guardarla
-        if (!session.isComplete()) return
-        val repository = breathingRepository ?: return
+        val isComplete = session.isComplete()
+        if (!isComplete) return false
+        val repository = breathingRepository ?: return true
         viewModelScope.launch {
             //NonCancellable: al salir de la pantalla el viewmodel se limpia enseguida y no debe cortar el guardado
             withContext(NonCancellable) {
                 repository.saveSession(session)
             }
         }
+        return true
     }
 
     private fun getPhaseDuration(phase: BreathingPhase): Int {

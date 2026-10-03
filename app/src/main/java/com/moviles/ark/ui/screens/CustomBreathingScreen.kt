@@ -82,14 +82,14 @@ import com.moviles.ark.ui.viewmodels.BreathingViewModel
 @Composable
 fun CustomBreathingRoute(
     viewModel: BreathingViewModel = viewModel(factory = BreathingViewModel.Factory),
-    onBack: () -> Unit
+    onBack: (Boolean) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     //al salir (flecha o boton atras del sistema) se guarda la sesion antes de volver (#82)
     val leave = {
-        viewModel.finishSession()
-        onBack()
+        val wasCompleted = viewModel.finishSession()
+        onBack(wasCompleted)
     }
     BackHandler(onBack = leave)
 
