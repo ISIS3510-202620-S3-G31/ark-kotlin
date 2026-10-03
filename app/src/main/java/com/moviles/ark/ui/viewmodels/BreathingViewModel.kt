@@ -10,6 +10,7 @@ import com.moviles.ark.ArkApplication
 import com.moviles.ark.data.local.sensors.AudioPlayerHelper
 import com.moviles.ark.domain.models.AmbientTrackModel
 import com.moviles.ark.domain.models.BreathingSession
+import com.moviles.ark.domain.models.ToolLatencyTracker
 import com.moviles.ark.domain.repositories.BreathingRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -27,7 +28,9 @@ import kotlinx.coroutines.withContext
  */
 class BreathingViewModel(
     private val breathingRepository: BreathingRepository? = null,
-    private val audioPlayerHelper: AudioPlayerHelper? = null
+    private val audioPlayerHelper: AudioPlayerHelper? = null,
+    //cierra la medicion de latencia que empezo con el toque en el home (#90)
+    private val toolLatencyTracker: ToolLatencyTracker? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(BreathingUiState())
@@ -247,6 +250,11 @@ class BreathingViewModel(
         )
     }
 
+    //la pantalla termino su primer dibujo: se cierra la medicion de latencia que empezo con el toque (#90)
+    fun onScreenRendered() {
+        toolLatencyTracker?.onToolRendered(BreathingSession.TOOL_ID)
+    }
+
     //el usuario sale de la herramienta o reinicia: si termino al menos un ciclo, se guarda la sesion en el telefono (#82)
     fun finishSession() {
         pause()
@@ -291,7 +299,8 @@ class BreathingViewModel(
                 val app = this[APPLICATION_KEY] as ArkApplication
                 BreathingViewModel(
                     breathingRepository = app.container.breathingRepository,
-                    audioPlayerHelper = app.container.audioPlayerHelper
+                    audioPlayerHelper = app.container.audioPlayerHelper,
+                    toolLatencyTracker = app.container.toolLatencyTracker
                 )
             }
         }

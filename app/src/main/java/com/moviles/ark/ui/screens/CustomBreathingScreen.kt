@@ -49,7 +49,9 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -90,6 +92,12 @@ fun CustomBreathingRoute(
         onBack()
     }
     BackHandler(onBack = leave)
+
+    //#90: se espera al siguiente cuadro; para entonces el primer dibujo de la pantalla ya termino
+    LaunchedEffect(Unit) {
+        withFrameNanos { }
+        viewModel.onScreenRendered()
+    }
 
     CustomBreathingScreen(
         uiState = uiState,
