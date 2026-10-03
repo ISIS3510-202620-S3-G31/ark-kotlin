@@ -62,9 +62,9 @@ class UsefulInsightsEngine(
 
         //dias en que se uso cada herramienta
         val daysByTool: Map<String, Set<Long>> = interactions
-            .filter { today - dayOf(it.startedAt) in 0 until LONG_WINDOW_DAYS }
+            .filter { today - dayOf(it.timestamp.time) in 0 until LONG_WINDOW_DAYS }
             .groupBy { it.toolId }
-            .mapValues { (_, toolInteractions) -> toolInteractions.map { dayOf(it.startedAt) }.toSet() }
+            .mapValues { (_, toolInteractions) -> toolInteractions.map { dayOf(it.timestamp.time) }.toSet() }
 
         var bestToolId: String? = null
         var bestReduction = 0.0
@@ -190,13 +190,13 @@ class UsefulInsightsEngine(
 
     //la herramienta que mas uso en el ultimo mes (patron de uso)
     private fun favoriteTool(interactions: List<ToolInteraction>, today: Long, toolNames: Map<String, String>): Insight? {
-        val recent = interactions.filter { today - dayOf(it.startedAt) in 0 until LONG_WINDOW_DAYS }
+        val recent = interactions.filter { today - dayOf(it.timestamp.time) in 0 until LONG_WINDOW_DAYS }
         if (recent.size < MIN_SESSIONS) return null
 
         //la mas usada; si empatan, gana la que se uso mas recientemente
         val top = recent
             .groupBy { it.toolId }
-            .map { (toolId, toolInteractions) -> Triple(toolId, toolInteractions.size, toolInteractions.maxOf { it.startedAt }) }
+            .map { (toolId, toolInteractions) -> Triple(toolId, toolInteractions.size, toolInteractions.maxOf { it.timestamp.time }) }
             .sortedWith(compareByDescending<Triple<String, Int, Long>> { it.second }.thenByDescending { it.third })
             .first()
         if (top.second < MIN_USES) return null

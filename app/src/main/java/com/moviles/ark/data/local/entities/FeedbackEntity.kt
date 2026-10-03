@@ -8,8 +8,8 @@ import androidx.room.PrimaryKey
 data class FeedbackEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
-    //sesion calificada (id de ToolSessionEntity); null si no se guardo la sesion
-    val sessionId: Long? = null,
+    //interaccion calificada (id de ToolInteractionEntity); null si no se guardo la interaccion
+    val interactionId: Long? = null,
     val toolId: String,
     //de 1 a 5 (estrellas o emojis)
     val rating: Int,
