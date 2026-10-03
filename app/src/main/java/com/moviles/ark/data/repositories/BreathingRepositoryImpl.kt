@@ -1,13 +1,36 @@
 package com.moviles.ark.data.repositories
 
+import com.google.firebase.auth.FirebaseAuth
+import com.moviles.ark.data.local.daos.BreathingSessionDao
+import com.moviles.ark.data.local.daos.ToolRecordDao
+import com.moviles.ark.data.local.entities.toEntity
 import com.moviles.ark.data.remote.apis.JamendoApiClient
 import com.moviles.ark.domain.models.AmbientTrackModel
+import com.moviles.ark.domain.models.BreathingSession
 import com.moviles.ark.domain.repositories.BreathingRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 //implementacion del repositorio de respiracion que consume el api de jamendo (#7)
+//y guarda las sesiones terminadas en room para que funcione sin internet (#82)
 class BreathingRepositoryImpl(
+    private val breathingSessionDao: BreathingSessionDao,
+    private val toolRecordDao: ToolRecordDao,
+    private val auth: FirebaseAuth,
+    //direccion android.resource:// de la pista que viene dentro de la app (res/raw)
+    bundledAudioUri: String,
     private val jamendoApiClient: JamendoApiClient = JamendoApiClient()
 ) : BreathingRepository {
+
+    //pista guardada dentro de la app: suena aunque no haya internet (#82)
+    private val bundledTrack = AmbientTrackModel(
+        id = BUNDLED_TRACK_ID,
+        title = "Calm Waves",
+        artist = "Ark (offline)",
+        audioUrl = bundledAudioUri,
+        durationSeconds = 60,
+        isAvailableOffline = true
+    )
 
     //pistas de respaldo precargadas por si no hay internet o falla la conexion
     private val fallbackTracks = listOf(
@@ -75,12 +98,31 @@ class BreathingRepositoryImpl(
                         coverImageUrl = dto.albumImage.ifBlank { null }
                     )
                 }
-                Result.success(models)
+                //con internet: primero las de jamendo y al final la de la app
+                Result.success(models + bundledTrack)
             } else {
-                Result.success(fallbackTracks)
+                Result.success(offlineTracks())
             }
         } catch (e: Exception) {
-            Result.success(fallbackTracks)
+            Result.success(offlineTracks())
         }
+    }
+
+    //sin respuesta de jamendo (por ejemplo sin internet): primero la pista de la app, que siempre suena
+    private fun offlineTracks(): List<AmbientTrackModel> = listOf(bundledTrack) + fallbackTracks
+
+    override suspend fun saveSession(session: BreathingSession): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            breathingSessionDao.insertSession(session.toEntity())
+            //tambien como interaccion: la usan estadisticas, insights y recomendaciones;
+            //queda con isSynced = false y el SyncManager la sube a firestore cuando vuelva el internet (#33)
+            val userId = auth.currentUser?.uid ?: "anonymous"
+            toolRecordDao.insertInteraction(session.toInteraction(userId).toEntity())
+            Unit
+        }
+    }
+
+    companion object {
+        const val BUNDLED_TRACK_ID = "bundled_calm_waves"
     }
 }

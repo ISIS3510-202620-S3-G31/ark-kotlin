@@ -3,6 +3,7 @@ package com.moviles.ark.data.local.sensors
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.net.Uri
 
 //helper para reproducir audio ambiental de jamendo con el mediaplayer de android (#7)
 class AudioPlayerHelper(
@@ -13,7 +14,12 @@ class AudioPlayerHelper(
     private var isPrepared = false
 
     //inicia la reproduccion de una url de audio
-    fun playUrl(url: String, onPlaybackStateChanged: (isPlaying: Boolean) -> Unit = {}) {
+    //onError avisa si no se pudo reproducir (por ejemplo una pista de internet sin conexion) (#82)
+    fun playUrl(
+        url: String,
+        onPlaybackStateChanged: (isPlaying: Boolean) -> Unit = {},
+        onError: () -> Unit = {}
+    ) {
         if (url == currentUrl && mediaPlayer != null && isPrepared) {
             mediaPlayer?.start()
             onPlaybackStateChanged(true)
@@ -32,7 +38,12 @@ class AudioPlayerHelper(
                         .setUsage(AudioAttributes.USAGE_MEDIA)
                         .build()
                 )
-                setDataSource(url)
+                //las pistas que vienen dentro de la app (res/raw) se abren con el context (#82)
+                if (url.startsWith(LOCAL_RESOURCE_SCHEME) && context != null) {
+                    setDataSource(context, Uri.parse(url))
+                } else {
+                    setDataSource(url)
+                }
                 isLooping = true //reproduccion continua para la sesion de respiracion
                 setOnPreparedListener { mp ->
                     isPrepared = true
@@ -42,6 +53,7 @@ class AudioPlayerHelper(
                 setOnErrorListener { _, _, _ ->
                     isPrepared = false
                     onPlaybackStateChanged(false)
+                    onError()
                     true
                 }
                 setOnCompletionListener {
@@ -53,6 +65,7 @@ class AudioPlayerHelper(
         } catch (e: Exception) {
             e.printStackTrace()
             onPlaybackStateChanged(false)
+            onError()
         }
     }
 
@@ -99,5 +112,9 @@ class AudioPlayerHelper(
     //libera los recursos del reproductor
     fun release() {
         stop()
+    }
+
+    companion object {
+        private const val LOCAL_RESOURCE_SCHEME = "android.resource://"
     }
 }
