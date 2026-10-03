@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.domain.composite.Emotion
 import com.moviles.ark.domain.models.StatsModel
+import com.moviles.ark.ui.components.UsefulInsightComponent
 import com.moviles.ark.ui.components.getEmotionColor
 import com.moviles.ark.ui.components.getEmotionEmoji
 import com.moviles.ark.ui.theme.AccentColor
@@ -68,7 +69,8 @@ import com.moviles.ark.ui.viewmodels.StatsViewModel
 
 @Composable
 fun StatsScreen(
-    viewModel: StatsViewModel = viewModel(factory = StatsViewModel.Factory)
+    viewModel: StatsViewModel = viewModel(factory = StatsViewModel.Factory),
+    onNavigateToHome: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
@@ -80,7 +82,8 @@ fun StatsScreen(
     StatsScreenContent(
         stats = uiState.stats,
         isLoading = uiState.isLoading,
-        onRefresh = { viewModel.refresh() }
+        onRefresh = { viewModel.refresh() },
+        onNavigateToHome = onNavigateToHome
     )
 }
 
@@ -89,7 +92,8 @@ fun StatsScreen(
 fun StatsScreenContent(
     stats: StatsModel?,
     isLoading: Boolean,
-    onRefresh: () -> Unit = {}
+    onRefresh: () -> Unit = {},
+    onNavigateToHome: () -> Unit = {}
 ) {
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -143,7 +147,7 @@ fun StatsScreenContent(
             } else if (stats == null || stats.totalCheckIns == 0) {
                 StatsEmptyView()
             } else {
-                StatsMainView(stats = stats)
+                StatsMainView(stats = stats, onNavigateToHome = onNavigateToHome)
             }
         }
     }
@@ -207,7 +211,8 @@ private fun StatsEmptyView() {
 
 @Composable
 private fun StatsMainView(
-    stats: StatsModel
+    stats: StatsModel,
+    onNavigateToHome: () -> Unit = {}
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -351,6 +356,16 @@ private fun StatsMainView(
                         }
                     }
                 }
+            }
+        }
+
+        //tarjeta del hallazgo util si existe (#29)
+        if (stats.currentInsight != null) {
+            item {
+                UsefulInsightComponent(
+                    insight = stats.currentInsight,
+                    onActionClick = onNavigateToHome
+                )
             }
         }
 
@@ -690,6 +705,12 @@ fun StatsScreenPreview() {
             "Photo of the Day" to 25f,
             "Achievement Jar" to 17f,
             "Blow It Out" to 16f
+        ),
+        currentInsight = com.moviles.ark.domain.models.InsightModel(
+            title = "Breathing helps you",
+            message = "On days you used Breathing, your difficult feelings were 35% lower than on other days.",
+            advice = "Keep Breathing close for tough days.",
+            actionLabel = "Open Breathing"
         )
     )
 

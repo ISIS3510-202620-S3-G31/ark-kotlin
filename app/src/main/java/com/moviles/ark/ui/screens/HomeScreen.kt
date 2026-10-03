@@ -58,6 +58,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -67,6 +68,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.moviles.ark.ArkApplication
 import com.moviles.ark.R
 import com.moviles.ark.data.repositories.FakeToolRepository
 import com.moviles.ark.domain.models.Tool
@@ -82,6 +84,7 @@ import kotlinx.coroutines.delay
 fun HomeScreen(
     onNavigateToTool: (String) -> Unit = {}
 ) {
+    val context = LocalContext.current
     var showCheckInPopup by remember { mutableStateOf(false) }
     var isCheckInCompleted by remember { mutableStateOf(false) }
     var hasAutoPrompted by remember { mutableStateOf(false) }
@@ -102,7 +105,7 @@ fun HomeScreen(
     val filteredTools = if (selectedCategory == "all") {
         allTools
     } else {
-        allTools.filter { it.category == selectedCategory }
+        allTools.filter { it.categoryId == selectedCategory }
     }
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
@@ -116,7 +119,14 @@ fun HomeScreen(
                 Manifest.permission.ACCESS_COARSE_LOCATION
             )
         )
-        if (!hasAutoPrompted && !isCheckInCompleted) {
+        //revisa si el usuario ya hizo su check-in en el dia de hoy
+        val app = context.applicationContext as? ArkApplication
+        val moodRepository = app?.container?.moodRepository
+        val alreadyCheckedInToday = moodRepository?.hasCheckedInToday()?.getOrDefault(false) ?: false
+
+        if (alreadyCheckedInToday) {
+            isCheckInCompleted = true
+        } else if (!hasAutoPrompted) {
             delay(1500)
             hasAutoPrompted = true
             showCheckInPopup = true

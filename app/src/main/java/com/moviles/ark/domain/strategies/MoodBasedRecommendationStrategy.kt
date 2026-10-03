@@ -1,8 +1,7 @@
 package com.moviles.ark.domain.strategies
 
-import com.moviles.ark.domain.composite.Emotion as CompositeEmotion
+import com.moviles.ark.domain.composite.Emotion
 import com.moviles.ark.domain.models.CheckInModel
-import com.moviles.ark.domain.models.Emotion as ModelEmotion
 import com.moviles.ark.domain.models.Tool
 import com.moviles.ark.domain.models.ToolCategory
 
@@ -41,8 +40,7 @@ class MoodBasedRecommendationStrategy(
          */
         fun mapEmotionToToolCategories(emotion: Any): Set<ToolCategory> {
             val name = when (emotion) {
-                is CompositeEmotion -> emotion.name
-                is ModelEmotion -> emotion.name
+                is Emotion -> emotion.name
                 is String -> emotion.uppercase()
                 else -> emotion.toString().uppercase()
             }
