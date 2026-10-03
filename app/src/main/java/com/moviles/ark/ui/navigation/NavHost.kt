@@ -82,8 +82,9 @@ fun AppNavigation(
             composable("home_screen") {
                 com.moviles.ark.ui.screens.HomeRoute(
                     onNavigateToTool = { toolId ->
-                        if (toolId == "photo_of_the_day") {
-                            navController.navigate("photo_of_the_day_screen")
+                        when (toolId) {
+                            "photo_of_the_day" -> navController.navigate("photo_of_the_day_screen")
+                            "custom_breathing" -> navController.navigate("custom_breathing_screen")
                         }
                     }
                 )
@@ -109,6 +110,10 @@ fun AppNavigation(
             //herramienta foto del dia (#25); se abre desde el catalogo de herramientas
             composable("photo_of_the_day_screen") {
                 PhotoOfTheDayRoute(onBack = { navController.popBackStack() })
+            }
+            //herramienta de respiracion personalizada
+            composable("custom_breathing_screen") {
+                com.moviles.ark.ui.screens.CustomBreathingRoute(onBack = { navController.popBackStack() })
             }
             composable("checkin_screen") {
                 MoodCheckInScreen(

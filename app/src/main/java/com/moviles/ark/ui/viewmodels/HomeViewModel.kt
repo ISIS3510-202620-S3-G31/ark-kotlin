@@ -12,8 +12,9 @@ import com.moviles.ark.domain.models.Tool
 import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.domain.repositories.MoodRepository
 import com.moviles.ark.domain.repositories.ToolRepository
+import com.moviles.ark.domain.strategies.DefaultRecommendationContextResolver
 import com.moviles.ark.domain.strategies.MoodBasedRecommendationStrategy
-import com.moviles.ark.domain.strategies.RecommendationContext
+import com.moviles.ark.domain.strategies.RecommendationContextResolver
 import com.moviles.ark.domain.strategies.RecommendationStrategy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,6 +27,7 @@ class HomeViewModel(
     private val toolRepository: ToolRepository,
     private val moodRepository: MoodRepository? = null,
     private var recommendationStrategy: RecommendationStrategy = MoodBasedRecommendationStrategy(),
+    private val contextResolver: RecommendationContextResolver = DefaultRecommendationContextResolver(moodRepository),
     initialTools: List<Tool> = FakeToolRepository.sampleTools
 ) : ViewModel() {
 
@@ -39,7 +41,17 @@ class HomeViewModel(
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     init {
+        checkTodayStatus()
         loadTools()
+    }
+
+    fun checkTodayStatus() {
+        if (moodRepository != null) {
+            viewModelScope.launch(Dispatchers.IO) {
+                val hasCheckedIn = moodRepository.hasCheckedInToday().getOrDefault(false)
+                _uiState.value = _uiState.value.copy(isCheckInCompleted = hasCheckedIn)
+            }
+        }
     }
 
     fun loadTools() {
@@ -52,9 +64,10 @@ class HomeViewModel(
                     )
                 }
                 .collect { rawTools ->
+                    val resolvedContext = contextResolver.resolveContext()
                     val recommendedTools = recommendationStrategy.recommend(
                         tools = rawTools,
-                        context = RecommendationContext()
+                        context = resolvedContext
                     )
                     val filtered = applyCategoryFilter(recommendedTools, _uiState.value.selectedCategory)
                     _uiState.value = _uiState.value.copy(
@@ -96,14 +109,22 @@ class HomeViewModel(
         _uiState.value = _uiState.value.copy(navigateToToolId = null)
     }
 
+    fun onCheckInSaved() {
+        _uiState.value = _uiState.value.copy(isCheckInCompleted = true)
+        loadTools()
+    }
+
     fun setRecommendationStrategy(strategy: RecommendationStrategy) {
         recommendationStrategy = strategy
-        val reordered = recommendationStrategy.recommend(_uiState.value.tools)
-        val filtered = applyCategoryFilter(reordered, _uiState.value.selectedCategory)
-        _uiState.value = _uiState.value.copy(
-            tools = reordered,
-            filteredTools = filtered
-        )
+        viewModelScope.launch(Dispatchers.IO) {
+            val resolvedContext = contextResolver.resolveContext()
+            val reordered = recommendationStrategy.recommend(_uiState.value.tools, resolvedContext)
+            val filtered = applyCategoryFilter(reordered, _uiState.value.selectedCategory)
+            _uiState.value = _uiState.value.copy(
+                tools = reordered,
+                filteredTools = filtered
+            )
+        }
     }
 
     private fun applyCategoryFilter(tools: List<Tool>, category: ToolCategory?): List<Tool> {

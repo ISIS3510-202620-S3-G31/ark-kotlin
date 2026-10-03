@@ -103,6 +103,7 @@ fun HomeRoute(
         onCategorySelect = viewModel::onCategorySelect,
         onSurpriseMe = viewModel::onSurpriseMe,
         onToolClick = viewModel::onToolClick,
+        onCheckInSaved = viewModel::onCheckInSaved,
         onNavigateToTool = onNavigateToTool
     )
 }
@@ -113,25 +114,25 @@ fun HomeScreen(
     onCategorySelect: (ToolCategory?) -> Unit = {},
     onSurpriseMe: () -> Unit = {},
     onToolClick: (String) -> Unit = {},
+    onCheckInSaved: () -> Unit = {},
     onNavigateToTool: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     var showCheckInPopup by remember { mutableStateOf(false) }
-    var isCheckInCompleted by remember { mutableStateOf(uiState.isCheckInCompleted) }
     var hasAutoPrompted by remember { mutableStateOf(false) }
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions -> }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(uiState.isCheckInCompleted) {
         locationPermissionLauncher.launch(
             arrayOf(
                 Manifest.permission.ACCESS_FINE_LOCATION,
                 Manifest.permission.ACCESS_COARSE_LOCATION
             )
         )
-        if (!isCheckInCompleted && !hasAutoPrompted) {
+        if (!uiState.isCheckInCompleted && !hasAutoPrompted) {
             delay(1500)
             hasAutoPrompted = true
             showCheckInPopup = true
@@ -192,7 +193,7 @@ fun HomeScreen(
             }
 
             //tarjeta para invitar a hacer el checkin si aun no lo ha hecho
-            if (!isCheckInCompleted) {
+            if (!uiState.isCheckInCompleted) {
                 item {
                     MoodCheckInPromptCard(
                         onClick = { showCheckInPopup = true }
@@ -269,8 +270,8 @@ fun HomeScreen(
                     viewModel = viewModel(factory = MoodCheckInViewModel.Factory),
                     onNavigateBack = { showCheckInPopup = false },
                     onCheckInSaved = {
-                        isCheckInCompleted = true
                         showCheckInPopup = false
+                        onCheckInSaved()
                     }
                 )
             }
