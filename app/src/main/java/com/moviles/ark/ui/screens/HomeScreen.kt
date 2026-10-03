@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,10 +20,25 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccessibilityNew
+import androidx.compose.material.icons.filled.Air
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.Whatshot
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -40,8 +56,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -49,33 +68,54 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.R
+import com.moviles.ark.data.repositories.FakeToolRepository
+import com.moviles.ark.domain.models.Tool
 import com.moviles.ark.ui.theme.AppTheme
 import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.theme.PrimaryColor
+import com.moviles.ark.ui.theme.SecondaryColor
 import com.moviles.ark.ui.theme.TextColor
 import com.moviles.ark.ui.viewmodels.MoodCheckInViewModel
 import kotlinx.coroutines.delay
 
-//cerrar sesion se hace desde la pestana profile (#6)
 @Composable
-fun HomeScreen() {
+fun HomeScreen(
+    onNavigateToTool: (String) -> Unit = {}
+) {
     var showCheckInPopup by remember { mutableStateOf(false) }
     var isCheckInCompleted by remember { mutableStateOf(false) }
     var hasAutoPrompted by remember { mutableStateOf(false) }
+
+    var selectedCategory by remember { mutableStateOf("all") }
+    var surpriseTool by remember { mutableStateOf<Tool?>(null) }
+
+    val allTools = remember { FakeToolRepository.sampleTools }
+    val categories = listOf("all", "calm_down", "release", "reflect", "celebrate")
+    val categoryLabels = mapOf(
+        "all" to "All",
+        "calm_down" to "Calm down",
+        "release" to "Release",
+        "reflect" to "Reflect",
+        "celebrate" to "Celebrate"
+    )
+
+    val filteredTools = if (selectedCategory == "all") {
+        allTools
+    } else {
+        allTools.filter { it.category == selectedCategory }
+    }
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions -> }
 
     LaunchedEffect(Unit) {
-        //solicita permisos de localizacion al entrar
         locationPermissionLauncher.launch(
             arrayOf(
                 Manifest.permission.ACCESS_FINE_LOCATION,
                 Manifest.permission.ACCESS_COARSE_LOCATION
             )
         )
-        //espera un momento antes de mostrar el popup inicial automaticamente
         if (!hasAutoPrompted && !isCheckInCompleted) {
             delay(1500)
             hasAutoPrompted = true
@@ -87,55 +127,104 @@ fun HomeScreen() {
         modifier = Modifier.fillMaxSize(),
         color = BackgroundColor
     ) {
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .statusBarsPadding(),
+            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Ark",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = PrimaryColor
+            //encabezado de la app
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Ark",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = PrimaryColor
+                    )
+                }
+            }
+
+            //seccion de bienvenida con la mascota
+            item {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Image(
+                        painter = painterResource(R.drawable.ic_mascot_log),
+                        contentDescription = "Mascot",
+                        modifier = Modifier.size(96.dp)
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "Welcome back!",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = TextColor
+                    )
+                    Text(
+                        text = "Track your wellbeing and explore tools",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextColor.copy(alpha = 0.7f)
+                    )
+                }
+            }
+
+            //tarjeta para invitar a hacer el checkin si aun no lo ha hecho
+            if (!isCheckInCompleted) {
+                item {
+                    MoodCheckInPromptCard(
+                        onClick = { showCheckInPopup = true }
+                    )
+                }
+            }
+
+            //tarjeta leave it to chance
+            item {
+                LeaveItToChanceCard(
+                    onSurpriseMe = {
+                        surpriseTool = allTools.random()
+                    }
                 )
             }
 
-            Spacer(modifier = Modifier.height(28.dp))
+            //banner si eligio una herramienta al azar
+            if (surpriseTool != null) {
+                item {
+                    SurpriseResultBanner(
+                        tool = surpriseTool!!,
+                        onOpenTool = { onNavigateToTool(surpriseTool!!.id) }
+                    )
+                }
+            }
 
-            Image(
-                painter = painterResource(R.drawable.ic_mascot_log),
-                contentDescription = "Mascot",
-                modifier = Modifier.size(110.dp)
-            )
+            //pestañas de filtro por categoria
+            item {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(vertical = 4.dp)
+                ) {
+                    items(categories) { category ->
+                        CategoryChip(
+                            label = categoryLabels[category] ?: category,
+                            isSelected = selectedCategory == category,
+                            onClick = { selectedCategory = category }
+                        )
+                    }
+                }
+            }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Text(
-                text = "Welcome back!",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-
-            Text(
-                text = "Track your wellbeing and explore tools",
-                style = MaterialTheme.typography.bodyMedium,
-                color = TextColor.copy(alpha = 0.7f)
-            )
-
-            Spacer(modifier = Modifier.height(28.dp))
-
-            //si no ha completado el checkin muestra la tarjeta sutil para abrirlo
-            if (!isCheckInCompleted) {
-                MoodCheckInPromptCard(
-                    onClick = { showCheckInPopup = true }
+            //listado de herramientas del catalogo
+            items(filteredTools) { tool ->
+                ToolCardItem(
+                    tool = tool,
+                    onClick = { onNavigateToTool(tool.id) }
                 )
             }
         }
@@ -228,6 +317,254 @@ private fun MoodCheckInPromptCard(
                 modifier = Modifier.size(20.dp)
             )
         }
+    }
+}
+
+@Composable
+private fun CategoryChip(
+    label: String,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .clip(RoundedCornerShape(20.dp))
+            .clickable { onClick() },
+        color = if (isSelected) PrimaryColor else Color(0xFFEFE0C2),
+        shape = RoundedCornerShape(20.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            if (isSelected) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = null,
+                    tint = TextColor,
+                    modifier = Modifier
+                        .size(16.dp)
+                        .padding(end = 4.dp),
+                )
+            }
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                color = TextColor,
+            )
+        }
+    }
+}
+
+@Composable
+private fun LeaveItToChanceCard(
+    onSurpriseMe: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF221A15)),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "Leave it to chance",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFFFF0D0),
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "✨",
+                        fontSize = 18.sp,
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Text(
+                    text = "Not sure what you need right now?\nWe'll pick one tool for you.",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = Color(0xFFD3C2A9),
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Button(
+                    onClick = onSurpriseMe,
+                    shape = RoundedCornerShape(20.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryColor),
+                    contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = null,
+                        tint = TextColor,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Surprise me",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = TextColor,
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Image(
+                painter = painterResource(id = R.drawable.ic_mascot_log),
+                contentDescription = "Mascot",
+                modifier = Modifier
+                    .size(80.dp)
+                    .clip(CircleShape),
+                contentScale = ContentScale.Crop,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SurpriseResultBanner(
+    tool: Tool,
+    onOpenTool: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onOpenTool() },
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = SecondaryColor),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "🎲 We picked for you:",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = TextColor.copy(alpha = 0.8f),
+                )
+                Text(
+                    text = tool.name,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = TextColor,
+                )
+            }
+            Button(
+                onClick = onOpenTool,
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryColor),
+                shape = RoundedCornerShape(14.dp),
+            ) {
+                Text("Open", color = TextColor, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ToolCardItem(
+    tool: Tool,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .clickable { onClick() },
+        color = Color(0xFFEFE0C2),
+        shape = RoundedCornerShape(18.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(52.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(SecondaryColor),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = getToolIcon(tool.id),
+                    contentDescription = tool.name,
+                    tint = TextColor,
+                    modifier = Modifier.size(26.dp),
+                )
+            }
+
+            Spacer(modifier = Modifier.width(14.dp))
+
+            Column(
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(
+                    text = tool.name,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = TextColor,
+                )
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                Text(
+                    text = tool.description,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = TextColor.copy(alpha = 0.7f),
+                    fontSize = 13.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = "Open",
+                tint = TextColor.copy(alpha = 0.6f),
+                modifier = Modifier.size(22.dp),
+            )
+        }
+    }
+}
+
+private fun getToolIcon(toolId: String): ImageVector {
+    return when (toolId) {
+        "blow_it_out" -> Icons.Default.Whatshot
+        "photo_of_the_day" -> Icons.Default.CameraAlt
+        "custom_breathing" -> Icons.Default.Air
+        "achievement_jar" -> Icons.Default.EmojiEvents
+        "scream_tank" -> Icons.Default.Mic
+        "body_mapping" -> Icons.Default.AccessibilityNew
+        "emotion_detective" -> Icons.Default.Psychology
+        else -> Icons.Default.AutoAwesome
     }
 }
 

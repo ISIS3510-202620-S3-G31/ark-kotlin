@@ -80,7 +80,13 @@ fun AppNavigation(
                 )
             }
             composable("home_screen") {
-                HomeScreen()
+                HomeScreen(
+                    onNavigateToTool = { toolId ->
+                        if (toolId == "photo_of_the_day") {
+                            navController.navigate("photo_of_the_day_screen")
+                        }
+                    }
+                )
             }
             composable("stats_screen") {
                 StatsScreen()

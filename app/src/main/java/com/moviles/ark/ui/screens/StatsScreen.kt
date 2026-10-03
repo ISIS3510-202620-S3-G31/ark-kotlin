@@ -37,6 +37,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -70,6 +71,11 @@ fun StatsScreen(
     viewModel: StatsViewModel = viewModel(factory = StatsViewModel.Factory)
 ) {
     val uiState by viewModel.uiState.collectAsState()
+
+    //recarga automaticamente al entrar a la pantalla para mostrar check-ins recientes
+    LaunchedEffect(Unit) {
+        viewModel.loadStats()
+    }
 
     StatsScreenContent(
         stats = uiState.stats,
@@ -143,7 +149,7 @@ fun StatsScreenContent(
     }
 }
 
-//vista cuando el usuario aun no ha registrado ningun checkin
+//vista cuando el usuario aun no ha registrado check-ins ni herramientas
 @Composable
 private fun StatsEmptyView() {
     Box(
@@ -181,14 +187,14 @@ private fun StatsEmptyView() {
                 }
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    text = "No check-ins yet",
+                    text = "No check-ins or tool usage yet",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = TextColor
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Complete your daily mood check-in to see your emotional journey and stats here!",
+                    text = "Start your first check-in or explore wellbeing tools to see your emotional journey and stats here!",
                     style = MaterialTheme.typography.bodyLarge,
                     color = TextColor.copy(alpha = 0.7f),
                     textAlign = TextAlign.Center,

@@ -39,6 +39,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.R
 import com.moviles.ark.domain.models.UserModel
+import com.moviles.ark.domain.models.UserProfile
 import com.moviles.ark.domain.repositories.AuthRepository
 import com.moviles.ark.ui.theme.AppTheme
 import com.moviles.ark.ui.viewmodels.RegisterViewModel
