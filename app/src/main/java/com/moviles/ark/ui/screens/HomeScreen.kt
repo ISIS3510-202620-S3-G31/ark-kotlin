@@ -69,6 +69,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.ArkApplication
+import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.R
 import com.moviles.ark.data.repositories.FakeToolRepository
 import com.moviles.ark.domain.models.Tool
@@ -105,7 +106,8 @@ fun HomeScreen(
     val filteredTools = if (selectedCategory == "all") {
         allTools
     } else {
-        allTools.filter { it.categoryId == selectedCategory }
+        //la categoria ahora es el enum ToolCategory (#22); fromId traduce el id del filtro ("calm_down", etc.)
+        allTools.filter { it.category == ToolCategory.fromId(selectedCategory) }
     }
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
