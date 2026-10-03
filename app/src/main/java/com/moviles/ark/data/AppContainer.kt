@@ -10,27 +10,26 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.firestore
 import com.moviles.ark.data.local.ArkDatabase
 import com.moviles.ark.data.local.daos.FeedbackDao
+import com.moviles.ark.data.local.sensors.AudioPlayerHelper
 import com.moviles.ark.data.local.sensors.Location
+import com.moviles.ark.data.local.sensors.NetworkConnectivityObserver
 import com.moviles.ark.data.repositories.AnalyticsRepositoryImpl
 import com.moviles.ark.data.repositories.AuthRepositoryImpl
-import com.moviles.ark.data.repositories.FakePhotoRepository
+import com.moviles.ark.data.repositories.BreathingRepositoryImpl
 import com.moviles.ark.data.repositories.FakeToolRepository
 import com.moviles.ark.data.repositories.LocationRepositoryImpl
 import com.moviles.ark.data.repositories.MoodRepositoryImpl
+import com.moviles.ark.data.repositories.PhotoRepositoryImpl
 import com.moviles.ark.data.repositories.StatsRepositoryImpl
 import com.moviles.ark.domain.models.ToolLatencyTracker
 import com.moviles.ark.domain.repositories.AnalyticsRepository
 import com.moviles.ark.domain.repositories.AuthRepository
+import com.moviles.ark.domain.repositories.BreathingRepository
 import com.moviles.ark.domain.repositories.LocationRepository
 import com.moviles.ark.domain.repositories.MoodRepository
 import com.moviles.ark.domain.repositories.PhotoRepository
 import com.moviles.ark.domain.repositories.StatsRepository
 import com.moviles.ark.domain.repositories.ToolRepository
-
-import com.moviles.ark.data.local.sensors.AudioPlayerHelper
-import com.moviles.ark.data.repositories.BreathingRepositoryImpl
-import com.moviles.ark.domain.repositories.BreathingRepository
-import com.moviles.ark.data.local.sensors.NetworkConnectivityObserver
 
 interface AppContainer {
     val auth: FirebaseAuth
@@ -67,8 +66,8 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     // fake catalog until the Room implementation of #9 is ready; then only this line changes
     override val toolRepository: ToolRepository by lazy { FakeToolRepository() }
     override val statsRepository: StatsRepository by lazy { StatsRepositoryImpl(auth, firestore) }
-    // fake photos in memory until #26 saves them in Room and filesDir; then only this line changes
-    override val photoRepository: PhotoRepository by lazy { FakePhotoRepository() }
+    // real photo repository with Room persistence and internal app private storage (context.filesDir) (#26)
+    override val photoRepository: PhotoRepository by lazy { PhotoRepositoryImpl(context, database.photoEntryDao()) }
     override val analyticsRepository: AnalyticsRepository by lazy { AnalyticsRepositoryImpl(Firebase.analytics) }
     // one tracker for the whole app: the tap on a tool and its screen live in different places (#8)
     override val toolLatencyTracker: ToolLatencyTracker by lazy { ToolLatencyTracker(analyticsRepository) }
