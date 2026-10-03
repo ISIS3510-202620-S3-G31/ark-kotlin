@@ -1,11 +1,16 @@
 package com.moviles.ark.ui.screens
 
+import android.Manifest
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.media.ExifInterface
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import com.moviles.ark.data.local.sensors.CameraHelper
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -32,6 +37,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -47,8 +53,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.withFrameNanos
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -66,7 +75,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.domain.models.PhotoDay
 import com.moviles.ark.domain.models.PhotoDayState
-import com.moviles.ark.domain.models.PhotoEntry
+import com.moviles.ark.domain.models.PhotoEntryModel
 import com.moviles.ark.ui.theme.AppTheme
 import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.theme.FigtreeFontFamily
@@ -85,12 +94,12 @@ import java.io.InputStream
 private val CardFill = TextColor.copy(alpha = 0.06f)
 
 //pantalla sin estado: solo dibuja lo que le llega en uiState y avisa los clics
-//onTakePhotoClick es null mientras no exista la camara (#31): el boton se muestra desactivado
 @Composable
 fun PhotoOfTheDayScreen(
     uiState: PhotoOfTheDayUiState,
     onBack: () -> Unit,
     onTakePhotoClick: (() -> Unit)?,
+    onPickPhotoClick: (() -> Unit)? = null,
     onCaptionChange: (String) -> Unit,
     onRetakeClick: () -> Unit,
     onSaveClick: () -> Unit
@@ -124,7 +133,10 @@ fun PhotoOfTheDayScreen(
                     onRetakeClick = onRetakeClick,
                     onSaveClick = onSaveClick
                 )
-                else -> EmptyPhotoSection(onTakePhotoClick = onTakePhotoClick)
+                else -> EmptyPhotoSection(
+                    onTakePhotoClick = onTakePhotoClick,
+                    onPickPhotoClick = onPickPhotoClick
+                )
             }
 
             if (uiState.errorMessage != null) {
@@ -205,9 +217,12 @@ private fun DayDot(day: PhotoDay) {
     }
 }
 
-//todavia no hay foto hoy: visor vacio y boton para tomarla
+//todavia no hay foto hoy: visor vacio y botones para tomarla o seleccionarla
 @Composable
-private fun EmptyPhotoSection(onTakePhotoClick: (() -> Unit)?) {
+private fun EmptyPhotoSection(
+    onTakePhotoClick: (() -> Unit)?,
+    onPickPhotoClick: (() -> Unit)? = null
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -236,9 +251,22 @@ private fun EmptyPhotoSection(onTakePhotoClick: (() -> Unit)?) {
     ) {
         Icon(Icons.Filled.PhotoCamera, contentDescription = null, modifier = Modifier.size(20.dp))
         Spacer(modifier = Modifier.width(8.dp))
-        Text("Take the photo", style = MaterialTheme.typography.labelLarge)
+        Text("Take photo with camera", style = MaterialTheme.typography.labelLarge)
     }
-    if (onTakePhotoClick == null) {
+    if (onPickPhotoClick != null) {
+        Spacer(modifier = Modifier.height(10.dp))
+        OutlinedButton(
+            onClick = { onPickPhotoClick() },
+            modifier = Modifier.fillMaxWidth().height(50.dp),
+            border = BorderStroke(1.dp, SecondaryColor),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = TextColor)
+        ) {
+            Icon(Icons.Filled.Image, contentDescription = null, tint = TextColor, modifier = Modifier.size(20.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Choose from gallery", style = MaterialTheme.typography.labelLarge)
+        }
+    }
+    if (onTakePhotoClick == null && onPickPhotoClick == null) {
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             "The camera will be available soon.",
@@ -273,7 +301,7 @@ private fun PendingPhotoSection(
         label = { Text("Add a note (optional)", style = LocalTextStyle.current.copy(fontFamily = FigtreeFontFamily)) },
         supportingText = {
             Text(
-                "${caption.length} / ${PhotoEntry.MAX_CAPTION_LENGTH}",
+                "${caption.length} / ${PhotoEntryModel.MAX_CAPTION_LENGTH}",
                 style = LocalTextStyle.current.copy(fontFamily = FigtreeFontFamily),
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.End
@@ -317,7 +345,7 @@ private fun PendingPhotoSection(
 
 //ya hay foto hoy: se muestra con su nota (una foto por dia)
 @Composable
-private fun SavedPhotoSection(photo: PhotoEntry) {
+private fun SavedPhotoSection(photo: PhotoEntryModel) {
     PhotoThumbnail(path = photo.localFilePath, modifier = Modifier.fillMaxWidth().aspectRatio(3f / 4f))
     Spacer(modifier = Modifier.height(16.dp))
     Row(
@@ -405,7 +433,59 @@ fun PhotoOfTheDayRoute(
     viewModel: PhotoOfTheDayViewModel = viewModel(factory = PhotoOfTheDayViewModel.Factory),
     onBack: () -> Unit
 ) {
+    val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val cameraHelper = remember { CameraHelper(context) }
+    var currentPhotoUri by remember { mutableStateOf<Uri?>(null) }
+
+    //launcher para capturar foto con la camara del dispositivo (#31)
+    val takePictureLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        if (success && currentPhotoUri != null) {
+            viewModel.onPhotoCaptured(currentPhotoUri.toString())
+        }
+    }
+
+    //launcher para seleccionar foto de la galeria mediante PickVisualMedia (#31)
+    val pickVisualMediaLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.onPhotoCaptured(uri.toString())
+        }
+    }
+
+    //launcher para solicitar el permiso de camara al usuario (#31)
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            val uri = cameraHelper.createTempPictureUri()
+            if (uri != null) {
+                currentPhotoUri = uri
+                takePictureLauncher.launch(uri)
+            }
+        }
+    }
+
+    val onTakePhoto = {
+        if (cameraHelper.hasCameraPermission()) {
+            val uri = cameraHelper.createTempPictureUri()
+            if (uri != null) {
+                currentPhotoUri = uri
+                takePictureLauncher.launch(uri)
+            }
+        } else {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    val onPickPhoto = {
+        pickVisualMediaLauncher.launch(
+            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+        )
+    }
 
     //#8: se espera al siguiente cuadro; para entonces el primer dibujo de la pantalla ya termino
     LaunchedEffect(Unit) {
@@ -416,8 +496,8 @@ fun PhotoOfTheDayRoute(
     PhotoOfTheDayScreen(
         uiState = uiState,
         onBack = onBack,
-        //#31: aqui se conecta la camara; cuando entregue la foto, se llama viewModel.onPhotoCaptured(uri.toString())
-        onTakePhotoClick = null,
+        onTakePhotoClick = onTakePhoto,
+        onPickPhotoClick = onPickPhoto,
         onCaptionChange = viewModel::onCaptionChange,
         onRetakeClick = viewModel::onRetakeClick,
         onSaveClick = viewModel::onSaveClick

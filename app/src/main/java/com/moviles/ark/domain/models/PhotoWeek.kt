@@ -49,7 +49,7 @@ object PhotoWeek {
     }
 
     //la tira de 7 dias con el estado de cada uno
-    fun build(photos: List<PhotoEntry>, now: Long, zone: TimeZone): List<PhotoDay> {
+    fun build(photos: List<PhotoEntryModel>, now: Long, zone: TimeZone): List<PhotoDay> {
         val starts = dayStarts(now, zone)
         return (0 until 7).map { index ->
             val from = starts[index]
@@ -66,7 +66,7 @@ object PhotoWeek {
     }
 
     //la foto de hoy, si ya hay; si hay varias, la mas reciente
-    fun todayPhoto(photos: List<PhotoEntry>, now: Long, zone: TimeZone): PhotoEntry? {
+    fun todayPhoto(photos: List<PhotoEntryModel>, now: Long, zone: TimeZone): PhotoEntryModel? {
         val starts = dayStarts(now, zone)
         val today = (0 until 7).first { now >= starts[it] && now < starts[it + 1] }
         return photos

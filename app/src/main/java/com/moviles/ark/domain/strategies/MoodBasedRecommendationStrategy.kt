@@ -40,7 +40,7 @@ class MoodBasedRecommendationStrategy(
          */
         fun mapEmotionToToolCategories(emotion: Any): Set<ToolCategory> {
             val name = when (emotion) {
-                is CompositeEmotion -> emotion.name
+                is Emotion -> emotion.name
                 is String -> emotion.uppercase()
                 else -> emotion.toString().uppercase()
             }

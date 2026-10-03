@@ -1,8 +1,7 @@
 package com.moviles.ark.domain.models
 
-//una foto del dia guardada en el telefono (#25, #26)
-//el repositorio la arma desde la tabla photo_entries (PhotoEntryEntity)
-data class PhotoEntry(
+//modelo de datos de una foto del dia guardada en el telefono (#25, #26, #31)
+data class PhotoEntryModel(
     val id: Long = 0,
     //ruta del archivo dentro del almacenamiento privado de la app
     val localFilePath: String,
