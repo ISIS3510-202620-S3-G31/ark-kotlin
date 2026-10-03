@@ -6,13 +6,32 @@ open class Tool(
     open val id: String,
     open val name: String,
     open val description: String,
-    // Filtro del tool hub: "calm_down", "release", "reflect" o "celebrate"
-    open val category: String,
+    // Filtro del tool hub expresado de forma fuertemente tipada con ToolCategory
+    open val category: ToolCategory,
     // Forma de interactuar: "voice", "text", "touch" o "photo" (la usa la bq del #34)
     open val format: String,
     // Nombre del drawable del icono
     open val iconName: String,
 ) {
+    // Constructor secundario para mantener compatibilidad con codigo/entidades que usan String
+    constructor(
+        id: String,
+        name: String,
+        description: String,
+        categoryString: String,
+        format: String,
+        iconName: String
+    ) : this(
+        id = id,
+        name = name,
+        description = description,
+        category = ToolCategory.fromId(categoryString),
+        format = format,
+        iconName = iconName
+    )
+
+    val categoryId: String get() = category.id
+
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is Tool) return false
@@ -35,6 +54,7 @@ open class Tool(
     }
 
     override fun toString(): String {
-        return "Tool(id='$id', name='$name', description='$description', category='$category', format='$format', iconName='$iconName')"
+        return "Tool(id='$id', name='$name', description='$description', category=$category, format='$format', iconName='$iconName')"
     }
 }
+
