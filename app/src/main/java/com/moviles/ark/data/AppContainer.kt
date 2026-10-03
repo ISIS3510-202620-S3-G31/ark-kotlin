@@ -13,6 +13,7 @@ import com.moviles.ark.data.local.daos.FeedbackDao
 import com.moviles.ark.data.local.sensors.AudioPlayerHelper
 import com.moviles.ark.data.local.sensors.Location
 import com.moviles.ark.data.local.sensors.NetworkConnectivityObserver
+import com.moviles.ark.data.local.sensors.SyncManager
 import com.moviles.ark.data.repositories.AnalyticsRepositoryImpl
 import com.moviles.ark.data.repositories.AuthRepositoryImpl
 import com.moviles.ark.data.repositories.BreathingRepositoryImpl
@@ -21,6 +22,7 @@ import com.moviles.ark.data.repositories.LocationRepositoryImpl
 import com.moviles.ark.data.repositories.MoodRepositoryImpl
 import com.moviles.ark.data.repositories.PhotoRepositoryImpl
 import com.moviles.ark.data.repositories.StatsRepositoryImpl
+import com.moviles.ark.data.repositories.SyncRepositoryImpl
 import com.moviles.ark.domain.models.ToolLatencyTracker
 import com.moviles.ark.domain.repositories.AnalyticsRepository
 import com.moviles.ark.domain.repositories.AuthRepository
@@ -29,15 +31,8 @@ import com.moviles.ark.domain.repositories.LocationRepository
 import com.moviles.ark.domain.repositories.MoodRepository
 import com.moviles.ark.domain.repositories.PhotoRepository
 import com.moviles.ark.domain.repositories.StatsRepository
-import com.moviles.ark.domain.repositories.ToolRepository
-
-import com.moviles.ark.data.local.sensors.AudioPlayerHelper
-import com.moviles.ark.data.repositories.BreathingRepositoryImpl
-import com.moviles.ark.domain.repositories.BreathingRepository
-import com.moviles.ark.data.local.sensors.NetworkConnectivityObserver
-import com.moviles.ark.data.local.sensors.SyncManager
-import com.moviles.ark.data.repositories.SyncRepositoryImpl
 import com.moviles.ark.domain.repositories.SyncRepository
+import com.moviles.ark.domain.repositories.ToolRepository
 
 interface AppContainer {
     val auth: FirebaseAuth
