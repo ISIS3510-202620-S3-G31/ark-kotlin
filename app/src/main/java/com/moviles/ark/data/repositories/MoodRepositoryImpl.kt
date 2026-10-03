@@ -72,6 +72,24 @@ class MoodRepositoryImpl(
         !snapshot.isEmpty
     }.recover { false }
 
+    override suspend fun getCheckInTimestampsSince(fromMillis: Long): Result<List<Long>> = runCatching {
+        val currentUserId = auth.currentUser?.uid ?: return@runCatching emptyList()
+        val snapshot = firestore.collection("users")
+            .document(currentUserId)
+            .collection("mood_checkins")
+            .whereGreaterThanOrEqualTo("timestamp", fromMillis)
+            .get()
+            .await()
+        snapshot.documents.mapNotNull { it.getLong("timestamp") }
+    }.onFailure { error ->
+        CrashlyticsHelper.logNonFatal(
+            componentName = "MoodRepository",
+            action = "getCheckInTimestampsSince",
+            throwable = error,
+            extraKeys = mapOf("fromMillis" to fromMillis)
+        )
+    }
+
     override suspend fun getLatestCheckIn(): Result<CheckInModel?> = runCatching {
         val currentUserId = auth.currentUser?.uid ?: return@runCatching null
         val snapshot = firestore.collection("users")

@@ -9,7 +9,7 @@ data class ProfileUiState(
     val memberSince: String = "",
     //dias desde que creo la cuenta, contando el dia del registro como el 1; 0 si no se conoce
     val daysWithArk: Int = 0,
-    //dias seguidos con check-in; queda en 0 hasta que se puedan leer los check-ins guardados
+    //dias seguidos con check-in (#96); 0 si no hay racha o no se pudo leer
     val streakDays: Int = 0,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,

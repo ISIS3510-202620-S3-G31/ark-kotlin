@@ -9,5 +9,7 @@ interface MoodRepository {
     suspend fun hasCheckedInToday(): Result<Boolean>
     //obtiene el ultimo check-in registrado por el usuario
     suspend fun getLatestCheckIn(): Result<CheckInModel?>
+    //fechas (en milisegundos) de los check-ins desde una fecha; la racha del perfil solo necesita los dias (#96)
+    suspend fun getCheckInTimestampsSince(fromMillis: Long): Result<List<Long>>
 }
 

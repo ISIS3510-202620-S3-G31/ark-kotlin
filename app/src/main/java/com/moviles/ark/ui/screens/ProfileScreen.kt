@@ -176,6 +176,11 @@ fun ProfileRoute(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
+    //cada vez que se abre la pestana se recalcula la racha (#96)
+    LaunchedEffect(Unit) {
+        viewModel.loadStreak()
+    }
+
     //el viewmodel no navega: solo marca isSignedOut y la pantalla reacciona
     LaunchedEffect(uiState.isSignedOut) {
         if (uiState.isSignedOut) onSignedOut()
