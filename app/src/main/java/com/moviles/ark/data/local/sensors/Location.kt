@@ -55,6 +55,11 @@ class Location(private val context: Context) {
                 return@suspendCancellableCoroutine
             }
         } catch (e: SecurityException) {
+            com.moviles.ark.data.remote.CrashlyticsHelper.logNonFatal(
+                componentName = "LocationSensor",
+                action = "fetchCoordinates_security",
+                throwable = e
+            )
         }
 
         fusedLocationClient.lastLocation
@@ -71,13 +76,30 @@ class Location(private val context: Context) {
                                     continuation.resume(null)
                                 }
                             }
-                            .addOnFailureListener { continuation.resume(null) }
+                            .addOnFailureListener { freshLocationError ->
+                                com.moviles.ark.data.remote.CrashlyticsHelper.logNonFatal(
+                                    componentName = "LocationSensor",
+                                    action = "getCurrentLocation_failure",
+                                    throwable = freshLocationError
+                                )
+                                continuation.resume(null)
+                            }
                     } catch (e: SecurityException) {
+                        com.moviles.ark.data.remote.CrashlyticsHelper.logNonFatal(
+                            componentName = "LocationSensor",
+                            action = "getCurrentLocation_security",
+                            throwable = e
+                        )
                         continuation.resume(null)
                     }
                 }
             }
-            .addOnFailureListener {
+            .addOnFailureListener { error ->
+                com.moviles.ark.data.remote.CrashlyticsHelper.logNonFatal(
+                    componentName = "LocationSensor",
+                    action = "fusedLocation_lastLocation_failure",
+                    throwable = error
+                )
                 continuation.resume(null)
             }
     }
@@ -99,7 +121,17 @@ class Location(private val context: Context) {
                 "Location captured"
             }
         } catch (e: Exception) {
+            com.moviles.ark.data.remote.CrashlyticsHelper.logNonFatal(
+                componentName = "LocationSensor",
+                action = "resolveCityName",
+                throwable = e,
+                extraKeys = mapOf(
+                    "latitude" to latitude,
+                    "longitude" to longitude
+                )
+            )
             "Location captured"
         }
     }
 }
+
