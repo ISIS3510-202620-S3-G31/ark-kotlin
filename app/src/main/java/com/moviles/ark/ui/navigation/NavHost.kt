@@ -4,27 +4,27 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.runtime.getValue
-import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.navArgument
 import com.moviles.ark.ArkApplication
 import com.moviles.ark.domain.repositories.AuthRepository
 import com.moviles.ark.ui.components.BottomNavItem
 import com.moviles.ark.ui.components.BottomNavigationBar
 import com.moviles.ark.ui.components.OfflineBannerComponent
 import com.moviles.ark.ui.screens.CustomBreathingRoute
-import com.moviles.ark.ui.screens.HomeScreen
+import com.moviles.ark.ui.screens.HomeRoute
 import com.moviles.ark.ui.screens.LoginRoute
 import com.moviles.ark.ui.screens.MoodCheckInScreen
 import com.moviles.ark.ui.screens.PhotoOfTheDayRoute
-import com.moviles.ark.ui.screens.PlaceholderScreen
+import com.moviles.ark.ui.screens.PostToolFeedbackRoute
 import com.moviles.ark.ui.screens.ProfileRoute
 import com.moviles.ark.ui.screens.RegisterScreen
 import com.moviles.ark.ui.screens.StatsScreen
@@ -100,7 +100,7 @@ fun AppNavigation(
                 )
             }
             composable("home_screen") {
-                com.moviles.ark.ui.screens.HomeRoute(
+                HomeRoute(
                     onNavigateToTool = { toolId ->
                         when (toolId) {
                             "photo_of_the_day" -> navController.navigate("photo_of_the_day_screen")
@@ -127,18 +127,49 @@ fun AppNavigation(
                     }
                 })
             }
-            //herramienta foto del dia (#25); se abre desde el catalogo de herramientas
+            //herramienta foto del dia (#25); al guardar la foto navega a feedback (#21)
             composable("photo_of_the_day_screen") {
-                PhotoOfTheDayRoute(onBack = { navController.popBackStack() })
+                PhotoOfTheDayRoute(
+                    onBack = { navController.popBackStack("home_screen", inclusive = false) },
+                    onPhotoSaved = {
+                        navController.navigate("post_tool_feedback/photo_of_the_day") {
+                            popUpTo("photo_of_the_day_screen") { inclusive = true }
+                        }
+                    }
+                )
             }
-            //herramienta de respiracion guiada con musica ambiental de Jamendo (#7)
+            //herramienta de respiracion guiada (#7); si completo al menos 1 ciclo navega a feedback (#21, #82)
             composable("custom_breathing_screen") {
-                CustomBreathingRoute(onBack = { navController.popBackStack() })
+                CustomBreathingRoute(onBack = { wasCompleted ->
+                    if (wasCompleted) {
+                        navController.navigate("post_tool_feedback/custom_breathing") {
+                            popUpTo("custom_breathing_screen") { inclusive = true }
+                        }
+                    } else {
+                        navController.popBackStack("home_screen", inclusive = false)
+                    }
+                })
             }
             composable("checkin_screen") {
                 MoodCheckInScreen(
                     onNavigateBack = { navController.popBackStack() },
                     onCheckInSaved = { navController.popBackStack() }
+                )
+            }
+            //pantalla de retroalimentacion post-herramienta (#21, PR #81)
+            composable(
+                route = "post_tool_feedback/{toolId}",
+                arguments = listOf(navArgument("toolId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val toolId = backStackEntry.arguments?.getString("toolId") ?: ""
+                PostToolFeedbackRoute(
+                    toolId = toolId,
+                    onFeedbackSubmitted = {
+                        navController.popBackStack("home_screen", inclusive = false)
+                    },
+                    onDismiss = {
+                        navController.popBackStack("home_screen", inclusive = false)
+                    }
                 )
             }
         }

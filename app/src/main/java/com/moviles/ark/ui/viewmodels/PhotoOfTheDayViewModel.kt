@@ -100,13 +100,17 @@ class PhotoOfTheDayViewModel(
         viewModelScope.launch {
             val result = photoRepository.savePhoto(uri, entry.caption, entry.takenAt)
             result.onSuccess {
-                //la foto nueva llega sola por observeWeek; aqui solo se limpia lo pendiente
-                _uiState.update { it.copy(isSaving = false, pendingPhotoUri = null, caption = "") }
+                //la foto nueva llega sola por observeWeek; aqui solo se limpia lo pendiente y avisa que se guardo
+                _uiState.update { it.copy(isSaving = false, pendingPhotoUri = null, caption = "", isPhotoSaved = true) }
             }
             result.onFailure {
                 _uiState.update { it.copy(isSaving = false, errorMessage = "Could not save your photo, try again") }
             }
         }
+    }
+
+    fun onNavigatedToFeedback() {
+        _uiState.update { it.copy(isPhotoSaved = false) }
     }
 
     //milisegundos -> "Friday, October 2"

@@ -17,5 +17,7 @@ data class PhotoOfTheDayUiState(
     val isLoading: Boolean = true,
     //guardando la foto nueva
     val isSaving: Boolean = false,
+    //flag para navegar al feedback tras guardar
+    val isPhotoSaved: Boolean = false,
     val errorMessage: String? = null
 )
