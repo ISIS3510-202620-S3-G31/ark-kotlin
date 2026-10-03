@@ -1,5 +1,6 @@
 package com.moviles.ark.domain.strategies
 
+import com.moviles.ark.domain.models.CheckInModel
 import com.moviles.ark.domain.repositories.MoodRepository
 
 /**
@@ -12,15 +13,16 @@ interface RecommendationContextResolver {
 
 /**
  * Default implementation of RecommendationContextResolver.
- * Resolves today's/latest check-in from MoodRepository and optional tool usage counts.
+ * Resolves today's/latest check-in and tool usage counts.
  */
 class DefaultRecommendationContextResolver(
     private val moodRepository: MoodRepository? = null,
+    private val latestCheckInProvider: (suspend () -> CheckInModel?)? = null,
     private val usageCountsProvider: (suspend () -> Map<String, Int>)? = null
 ) : RecommendationContextResolver {
 
     override suspend fun resolveContext(): RecommendationContext {
-        val latestCheckIn = moodRepository?.getLatestCheckIn()?.getOrNull()
+        val latestCheckIn = latestCheckInProvider?.invoke()
         val usageCounts = usageCountsProvider?.invoke().orEmpty()
 
         return RecommendationContext(
@@ -29,3 +31,4 @@ class DefaultRecommendationContextResolver(
         )
     }
 }
+

@@ -26,6 +26,10 @@ import com.moviles.ark.domain.repositories.PhotoRepository
 import com.moviles.ark.data.repositories.FakePhotoRepository
 import com.moviles.ark.domain.repositories.ToolRepository
 
+import com.moviles.ark.data.local.sensors.AudioPlayerHelper
+import com.moviles.ark.data.repositories.BreathingRepositoryImpl
+import com.moviles.ark.domain.repositories.BreathingRepository
+
 interface AppContainer {
     val auth: FirebaseAuth
     val firestore: FirebaseFirestore
@@ -37,6 +41,8 @@ interface AppContainer {
     val photoRepository: PhotoRepository
     val analyticsRepository: AnalyticsRepository
     val toolLatencyTracker: ToolLatencyTracker
+    val breathingRepository: BreathingRepository
+    val audioPlayerHelper: AudioPlayerHelper
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -62,4 +68,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val analyticsRepository: AnalyticsRepository by lazy { AnalyticsRepositoryImpl(Firebase.analytics) }
     // one tracker for the whole app: the tap on a tool and its screen live in different places (#8)
     override val toolLatencyTracker: ToolLatencyTracker by lazy { ToolLatencyTracker(analyticsRepository) }
+    // repositorio de la herramienta de respiracion con pistas de jamendo (#7)
+    override val breathingRepository: BreathingRepository by lazy { BreathingRepositoryImpl() }
+    override val audioPlayerHelper: AudioPlayerHelper by lazy { AudioPlayerHelper(context) }
 }

@@ -12,6 +12,7 @@ import androidx.navigation.compose.rememberNavController
 import com.moviles.ark.domain.repositories.AuthRepository
 import com.moviles.ark.ui.components.BottomNavItem
 import com.moviles.ark.ui.components.BottomNavigationBar
+import com.moviles.ark.ui.screens.CustomBreathingRoute
 import com.moviles.ark.ui.screens.HomeScreen
 import com.moviles.ark.ui.screens.LoginRoute
 import com.moviles.ark.ui.screens.MoodCheckInScreen
@@ -84,6 +85,8 @@ fun AppNavigation(
                     onNavigateToTool = { toolId ->
                         if (toolId == "photo_of_the_day") {
                             navController.navigate("photo_of_the_day_screen")
+                        } else if (toolId == "custom_breathing") {
+                            navController.navigate("custom_breathing_screen")
                         }
                     }
                 )
@@ -109,6 +112,10 @@ fun AppNavigation(
             //herramienta foto del dia (#25); se abre desde el catalogo de herramientas
             composable("photo_of_the_day_screen") {
                 PhotoOfTheDayRoute(onBack = { navController.popBackStack() })
+            }
+            //herramienta de respiracion guiada con musica ambiental (#7)
+            composable("custom_breathing_screen") {
+                CustomBreathingRoute(onBack = { navController.popBackStack() })
             }
             composable("checkin_screen") {
                 MoodCheckInScreen(
