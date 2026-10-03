@@ -80,7 +80,7 @@ fun AppNavigation(
                 )
             }
             composable("home_screen") {
-                HomeScreen(
+                com.moviles.ark.ui.screens.HomeRoute(
                     onNavigateToTool = { toolId ->
                         if (toolId == "photo_of_the_day") {
                             navController.navigate("photo_of_the_day_screen")
