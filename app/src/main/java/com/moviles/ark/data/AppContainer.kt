@@ -3,16 +3,20 @@ package com.moviles.ark.data
 import android.content.Context
 import androidx.room.Room
 import com.google.firebase.Firebase
+import com.google.firebase.analytics.analytics
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.firestore
 import com.moviles.ark.data.local.ArkDatabase
 import com.moviles.ark.data.local.sensors.Location
+import com.moviles.ark.data.repositories.AnalyticsRepositoryImpl
 import com.moviles.ark.data.repositories.AuthRepositoryImpl
 import com.moviles.ark.data.repositories.FakeToolRepository
 import com.moviles.ark.data.repositories.LocationRepositoryImpl
 import com.moviles.ark.data.repositories.MoodRepositoryImpl
+import com.moviles.ark.domain.models.ToolLatencyTracker
+import com.moviles.ark.domain.repositories.AnalyticsRepository
 import com.moviles.ark.domain.repositories.AuthRepository
 import com.moviles.ark.domain.repositories.LocationRepository
 import com.moviles.ark.domain.repositories.MoodRepository
@@ -28,6 +32,8 @@ interface AppContainer {
     val moodRepository: MoodRepository
     val toolRepository: ToolRepository
     val photoRepository: PhotoRepository
+    val analyticsRepository: AnalyticsRepository
+    val toolLatencyTracker: ToolLatencyTracker
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -49,4 +55,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val toolRepository: ToolRepository by lazy { FakeToolRepository() }
     // fake photos in memory until #26 saves them in Room and filesDir; then only this line changes
     override val photoRepository: PhotoRepository by lazy { FakePhotoRepository() }
+    override val analyticsRepository: AnalyticsRepository by lazy { AnalyticsRepositoryImpl(Firebase.analytics) }
+    // one tracker for the whole app: the tap on a tool and its screen live in different places (#8)
+    override val toolLatencyTracker: ToolLatencyTracker by lazy { ToolLatencyTracker(analyticsRepository) }
 }

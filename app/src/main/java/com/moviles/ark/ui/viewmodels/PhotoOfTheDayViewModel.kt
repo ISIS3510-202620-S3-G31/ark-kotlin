@@ -8,6 +8,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
 import com.moviles.ark.domain.models.PhotoEntry
 import com.moviles.ark.domain.models.PhotoWeek
+import com.moviles.ark.domain.models.ToolLatencyTracker
 import com.moviles.ark.domain.repositories.PhotoRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,7 +25,9 @@ import java.util.TimeZone
 class PhotoOfTheDayViewModel(
     private val photoRepository: PhotoRepository,
     private val zone: TimeZone = TimeZone.getDefault(),
-    private val now: () -> Long = { System.currentTimeMillis() }
+    private val now: () -> Long = { System.currentTimeMillis() },
+    //mide cuanto tardo en abrirse la herramienta (#8); null en previews
+    private val toolLatencyTracker: ToolLatencyTracker? = null
 ) : ViewModel() {
     //privado: solo el viewmodel lo modifica
     private val _uiState = MutableStateFlow(PhotoOfTheDayUiState())
@@ -57,6 +60,11 @@ class PhotoOfTheDayViewModel(
                     }
                 }
         }
+    }
+
+    //la pantalla termino su primer dibujo: se cierra la medicion de latencia que empezo con el toque (#8)
+    fun onScreenRendered() {
+        toolLatencyTracker?.onToolRendered(TOOL_ID)
     }
 
     //la camara (#31) llama esto con la direccion de la foto que se tomo
@@ -110,10 +118,16 @@ class PhotoOfTheDayViewModel(
 
     //factory para que el viewmodel reciba el photoRepository del AppContainer
     companion object {
+        //id de la herramienta en el catalogo
+        const val TOOL_ID = "photo_of_the_day"
+
         val Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as ArkApplication
-                PhotoOfTheDayViewModel(app.container.photoRepository)
+                PhotoOfTheDayViewModel(
+                    photoRepository = app.container.photoRepository,
+                    toolLatencyTracker = app.container.toolLatencyTracker
+                )
             }
         }
     }
