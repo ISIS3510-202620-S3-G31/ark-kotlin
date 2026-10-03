@@ -9,9 +9,16 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.moviles.ark.ArkApplication
 import com.moviles.ark.domain.repositories.AuthRepository
 import com.moviles.ark.ui.components.BottomNavItem
 import com.moviles.ark.ui.components.BottomNavigationBar
+import com.moviles.ark.ui.components.OfflineBannerComponent
 import com.moviles.ark.ui.screens.CustomBreathingRoute
 import com.moviles.ark.ui.screens.HomeScreen
 import com.moviles.ark.ui.screens.LoginRoute
@@ -28,6 +35,14 @@ fun AppNavigation(
     authRepository: AuthRepository? = null
 ) {
     val navController = rememberNavController()
+    val context = LocalContext.current
+    val app = context.applicationContext as? ArkApplication
+    val connectivityObserver = app?.container?.networkConnectivityObserver
+
+    //observa en tiempo real el estado de la conexion para el banner offline (#32)
+    val isConnected by (connectivityObserver?.observe() ?: kotlinx.coroutines.flow.flowOf(true))
+        .collectAsStateWithLifecycle(initialValue = connectivityObserver?.isConnected() ?: true)
+
     //si ya hay una sesion activa en el celular entra directo a home
     val isUserLoggedIn = authRepository?.isLoggedIn() ?: false
     val startRoute = if (isUserLoggedIn) "home_screen" else "register_screen"
@@ -40,6 +55,10 @@ fun AppNavigation(
     Scaffold(
         containerColor = BackgroundColor,
         contentWindowInsets = WindowInsets(0),
+        topBar = {
+            //banner no invasivo de conexion offline (#32)
+            OfflineBannerComponent(isConnected = isConnected)
+        },
         bottomBar = {
             if (currentRoute in BottomNavItem.routes) {
                 BottomNavigationBar(
