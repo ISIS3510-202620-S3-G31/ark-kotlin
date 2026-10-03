@@ -3,6 +3,7 @@ package com.moviles.ark.data.local.entities
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import com.moviles.ark.domain.models.Tool
+import com.moviles.ark.domain.models.ToolCategory
 
 @Entity(tableName = "tools")
 data class ToolEntity(
@@ -21,7 +22,7 @@ fun ToolEntity.toDomain(): Tool {
         id = id,
         name = name,
         description = description,
-        category = category,
+        category = ToolCategory.fromId(category),
         format = format,
         iconName = iconName,
     )
@@ -32,8 +33,9 @@ fun Tool.toEntity(): ToolEntity {
         id = id,
         name = name,
         description = description,
-        category = category,
+        category = category.id,
         format = format,
         iconName = iconName,
     )
 }
+

@@ -38,7 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.R
-import com.moviles.ark.domain.models.User
+import com.moviles.ark.domain.models.UserModel
 import com.moviles.ark.domain.models.UserProfile
 import com.moviles.ark.domain.repositories.AuthRepository
 import com.moviles.ark.ui.theme.AppTheme
@@ -159,7 +159,7 @@ fun RegisterScreenPreview() {
     val fakeRepository = object : AuthRepository {
         override fun isLoggedIn() = false
         override suspend fun login(email: String, password: String) = Result.success(Unit)
-        override suspend fun registerUser(user: User) = Result.success(Unit)
+        override suspend fun registerUser(user: UserModel) = Result.success(Unit)
         override fun logout() {}
         override suspend fun getProfile() = Result.success(UserProfile("", "", 0L))
     }
