@@ -71,4 +71,50 @@ class MoodRepositoryImpl(
 
         !snapshot.isEmpty
     }.recover { false }
+
+    override suspend fun getLatestCheckIn(): Result<CheckInModel?> = runCatching {
+        val currentUserId = auth.currentUser?.uid ?: return@runCatching null
+        val snapshot = firestore.collection("users")
+            .document(currentUserId)
+            .collection("mood_checkins")
+            .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
+            .limit(1)
+            .get()
+            .await()
+
+        if (snapshot.isEmpty) return@runCatching null
+        val doc = snapshot.documents.first()
+        val timestamp = doc.getLong("timestamp") ?: System.currentTimeMillis()
+        val note = doc.getString("note").orEmpty()
+        val latitude = doc.getDouble("latitude")
+        val longitude = doc.getDouble("longitude")
+
+        @Suppress("UNCHECKED_CAST")
+        val emotionsList = doc.get("emotions") as? List<Map<String, Any>> ?: emptyList()
+        val parsedEmotions = emotionsList.mapNotNull { item ->
+            val name = item["name"] as? String ?: return@mapNotNull null
+            val intensity = (item["intensity"] as? Long)?.toInt() ?: 3
+            val enumVal = com.moviles.ark.domain.composite.Emotion.entries.find { it.name.equals(name, ignoreCase = true) } ?: return@mapNotNull null
+            com.moviles.ark.domain.composite.SingleEmotion(enumVal, intensity)
+        }
+
+        val moodComponent: com.moviles.ark.domain.composite.MoodComponent = if (parsedEmotions.size == 1) {
+            parsedEmotions.first()
+        } else if (parsedEmotions.size > 1) {
+            val compound = com.moviles.ark.domain.composite.CompoundMood()
+            parsedEmotions.forEach { compound.add(it) }
+            compound
+        } else {
+            com.moviles.ark.domain.composite.SingleEmotion(com.moviles.ark.domain.composite.Emotion.HAPPINESS, 3)
+        }
+
+        CheckInModel(
+            mood = moodComponent,
+            note = note,
+            latitude = latitude,
+            longitude = longitude,
+            timestamp = timestamp
+        )
+    }.recover { null }
 }
+
