@@ -45,9 +45,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -182,7 +180,7 @@ fun PostToolFeedbackScreen(
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
                     text = uiState.errorMessage,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.error,
                     textAlign = TextAlign.Center
                 )
@@ -231,7 +229,6 @@ fun PostToolFeedbackScreen(
                         Text(
                             text = "Save Feedback",
                             style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold,
                             color = TextColor
                         )
                     }
@@ -267,12 +264,11 @@ private fun HeaderSection(onDismiss: () -> Unit) {
             Text(
                 text = "Session Complete!",
                 style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
                 color = TextColor
             )
             Text(
                 text = "How was your experience?",
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyLarge,
                 color = TextColor.copy(alpha = 0.7f)
             )
         }
@@ -284,8 +280,8 @@ private fun CompletionBannerCard() {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFF2E3CD)),
-        border = BorderStroke(1.dp, Color(0xFFE2CEB5))
+        colors = CardDefaults.cardColors(containerColor = TextColor.copy(alpha = 0.06f)),
+        border = BorderStroke(1.dp, TextColor.copy(alpha = 0.12f))
     ) {
         Row(
             modifier = Modifier
@@ -311,13 +307,12 @@ private fun CompletionBannerCard() {
             Column {
                 Text(
                     text = "Great job finishing your exercise!",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.headlineSmall,
                     color = TextColor
                 )
                 Text(
                     text = "Your feedback helps tailor future suggestions.",
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodyLarge,
                     color = TextColor.copy(alpha = 0.7f)
                 )
             }
@@ -336,13 +331,12 @@ private fun SatisfactionRatingSection(
     ) {
         Text(
             text = "Rate your satisfaction",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
+            style = MaterialTheme.typography.headlineSmall,
             color = TextColor
         )
         Text(
             text = "Tap a rating from 1 to 5 stars",
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.bodyLarge,
             color = TextColor.copy(alpha = 0.7f)
         )
 
@@ -396,8 +390,7 @@ private fun SatisfactionRatingSection(
                         Spacer(modifier = Modifier.width(2.dp))
                         Text(
                             text = labels[star - 1],
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            style = MaterialTheme.typography.labelLarge,
                             color = if (isSelected) TextColor else TextColor.copy(alpha = 0.5f)
                         )
                     }
