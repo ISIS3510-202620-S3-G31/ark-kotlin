@@ -81,12 +81,11 @@ fun AppNavigation(
                 )
             }
             composable("home_screen") {
-                HomeScreen(
+                com.moviles.ark.ui.screens.HomeRoute(
                     onNavigateToTool = { toolId ->
-                        if (toolId == "photo_of_the_day") {
-                            navController.navigate("photo_of_the_day_screen")
-                        } else if (toolId == "custom_breathing") {
-                            navController.navigate("custom_breathing_screen")
+                        when (toolId) {
+                            "photo_of_the_day" -> navController.navigate("photo_of_the_day_screen")
+                            "custom_breathing" -> navController.navigate("custom_breathing_screen")
                         }
                     }
                 )
@@ -113,7 +112,7 @@ fun AppNavigation(
             composable("photo_of_the_day_screen") {
                 PhotoOfTheDayRoute(onBack = { navController.popBackStack() })
             }
-            //herramienta de respiracion guiada con musica ambiental (#7)
+            //herramienta de respiracion guiada con musica ambiental de Jamendo (#7)
             composable("custom_breathing_screen") {
                 CustomBreathingRoute(onBack = { navController.popBackStack() })
             }

@@ -78,57 +78,61 @@ import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.theme.PrimaryColor
 import com.moviles.ark.ui.theme.SecondaryColor
 import com.moviles.ark.ui.theme.TextColor
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.moviles.ark.ui.viewmodels.HomeUiState
+import com.moviles.ark.ui.viewmodels.HomeViewModel
 import com.moviles.ark.ui.viewmodels.MoodCheckInViewModel
 import kotlinx.coroutines.delay
 
 @Composable
+fun HomeRoute(
+    viewModel: HomeViewModel = viewModel(factory = HomeViewModel.Factory),
+    onNavigateToTool: (String) -> Unit = {}
+) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+    LaunchedEffect(uiState.navigateToToolId) {
+        uiState.navigateToToolId?.let { toolId ->
+            onNavigateToTool(toolId)
+            viewModel.onNavigatedToTool()
+        }
+    }
+
+    HomeScreen(
+        uiState = uiState,
+        onCategorySelect = viewModel::onCategorySelect,
+        onSurpriseMe = viewModel::onSurpriseMe,
+        onToolClick = viewModel::onToolClick,
+        onCheckInSaved = viewModel::onCheckInSaved,
+        onNavigateToTool = onNavigateToTool
+    )
+}
+
+@Composable
 fun HomeScreen(
+    uiState: HomeUiState = HomeUiState(tools = FakeToolRepository.sampleTools, filteredTools = FakeToolRepository.sampleTools),
+    onCategorySelect: (ToolCategory?) -> Unit = {},
+    onSurpriseMe: () -> Unit = {},
+    onToolClick: (String) -> Unit = {},
+    onCheckInSaved: () -> Unit = {},
     onNavigateToTool: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     var showCheckInPopup by remember { mutableStateOf(false) }
-    var isCheckInCompleted by remember { mutableStateOf(false) }
     var hasAutoPrompted by remember { mutableStateOf(false) }
-
-    var selectedCategory by remember { mutableStateOf("all") }
-    var surpriseTool by remember { mutableStateOf<Tool?>(null) }
-
-    val allTools = remember { FakeToolRepository.sampleTools }
-    val categories = listOf("all", "calm_down", "release", "reflect", "celebrate")
-    val categoryLabels = mapOf(
-        "all" to "All",
-        "calm_down" to "Calm down",
-        "release" to "Release",
-        "reflect" to "Reflect",
-        "celebrate" to "Celebrate"
-    )
-
-    val filteredTools = if (selectedCategory == "all") {
-        allTools
-    } else {
-        //la categoria ahora es el enum ToolCategory (#22); fromId traduce el id del filtro ("calm_down", etc.)
-        allTools.filter { it.category == ToolCategory.fromId(selectedCategory) }
-    }
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions -> }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(uiState.isCheckInCompleted) {
         locationPermissionLauncher.launch(
             arrayOf(
                 Manifest.permission.ACCESS_FINE_LOCATION,
                 Manifest.permission.ACCESS_COARSE_LOCATION
             )
         )
-        //revisa si el usuario ya hizo su check-in en el dia de hoy
-        val app = context.applicationContext as? ArkApplication
-        val moodRepository = app?.container?.moodRepository
-        val alreadyCheckedInToday = moodRepository?.hasCheckedInToday()?.getOrDefault(false) ?: false
-
-        if (alreadyCheckedInToday) {
-            isCheckInCompleted = true
-        } else if (!hasAutoPrompted) {
+        if (!uiState.isCheckInCompleted && !hasAutoPrompted) {
             delay(1500)
             hasAutoPrompted = true
             showCheckInPopup = true
@@ -189,7 +193,7 @@ fun HomeScreen(
             }
 
             //tarjeta para invitar a hacer el checkin si aun no lo ha hecho
-            if (!isCheckInCompleted) {
+            if (!uiState.isCheckInCompleted) {
                 item {
                     MoodCheckInPromptCard(
                         onClick = { showCheckInPopup = true }
@@ -197,46 +201,53 @@ fun HomeScreen(
                 }
             }
 
-            //tarjeta leave it to chance
+            //tarjeta leave it to chance (Surprise me - seleccion al azar)
             item {
                 LeaveItToChanceCard(
-                    onSurpriseMe = {
-                        surpriseTool = allTools.random()
-                    }
+                    onSurpriseMe = onSurpriseMe
                 )
             }
 
             //banner si eligio una herramienta al azar
-            if (surpriseTool != null) {
+            if (uiState.surpriseTool != null) {
                 item {
                     SurpriseResultBanner(
-                        tool = surpriseTool!!,
-                        onOpenTool = { onNavigateToTool(surpriseTool!!.id) }
+                        tool = uiState.surpriseTool,
+                        onOpenTool = { onToolClick(uiState.surpriseTool.id) }
                     )
                 }
             }
 
-            //pestañas de filtro por categoria
+            //pestañas de filtro por categoria usando ToolCategory enum
             item {
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     contentPadding = PaddingValues(vertical = 4.dp)
                 ) {
-                    items(categories) { category ->
+                    // Chip para "All" (null)
+                    item {
                         CategoryChip(
-                            label = categoryLabels[category] ?: category,
-                            isSelected = selectedCategory == category,
-                            onClick = { selectedCategory = category }
+                            label = "All",
+                            isSelected = uiState.selectedCategory == null,
+                            onClick = { onCategorySelect(null) }
+                        )
+                    }
+                    // Chips para cada categoria del enum ToolCategory
+                    items(ToolCategory.entries.toTypedArray()) { category ->
+                        CategoryChip(
+                            label = category.displayName,
+                            isSelected = uiState.selectedCategory == category,
+                            onClick = { onCategorySelect(category) }
                         )
                     }
                 }
             }
 
-            //listado de herramientas del catalogo
-            items(filteredTools) { tool ->
+            //listado de herramientas filtradas/ordenadas
+            items(uiState.filteredTools) { tool ->
                 ToolCardItem(
                     tool = tool,
-                    onClick = { onNavigateToTool(tool.id) }
+                    onClick = { onToolClick(tool.id) }
                 )
             }
         }
@@ -259,8 +270,8 @@ fun HomeScreen(
                     viewModel = viewModel(factory = MoodCheckInViewModel.Factory),
                     onNavigateBack = { showCheckInPopup = false },
                     onCheckInSaved = {
-                        isCheckInCompleted = true
                         showCheckInPopup = false
+                        onCheckInSaved()
                     }
                 )
             }

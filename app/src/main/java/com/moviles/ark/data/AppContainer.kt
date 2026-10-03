@@ -9,21 +9,22 @@ import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.firestore
 import com.moviles.ark.data.local.ArkDatabase
+import com.moviles.ark.data.local.daos.FeedbackDao
 import com.moviles.ark.data.local.sensors.Location
 import com.moviles.ark.data.repositories.AnalyticsRepositoryImpl
 import com.moviles.ark.data.repositories.AuthRepositoryImpl
+import com.moviles.ark.data.repositories.FakePhotoRepository
 import com.moviles.ark.data.repositories.FakeToolRepository
 import com.moviles.ark.data.repositories.LocationRepositoryImpl
 import com.moviles.ark.data.repositories.MoodRepositoryImpl
+import com.moviles.ark.data.repositories.StatsRepositoryImpl
 import com.moviles.ark.domain.models.ToolLatencyTracker
 import com.moviles.ark.domain.repositories.AnalyticsRepository
-import com.moviles.ark.data.repositories.StatsRepositoryImpl
 import com.moviles.ark.domain.repositories.AuthRepository
 import com.moviles.ark.domain.repositories.LocationRepository
 import com.moviles.ark.domain.repositories.MoodRepository
-import com.moviles.ark.domain.repositories.StatsRepository
 import com.moviles.ark.domain.repositories.PhotoRepository
-import com.moviles.ark.data.repositories.FakePhotoRepository
+import com.moviles.ark.domain.repositories.StatsRepository
 import com.moviles.ark.domain.repositories.ToolRepository
 
 import com.moviles.ark.data.local.sensors.AudioPlayerHelper
@@ -41,6 +42,7 @@ interface AppContainer {
     val photoRepository: PhotoRepository
     val analyticsRepository: AnalyticsRepository
     val toolLatencyTracker: ToolLatencyTracker
+    val feedbackDao: FeedbackDao
     val breathingRepository: BreathingRepository
     val audioPlayerHelper: AudioPlayerHelper
 }
@@ -68,6 +70,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val analyticsRepository: AnalyticsRepository by lazy { AnalyticsRepositoryImpl(Firebase.analytics) }
     // one tracker for the whole app: the tap on a tool and its screen live in different places (#8)
     override val toolLatencyTracker: ToolLatencyTracker by lazy { ToolLatencyTracker(analyticsRepository) }
+    override val feedbackDao: FeedbackDao by lazy { database.feedbackDao() }
     // repositorio de la herramienta de respiracion con pistas de jamendo (#7)
     override val breathingRepository: BreathingRepository by lazy { BreathingRepositoryImpl() }
     override val audioPlayerHelper: AudioPlayerHelper by lazy { AudioPlayerHelper(context) }
