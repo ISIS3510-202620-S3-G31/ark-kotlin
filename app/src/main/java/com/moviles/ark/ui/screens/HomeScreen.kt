@@ -26,10 +26,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.AccessibilityNew
 import androidx.compose.material.icons.filled.Air
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.EmojiEvents
@@ -69,14 +71,17 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.ArkApplication
-import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.R
 import com.moviles.ark.data.repositories.FakeToolRepository
 import com.moviles.ark.domain.models.Tool
+import com.moviles.ark.domain.models.ToolCategory
+import com.moviles.ark.ui.components.RecommendationCardComponent
 import com.moviles.ark.ui.theme.AppTheme
 import com.moviles.ark.ui.theme.BackgroundColor
+import com.moviles.ark.ui.theme.FigtreeFontFamily
 import com.moviles.ark.ui.theme.PrimaryColor
 import com.moviles.ark.ui.theme.SecondaryColor
+import com.moviles.ark.ui.theme.SoreanFontFamily
 import com.moviles.ark.ui.theme.TextColor
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.moviles.ark.ui.viewmodels.HomeUiState
@@ -150,7 +155,7 @@ fun HomeScreen(
             contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            //encabezado de la app
+            //encabezado de la app con boton discreto de Daily Check-in a un lado
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -163,6 +168,35 @@ fun HomeScreen(
                         fontWeight = FontWeight.Bold,
                         color = PrimaryColor
                     )
+
+                    Surface(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .clickable { showCheckInPopup = true },
+                        color = if (!uiState.isCheckInCompleted) PrimaryColor.copy(alpha = 0.15f) else Color(0xFFEFE0C2),
+                        border = BorderStroke(1.dp, if (!uiState.isCheckInCompleted) PrimaryColor.copy(alpha = 0.4f) else Color.Transparent),
+                        shape = RoundedCornerShape(20.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.FavoriteBorder,
+                                contentDescription = "Daily Check-in",
+                                tint = if (!uiState.isCheckInCompleted) PrimaryColor else TextColor.copy(alpha = 0.6f),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = if (!uiState.isCheckInCompleted) "Daily Check-in" else "Checked-in",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontFamily = FigtreeFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                color = if (!uiState.isCheckInCompleted) PrimaryColor else TextColor.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
                 }
             }
 
@@ -181,7 +215,7 @@ fun HomeScreen(
                     Text(
                         text = "Welcome back!",
                         style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
+                        fontFamily = SoreanFontFamily,
                         color = TextColor
                     )
                     Text(
@@ -192,11 +226,14 @@ fun HomeScreen(
                 }
             }
 
-            //tarjeta para invitar a hacer el checkin si aun no lo ha hecho
-            if (!uiState.isCheckInCompleted) {
+            //tarjeta de recomendacion inteligente (#16)
+            val recommendedTool = uiState.tools.firstOrNull()
+            if (recommendedTool != null) {
                 item {
-                    MoodCheckInPromptCard(
-                        onClick = { showCheckInPopup = true }
+                    RecommendationCardComponent(
+                        tool = recommendedTool,
+                        rationaleTag = "Suggested for today",
+                        onOpenTool = { toolId -> onToolClick(toolId) }
                     )
                 }
             }
@@ -280,70 +317,6 @@ fun HomeScreen(
 }
 
 @Composable
-private fun MoodCheckInPromptCard(
-    onClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .clickable { onClick() },
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFF2E3CD)),
-        border = BorderStroke(1.dp, Color(0xFFE2CEB5))
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(38.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(PrimaryColor.copy(alpha = 0.35f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.FavoriteBorder,
-                        contentDescription = "Mood",
-                        tint = TextColor,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text(
-                        text = "Daily Mood Check-in",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = TextColor
-                    )
-                    Text(
-                        text = "How are you feeling right now? Tap to record",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextColor.copy(alpha = 0.65f),
-                        fontSize = 12.sp
-                    )
-                }
-            }
-            Icon(
-                imageVector = Icons.Default.ChevronRight,
-                contentDescription = "Open check-in",
-                tint = TextColor.copy(alpha = 0.5f),
-                modifier = Modifier.size(20.dp)
-            )
-        }
-    }
-}
-
-@Composable
 private fun CategoryChip(
     label: String,
     isSelected: Boolean,
@@ -383,83 +356,96 @@ private fun CategoryChip(
 
 @Composable
 private fun LeaveItToChanceCard(
+    modifier: Modifier = Modifier,
     onSurpriseMe: () -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF221A15)),
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .clickable { onSurpriseMe() },
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF3E4CF)),
+        border = BorderStroke(1.2.dp, SecondaryColor.copy(alpha = 0.45f))
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(20.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
+                .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Column(
-                modifier = Modifier.weight(1f),
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(SecondaryColor.copy(alpha = 0.18f)),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = "Leave it to chance",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFFFFF0D0),
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "✨",
-                        fontSize = 18.sp,
+                    Icon(
+                        imageVector = Icons.Default.Casino,
+                        contentDescription = null,
+                        tint = SecondaryColor,
+                        modifier = Modifier.size(22.dp)
                     )
                 }
 
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.width(14.dp))
 
-                Text(
-                    text = "Not sure what you need right now?\nWe'll pick one tool for you.",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = Color(0xFFD3C2A9),
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp,
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Button(
-                    onClick = onSurpriseMe,
-                    shape = RoundedCornerShape(20.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryColor),
-                    contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.AutoAwesome,
-                        contentDescription = null,
-                        tint = TextColor,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
+                Column {
                     Text(
-                        text = "Surprise me",
+                        text = "SURPRISE TOOL",
                         style = MaterialTheme.typography.labelLarge,
+                        fontFamily = FigtreeFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        color = SecondaryColor,
+                        fontSize = 11.sp,
+                        letterSpacing = 0.5.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(2.dp))
+
+                    Text(
+                        text = "Leave it to chance",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontFamily = FigtreeFontFamily,
                         fontWeight = FontWeight.Bold,
                         color = TextColor,
+                        fontSize = 16.sp
+                    )
+
+                    Text(
+                        text = "Not sure? Let Ark pick one tool for you.",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontFamily = FigtreeFontFamily,
+                        color = TextColor.copy(alpha = 0.75f),
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(10.dp))
 
-            Image(
-                painter = painterResource(id = R.drawable.ic_mascot_log),
-                contentDescription = "Mascot",
+            Box(
                 modifier = Modifier
-                    .size(80.dp)
-                    .clip(CircleShape),
-                contentScale = ContentScale.Crop,
-            )
+                    .size(34.dp)
+                    .clip(CircleShape)
+                    .background(SecondaryColor),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                    contentDescription = "Surprise me",
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
         }
     }
 }
@@ -485,9 +471,13 @@ private fun SurpriseResultBanner(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "🎲 We picked for you:",
+                    text = "WE PICKED FOR YOU",
                     style = MaterialTheme.typography.labelLarge,
+                    fontFamily = FigtreeFontFamily,
+                    fontWeight = FontWeight.Bold,
                     color = TextColor.copy(alpha = 0.8f),
+                    fontSize = 11.sp,
+                    letterSpacing = 0.5.sp
                 )
                 Text(
                     text = tool.name,
