@@ -3,10 +3,10 @@ package com.moviles.ark.data.local.entities
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
-//tabla de sesiones de herramientas: una fila cada vez que el usuario termina una herramienta
+//tabla de interacciones con herramientas: una fila cada vez que el usuario usa una herramienta
 //la usan las estadisticas (#15), la recomendacion por frecuencia (#22), los insights (#28) y la bq del #34
-@Entity(tableName = "tool_sessions")
-data class ToolSessionEntity(
+@Entity(tableName = "tool_interactions")
+data class ToolInteractionEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
     //id de la herramienta, el mismo de ToolEntity (por ejemplo "custom_breathing")

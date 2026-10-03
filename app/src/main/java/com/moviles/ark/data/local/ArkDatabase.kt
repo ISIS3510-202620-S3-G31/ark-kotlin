@@ -12,7 +12,7 @@ import com.moviles.ark.data.local.entities.CheckInEntity
 import com.moviles.ark.data.local.entities.FeedbackEntity
 import com.moviles.ark.data.local.entities.PhotoEntryEntity
 import com.moviles.ark.data.local.entities.ToolEntity
-import com.moviles.ark.data.local.entities.ToolSessionEntity
+import com.moviles.ark.data.local.entities.ToolInteractionEntity
 
 //base de datos local de la app (#11): aqui se registran todas las tablas (entities) y sus daos
 //reemplaza a AppDatabase.kt, que se borra (nadie la usaba)
@@ -21,7 +21,7 @@ import com.moviles.ark.data.local.entities.ToolSessionEntity
     entities = [
         ToolEntity::class,
         CheckInEntity::class,
-        ToolSessionEntity::class,
+        ToolInteractionEntity::class,
         FeedbackEntity::class,
         PhotoEntryEntity::class,
     ],
