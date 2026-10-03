@@ -3,6 +3,7 @@ package com.moviles.ark.data.repositories
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.moviles.ark.domain.models.UserModel
+import com.moviles.ark.domain.models.UserProfile
 import com.moviles.ark.domain.repositories.AuthRepository
 import kotlinx.coroutines.tasks.await
 
@@ -29,4 +30,18 @@ class AuthRepositoryImpl(
     }
 
     override fun logout() = auth.signOut()
+
+    override suspend fun getProfile(): Result<UserProfile> = runCatching {
+        val user = auth.currentUser ?: error("No user is logged in")
+        // email and creation date come from the local session; only the name needs Firestore.
+        // Offline, Firestore answers from its local copy; if it has none, the name stays empty
+        val name = runCatching {
+            firestore.collection("users").document(user.uid).get().await().getString("name")
+        }.getOrNull().orEmpty()
+        UserProfile(
+            name = name,
+            email = user.email.orEmpty(),
+            memberSince = user.metadata?.creationTimestamp ?: 0L
+        )
+    }
 }

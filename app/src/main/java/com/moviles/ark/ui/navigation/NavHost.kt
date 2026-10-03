@@ -15,7 +15,9 @@ import com.moviles.ark.ui.components.BottomNavigationBar
 import com.moviles.ark.ui.screens.HomeScreen
 import com.moviles.ark.ui.screens.LoginRoute
 import com.moviles.ark.ui.screens.MoodCheckInScreen
+import com.moviles.ark.ui.screens.PhotoOfTheDayRoute
 import com.moviles.ark.ui.screens.PlaceholderScreen
+import com.moviles.ark.ui.screens.ProfileRoute
 import com.moviles.ark.ui.screens.RegisterScreen
 import com.moviles.ark.ui.screens.StatsScreen
 import com.moviles.ark.ui.theme.BackgroundColor
@@ -78,21 +80,22 @@ fun AppNavigation(
                 )
             }
             composable("home_screen") {
-                HomeScreen(
-                    onLogout = {
-                        authRepository?.logout()
-                        navController.navigate("login_screen") {
-                            popUpTo(0)
-                        }
-                    }
-                )
+                HomeScreen()
             }
             composable("stats_screen") {
                 StatsScreen()
             }
-            //pestana profile: provisional hasta el #6
+            //pestana profile: al cerrar sesion vuelve al login y borra el historial
             composable("profile_screen") {
-                PlaceholderScreen(title = "Profile", message = "Your profile will show up here soon.")
+                ProfileRoute(onSignedOut = {
+                    navController.navigate("login_screen") {
+                        popUpTo(navController.graph.id) { inclusive = true }
+                    }
+                })
+            }
+            //herramienta foto del dia (#25); se abre desde el catalogo de herramientas
+            composable("photo_of_the_day_screen") {
+                PhotoOfTheDayRoute(onBack = { navController.popBackStack() })
             }
             composable("checkin_screen") {
                 MoodCheckInScreen(

@@ -160,6 +160,7 @@ fun RegisterScreenPreview() {
         override suspend fun login(email: String, password: String) = Result.success(Unit)
         override suspend fun registerUser(user: UserModel) = Result.success(Unit)
         override fun logout() {}
+        override suspend fun getProfile() = Result.success(UserProfile("", "", 0L))
     }
     AppTheme({
         RegisterScreen(viewModel = viewModel { RegisterViewModel(fakeRepository) })

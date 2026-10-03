@@ -91,7 +91,7 @@ fun LoginScreen(uiState: LoginUiState,
 
             // mensaje de error si el login falla
             if (uiState.errorMessage != null) {
-                Text(text = uiState.errorMessage, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                Text(text = uiState.errorMessage, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyLarge)
                 Spacer(modifier = Modifier.height(8.dp))
             }
 
