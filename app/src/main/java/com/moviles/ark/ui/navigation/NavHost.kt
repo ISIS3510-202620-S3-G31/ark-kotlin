@@ -12,6 +12,7 @@ import androidx.navigation.compose.rememberNavController
 import com.moviles.ark.domain.repositories.AuthRepository
 import com.moviles.ark.ui.components.BottomNavItem
 import com.moviles.ark.ui.components.BottomNavigationBar
+import com.moviles.ark.ui.screens.CustomBreathingRoute
 import com.moviles.ark.ui.screens.HomeScreen
 import com.moviles.ark.ui.screens.LoginRoute
 import com.moviles.ark.ui.screens.MoodCheckInScreen
@@ -111,9 +112,9 @@ fun AppNavigation(
             composable("photo_of_the_day_screen") {
                 PhotoOfTheDayRoute(onBack = { navController.popBackStack() })
             }
-            //herramienta de respiracion personalizada: provisional hasta que entre su pantalla (#19)
+            //herramienta de respiracion personalizada (#19)
             composable("custom_breathing_screen") {
-                PlaceholderScreen(title = "Custom breathing", message = "This tool will be available soon.")
+                CustomBreathingRoute(onBack = { navController.popBackStack() })
             }
             composable("checkin_screen") {
                 MoodCheckInScreen(
