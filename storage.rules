@@ -1,0 +1,30 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Default rule: Deny all reads and writes unless explicitly permitted below
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    // User profile images and assets
+    match /users/{userId}/{allPaths=**} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // User photo of the day and tool upload assets
+    match /user_photos/{userId}/{allPaths=**} {
+      allow read, write: if isOwner(userId);
+    }
+  }
+}
