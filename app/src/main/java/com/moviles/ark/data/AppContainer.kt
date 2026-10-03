@@ -31,6 +31,9 @@ import com.moviles.ark.data.local.sensors.AudioPlayerHelper
 import com.moviles.ark.data.repositories.BreathingRepositoryImpl
 import com.moviles.ark.domain.repositories.BreathingRepository
 import com.moviles.ark.data.local.sensors.NetworkConnectivityObserver
+import com.moviles.ark.data.local.sensors.SyncManager
+import com.moviles.ark.data.repositories.SyncRepositoryImpl
+import com.moviles.ark.domain.repositories.SyncRepository
 
 interface AppContainer {
     val auth: FirebaseAuth
@@ -47,6 +50,8 @@ interface AppContainer {
     val breathingRepository: BreathingRepository
     val audioPlayerHelper: AudioPlayerHelper
     val networkConnectivityObserver: NetworkConnectivityObserver
+    val syncRepository: SyncRepository
+    val syncManager: SyncManager
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -78,4 +83,18 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val audioPlayerHelper: AudioPlayerHelper by lazy { AudioPlayerHelper(context) }
     // observador reactivo de conectividad a internet (#32)
     override val networkConnectivityObserver: NetworkConnectivityObserver by lazy { NetworkConnectivityObserver(context) }
+    // repositorio y gestor de resincronizacion de datos offline (#33)
+    override val syncRepository: SyncRepository by lazy {
+        SyncRepositoryImpl(
+            auth = auth,
+            firestore = firestore,
+            photoEntryDao = database.photoEntryDao(),
+            toolRecordDao = database.toolRecordDao(),
+            emotionCheckInDao = database.emotionCheckInDao(),
+            feedbackDao = database.feedbackDao()
+        )
+    }
+    override val syncManager: SyncManager by lazy {
+        SyncManager(networkConnectivityObserver, syncRepository)
+    }
 }
