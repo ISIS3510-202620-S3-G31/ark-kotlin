@@ -7,5 +7,7 @@ data class AmbientTrackModel(
     val artist: String,
     val audioUrl: String,
     val durationSeconds: Int = 0,
-    val coverImageUrl: String? = null
+    val coverImageUrl: String? = null,
+    //true si la pista viene dentro de la app (res/raw) y suena sin internet (#82)
+    val isAvailableOffline: Boolean = false
 )

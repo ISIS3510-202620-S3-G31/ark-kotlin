@@ -9,15 +9,18 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
 import com.moviles.ark.data.local.sensors.AudioPlayerHelper
 import com.moviles.ark.domain.models.AmbientTrackModel
+import com.moviles.ark.domain.models.BreathingSession
 import com.moviles.ark.domain.repositories.BreathingRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * ViewModel managing the breathing exercise timer, phase transitions, and Jamendo ambient audio playback (#7).
@@ -32,6 +35,8 @@ class BreathingViewModel(
 
     private var timerJob: Job? = null
     private var phaseElapsedMs: Long = 0L
+    //tiempo que el temporizador ha corrido en esta sesion, sin contar las pausas (#82)
+    private var sessionRunningMs: Long = 0L
 
     init {
         loadAmbientTracks()
@@ -68,10 +73,8 @@ class BreathingViewModel(
             audioPlayerHelper?.pause()
             _uiState.update { it.copy(isMusicPlaying = false) }
         } else {
-            audioPlayerHelper?.playUrl(track.audioUrl) { isPlaying ->
-                _uiState.update { it.copy(isMusicPlaying = isPlaying) }
-            }
             _uiState.update { it.copy(isMusicPlaying = true, selectedTrack = track) }
+            playTrack(track)
         }
     }
 
@@ -81,10 +84,27 @@ class BreathingViewModel(
         _uiState.update { it.copy(selectedTrack = track) }
 
         if (wasPlaying) {
-            audioPlayerHelper?.playUrl(track.audioUrl) { isPlaying ->
-                _uiState.update { it.copy(isMusicPlaying = isPlaying) }
-            }
+            playTrack(track)
         }
+    }
+
+    //reproduce una pista; si falla (por ejemplo sin internet) pasa a la pista que viene en la app (#82)
+    private fun playTrack(track: AmbientTrackModel) {
+        audioPlayerHelper?.playUrl(
+            url = track.audioUrl,
+            onPlaybackStateChanged = { isPlaying ->
+                _uiState.update { it.copy(isMusicPlaying = isPlaying) }
+            },
+            onError = { playOfflineTrackInsteadOf(track) }
+        )
+    }
+
+    private fun playOfflineTrackInsteadOf(failedTrack: AmbientTrackModel) {
+        val offlineTrack = _uiState.value.ambientTracks.firstOrNull { it.isAvailableOffline } ?: return
+        //si la que fallo ya era la de la app no se reintenta, para no quedar en un ciclo
+        if (failedTrack.isAvailableOffline) return
+        _uiState.update { it.copy(selectedTrack = offlineTrack, isMusicPlaying = true) }
+        playTrack(offlineTrack)
     }
 
     //pasa a la siguiente cancion de la lista
@@ -144,7 +164,8 @@ class BreathingViewModel(
     }
 
     fun reset() {
-        pause()
+        //reiniciar cierra la sesion actual: si termino algun ciclo, se guarda antes de borrar el contador
+        finishSession()
         phaseElapsedMs = 0L
         _uiState.value = _uiState.value.copy(
             phase = BreathingPhase.READY,
@@ -177,6 +198,7 @@ class BreathingViewModel(
             while (_uiState.value.isRunning) {
                 delay(tickIntervalMs)
                 phaseElapsedMs += tickIntervalMs
+                sessionRunningMs += tickIntervalMs
 
                 val currentPhase = _uiState.value.phase
                 val targetDurationSeconds = getPhaseDuration(currentPhase)
@@ -223,6 +245,29 @@ class BreathingViewModel(
             secondsRemainingInPhase = nextDuration,
             phaseProgress = 0f
         )
+    }
+
+    //el usuario sale de la herramienta o reinicia: si termino al menos un ciclo, se guarda la sesion en el telefono (#82)
+    fun finishSession() {
+        pause()
+        val state = _uiState.value
+        val session = BreathingSession(
+            completedCycles = state.completedCycles,
+            durationSeconds = (sessionRunningMs / 1000L).toInt(),
+            timestamp = System.currentTimeMillis(),
+            pattern = BreathingSession.patternOf(state.inhaleDuration, state.holdDuration, state.exhaleDuration)
+        )
+        //se reinicia el tiempo para que la misma sesion no se guarde dos veces
+        sessionRunningMs = 0L
+        //le preguntamos al modelo si la sesion cuenta antes de guardarla
+        if (!session.isComplete()) return
+        val repository = breathingRepository ?: return
+        viewModelScope.launch {
+            //NonCancellable: al salir de la pantalla el viewmodel se limpia enseguida y no debe cortar el guardado
+            withContext(NonCancellable) {
+                repository.saveSession(session)
+            }
+        }
     }
 
     private fun getPhaseDuration(phase: BreathingPhase): Int {

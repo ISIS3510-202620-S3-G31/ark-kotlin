@@ -1,5 +1,6 @@
 package com.moviles.ark.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -83,9 +84,16 @@ fun CustomBreathingRoute(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
+    //al salir (flecha o boton atras del sistema) se guarda la sesion antes de volver (#82)
+    val leave = {
+        viewModel.finishSession()
+        onBack()
+    }
+    BackHandler(onBack = leave)
+
     CustomBreathingScreen(
         uiState = uiState,
-        onBack = onBack,
+        onBack = leave,
         onTogglePlayPause = viewModel::togglePlayPause,
         onReset = viewModel::reset,
         onPresetSelected = viewModel::updateDurations,

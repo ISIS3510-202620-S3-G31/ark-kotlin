@@ -8,6 +8,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.firestore
+import com.moviles.ark.R
 import com.moviles.ark.data.local.ArkDatabase
 import com.moviles.ark.data.local.daos.FeedbackDao
 import com.moviles.ark.data.local.sensors.AudioPlayerHelper
@@ -77,8 +78,15 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     // one tracker for the whole app: the tap on a tool and its screen live in different places (#8)
     override val toolLatencyTracker: ToolLatencyTracker by lazy { ToolLatencyTracker(analyticsRepository) }
     override val feedbackDao: FeedbackDao by lazy { database.feedbackDao() }
-    // repositorio de la herramienta de respiracion con pistas de jamendo (#7)
-    override val breathingRepository: BreathingRepository by lazy { BreathingRepositoryImpl() }
+    // repositorio de la herramienta de respiracion con pistas de jamendo (#7) y sesiones guardadas en room (#82)
+    override val breathingRepository: BreathingRepository by lazy {
+        BreathingRepositoryImpl(
+            breathingSessionDao = database.breathingSessionDao(),
+            toolRecordDao = database.toolRecordDao(),
+            auth = auth,
+            bundledAudioUri = "android.resource://${context.packageName}/${R.raw.breathing_ambient}"
+        )
+    }
     override val audioPlayerHelper: AudioPlayerHelper by lazy { AudioPlayerHelper(context) }
     // observador reactivo de conectividad a internet (#32)
     override val networkConnectivityObserver: NetworkConnectivityObserver by lazy { NetworkConnectivityObserver(context) }
