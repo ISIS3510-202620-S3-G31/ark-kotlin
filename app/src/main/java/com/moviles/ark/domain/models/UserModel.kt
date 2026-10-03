@@ -1,7 +1,7 @@
 package com.moviles.ark.domain.models
 
 //clase del modelo que representa al usuario y sus reglas de negocio
-data class User(
+data class UserModel(
     val name: String,
     val age: Int,
     val email: String,

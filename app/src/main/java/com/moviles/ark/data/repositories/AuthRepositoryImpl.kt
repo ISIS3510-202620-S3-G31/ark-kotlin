@@ -2,8 +2,8 @@ package com.moviles.ark.data.repositories
 
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.moviles.ark.domain.models.UserModel
 import com.moviles.ark.data.remote.CrashlyticsHelper
-import com.moviles.ark.domain.models.User
 import com.moviles.ark.domain.models.UserProfile
 import com.moviles.ark.domain.repositories.AuthRepository
 import kotlinx.coroutines.tasks.await
@@ -31,7 +31,7 @@ class AuthRepositoryImpl(
         )
     }
 
-    override suspend fun registerUser(user: User): Result<Unit> = runCatching {
+    override suspend fun registerUser(user: UserModel): Result<Unit> = runCatching {
         val result = auth.createUserWithEmailAndPassword(user.email.trim(), user.password).await()
         // the password stays in Firebase Auth, Firestore only gets the profile
         firestore.collection("users").document(result.user!!.uid)

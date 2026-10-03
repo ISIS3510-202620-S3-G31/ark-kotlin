@@ -21,6 +21,3 @@ data class CheckInModel(
         return latitude != null && longitude != null
     }
 }
-
-//alias para compatibilidad
-typealias MoodCheckIn = CheckInModel

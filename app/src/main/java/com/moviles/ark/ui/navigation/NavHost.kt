@@ -19,6 +19,7 @@ import com.moviles.ark.ui.screens.PhotoOfTheDayRoute
 import com.moviles.ark.ui.screens.PlaceholderScreen
 import com.moviles.ark.ui.screens.ProfileRoute
 import com.moviles.ark.ui.screens.RegisterScreen
+import com.moviles.ark.ui.screens.StatsScreen
 import com.moviles.ark.ui.theme.BackgroundColor
 
 @Composable
@@ -79,11 +80,16 @@ fun AppNavigation(
                 )
             }
             composable("home_screen") {
-                HomeScreen()
+                HomeScreen(
+                    onNavigateToTool = { toolId ->
+                        if (toolId == "photo_of_the_day") {
+                            navController.navigate("photo_of_the_day_screen")
+                        }
+                    }
+                )
             }
-            //pestana stats: provisional hasta el #15
             composable("stats_screen") {
-                PlaceholderScreen(title = "Stats", message = "Your progress will show up here soon.")
+                StatsScreen()
             }
             //pestana profile: al cerrar sesion vuelve al login y borra el historial
             composable("profile_screen") {
