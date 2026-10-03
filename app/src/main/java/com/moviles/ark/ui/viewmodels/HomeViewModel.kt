@@ -14,8 +14,10 @@ import com.moviles.ark.domain.models.Tool
 import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.domain.models.ToolLatencyTracker
 import com.moviles.ark.domain.repositories.MoodRepository
+import com.moviles.ark.domain.repositories.ToolInteractionRepository
 import com.moviles.ark.domain.repositories.ToolRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -29,6 +31,9 @@ class HomeViewModel(
     private val contextResolver: RecommendationContextResolver = RecommendationContextResolver(),
     //cronometro de la pregunta de negocio #1: arranca cuando el usuario toca una herramienta (#90)
     private val toolLatencyTracker: ToolLatencyTracker? = null,
+    //herramientas que el usuario ya termino (room), para recomendar por frecuencia (#96)
+    private val toolInteractionRepository: ToolInteractionRepository? = null,
+    private val now: () -> Long = { System.currentTimeMillis() },
     initialTools: List<Tool> = FakeToolRepository.sampleTools
 ) : ViewModel() {
 
@@ -40,6 +45,12 @@ class HomeViewModel(
         )
     )
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
+
+    //carga activa del catalogo; getTools() nunca termina, asi que antes de volver a cargar se cancela la anterior (#96)
+    private var loadToolsJob: Job? = null
+
+    //true mientras el usuario esta en una herramienta; al volver se recalculan las recomendaciones (#96)
+    private var isAwayInTool = false
 
     init {
         checkTodayStatus()
@@ -56,7 +67,8 @@ class HomeViewModel(
     }
 
     fun loadTools() {
-        viewModelScope.launch(Dispatchers.IO) {
+        loadToolsJob?.cancel()
+        loadToolsJob = viewModelScope.launch(Dispatchers.IO) {
             toolRepository.getTools()
                 .catch { error ->
                     _uiState.value = _uiState.value.copy(
@@ -107,7 +119,15 @@ class HomeViewModel(
     }
 
     fun onNavigatedToTool() {
+        isAwayInTool = true
         _uiState.value = _uiState.value.copy(navigateToToolId = null)
+    }
+
+    //el home se vuelve a mostrar: si venia de una herramienta, puede haber una interaccion nueva en room (#96)
+    fun onHomeShown() {
+        if (!isAwayInTool) return
+        isAwayInTool = false
+        loadTools()
     }
 
     fun onCheckInSaved() {
@@ -115,11 +135,12 @@ class HomeViewModel(
         loadTools()
     }
 
-    //decide la estrategia con el ultimo check-in del usuario (#23)
-    //todavia no hay repositorio de interacciones con herramientas, por eso la lista va vacia
+    //decide la estrategia con el ultimo check-in del usuario (#23) y las herramientas que termino (#96)
     private suspend fun resolveDecision(): RecommendationDecision {
         val latestCheckIn = moodRepository?.getLatestCheckIn()?.getOrNull()
-        return contextResolver.resolve(listOfNotNull(latestCheckIn), emptyList())
+        val from = now() - RecommendationContextResolver.USAGE_WINDOW_DAYS * DAY_MILLIS
+        val interactions = toolInteractionRepository?.getInteractionsSince(from)?.getOrNull().orEmpty()
+        return contextResolver.resolve(listOfNotNull(latestCheckIn), interactions)
     }
 
     private fun applyCategoryFilter(tools: List<Tool>, category: ToolCategory?): List<Tool> {
@@ -131,13 +152,16 @@ class HomeViewModel(
     }
 
     companion object {
+        private const val DAY_MILLIS = 24 * 60 * 60 * 1000L
+
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as ArkApplication
                 HomeViewModel(
                     toolRepository = app.container.toolRepository,
                     moodRepository = app.container.moodRepository,
-                    toolLatencyTracker = app.container.toolLatencyTracker
+                    toolLatencyTracker = app.container.toolLatencyTracker,
+                    toolInteractionRepository = app.container.toolInteractionRepository
                 )
             }
         }

@@ -96,6 +96,11 @@ fun HomeRoute(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
+    //al volver de una herramienta se recalculan las recomendaciones con la nueva interaccion (#96)
+    LaunchedEffect(Unit) {
+        viewModel.onHomeShown()
+    }
+
     LaunchedEffect(uiState.navigateToToolId) {
         uiState.navigateToToolId?.let { toolId ->
             onNavigateToTool(toolId)

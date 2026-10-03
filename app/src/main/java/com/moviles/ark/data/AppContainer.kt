@@ -24,6 +24,7 @@ import com.moviles.ark.data.repositories.MoodRepositoryImpl
 import com.moviles.ark.data.repositories.PhotoRepositoryImpl
 import com.moviles.ark.data.repositories.StatsRepositoryImpl
 import com.moviles.ark.data.repositories.SyncRepositoryImpl
+import com.moviles.ark.data.repositories.ToolInteractionRepositoryImpl
 import com.moviles.ark.domain.models.ToolLatencyTracker
 import com.moviles.ark.domain.repositories.AnalyticsRepository
 import com.moviles.ark.domain.repositories.AuthRepository
@@ -33,6 +34,7 @@ import com.moviles.ark.domain.repositories.MoodRepository
 import com.moviles.ark.domain.repositories.PhotoRepository
 import com.moviles.ark.domain.repositories.StatsRepository
 import com.moviles.ark.domain.repositories.SyncRepository
+import com.moviles.ark.domain.repositories.ToolInteractionRepository
 import com.moviles.ark.domain.repositories.ToolRepository
 
 interface AppContainer {
@@ -42,6 +44,7 @@ interface AppContainer {
     val locationRepository: LocationRepository
     val moodRepository: MoodRepository
     val toolRepository: ToolRepository
+    val toolInteractionRepository: ToolInteractionRepository
     val statsRepository: StatsRepository
     val photoRepository: PhotoRepository
     val analyticsRepository: AnalyticsRepository
@@ -71,6 +74,8 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val moodRepository: MoodRepository by lazy { MoodRepositoryImpl(auth, firestore) }
     // fake catalog until the Room implementation of #9 is ready; then only this line changes
     override val toolRepository: ToolRepository by lazy { FakeToolRepository() }
+    // interacciones con herramientas guardadas en room; las usa la recomendacion por frecuencia del home (#96)
+    override val toolInteractionRepository: ToolInteractionRepository by lazy { ToolInteractionRepositoryImpl(database.toolRecordDao()) }
     override val statsRepository: StatsRepository by lazy { StatsRepositoryImpl(auth, firestore) }
     // real photo repository with Room persistence and internal app private storage (context.filesDir) (#26)
     override val photoRepository: PhotoRepository by lazy { PhotoRepositoryImpl(context, database.photoEntryDao()) }

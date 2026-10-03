@@ -6,7 +6,9 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
+import com.moviles.ark.domain.models.CheckInStreak
 import com.moviles.ark.domain.repositories.AuthRepository
+import com.moviles.ark.domain.repositories.MoodRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,6 +21,8 @@ import java.util.TimeZone
 //now se puede cambiar en las pruebas para fijar "hoy"; en la app es la hora del telefono
 class ProfileViewModel(
     private val authRepository: AuthRepository,
+    //check-ins del usuario para la racha (#96)
+    private val moodRepository: MoodRepository? = null,
     private val now: () -> Long = { System.currentTimeMillis() }
 ) : ViewModel() {
     //privado: solo el viewmodel lo modifica
@@ -57,6 +61,20 @@ class ProfileViewModel(
         }
     }
 
+    //la pantalla lo pide cada vez que se muestra, asi la racha se ve al dia despues de un check-in en el home (#96)
+    fun loadStreak() {
+        val repository = moodRepository ?: return
+        viewModelScope.launch {
+            val from = now() - CheckInStreak.LOOKBACK_DAYS * DAY_MILLIS
+            //si no se puede leer (por ejemplo sin internet y sin copia local) se deja la racha que habia
+            repository.getCheckInTimestampsSince(from).onSuccess { timestamps ->
+                //le preguntamos al modelo cuantos dias seguidos lleva
+                val streak = CheckInStreak(now = now).daysInARow(timestamps)
+                _uiState.value = _uiState.value.copy(streakDays = streak)
+            }
+        }
+    }
+
     fun onSignOutClick() {
         authRepository.logout()
         _uiState.value = _uiState.value.copy(isSignedOut = true)
@@ -86,14 +104,17 @@ class ProfileViewModel(
         return (today - firstDay + 1).toInt().coerceAtLeast(1)
     }
 
-    //factory para que el viewmodel reciba el authRepository del AppContainer
+    //factory para que el viewmodel reciba los repositorios del AppContainer
     companion object {
         private const val DAY_MILLIS = 24 * 60 * 60 * 1000L
 
         val Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as ArkApplication
-                ProfileViewModel(app.container.authRepository)
+                ProfileViewModel(
+                    authRepository = app.container.authRepository,
+                    moodRepository = app.container.moodRepository
+                )
             }
         }
     }
