@@ -30,17 +30,17 @@ class UsefulInsightsEngine(
     //cada calculo devuelve null si no hay datos suficientes, para no sacar conclusiones con dos registros
     fun generateInsights(
         checkIns: List<CheckInModel>,
-        sessions: List<ToolSession> = emptyList(),
+        interactions: List<ToolInteraction> = emptyList(),
         tools: List<Tool> = emptyList()
     ): List<Insight> {
         val today = dayOf(now())
         val toolNames = tools.associate { it.id to it.name }
         return listOfNotNull(
-            toolMoodCorrelation(checkIns, sessions, today, toolNames),
+            toolMoodCorrelation(checkIns, interactions, today, toolNames),
             moodTrend(checkIns, today),
             timeOfDayPattern(checkIns, today),
             frequentEmotion(checkIns, today),
-            favoriteTool(sessions, today, toolNames)
+            favoriteTool(interactions, today, toolNames)
         )
     }
 
@@ -48,7 +48,7 @@ class UsefulInsightsEngine(
     //ejemplo del issue: "menos estres los dias que respira"
     private fun toolMoodCorrelation(
         checkIns: List<CheckInModel>,
-        sessions: List<ToolSession>,
+        interactions: List<ToolInteraction>,
         today: Long,
         toolNames: Map<String, String>
     ): Insight? {
@@ -61,10 +61,10 @@ class UsefulInsightsEngine(
             .mapValues { (_, dayCheckIns) -> dayCheckIns.map { distressOf(it).toDouble() }.average() }
 
         //dias en que se uso cada herramienta
-        val daysByTool: Map<String, Set<Long>> = sessions
+        val daysByTool: Map<String, Set<Long>> = interactions
             .filter { today - dayOf(it.startedAt) in 0 until LONG_WINDOW_DAYS }
             .groupBy { it.toolId }
-            .mapValues { (_, toolSessions) -> toolSessions.map { dayOf(it.startedAt) }.toSet() }
+            .mapValues { (_, toolInteractions) -> toolInteractions.map { dayOf(it.startedAt) }.toSet() }
 
         var bestToolId: String? = null
         var bestReduction = 0.0
@@ -189,14 +189,14 @@ class UsefulInsightsEngine(
     }
 
     //la herramienta que mas uso en el ultimo mes (patron de uso)
-    private fun favoriteTool(sessions: List<ToolSession>, today: Long, toolNames: Map<String, String>): Insight? {
-        val recent = sessions.filter { today - dayOf(it.startedAt) in 0 until LONG_WINDOW_DAYS }
+    private fun favoriteTool(interactions: List<ToolInteraction>, today: Long, toolNames: Map<String, String>): Insight? {
+        val recent = interactions.filter { today - dayOf(it.startedAt) in 0 until LONG_WINDOW_DAYS }
         if (recent.size < MIN_SESSIONS) return null
 
         //la mas usada; si empatan, gana la que se uso mas recientemente
         val top = recent
             .groupBy { it.toolId }
-            .map { (toolId, toolSessions) -> Triple(toolId, toolSessions.size, toolSessions.maxOf { it.startedAt }) }
+            .map { (toolId, toolInteractions) -> Triple(toolId, toolInteractions.size, toolInteractions.maxOf { it.startedAt }) }
             .sortedWith(compareByDescending<Triple<String, Int, Long>> { it.second }.thenByDescending { it.third })
             .first()
         if (top.second < MIN_USES) return null
