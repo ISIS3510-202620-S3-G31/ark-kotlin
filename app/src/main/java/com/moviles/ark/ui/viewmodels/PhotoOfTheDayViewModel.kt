@@ -6,7 +6,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
-import com.moviles.ark.domain.models.PhotoEntry
+import com.moviles.ark.domain.models.PhotoEntryModel
 import com.moviles.ark.domain.models.PhotoWeek
 import com.moviles.ark.domain.models.ToolLatencyTracker
 import com.moviles.ark.domain.repositories.PhotoRepository
@@ -74,7 +74,7 @@ class PhotoOfTheDayViewModel(
 
     //no deja escribir mas alla del limite del modelo
     fun onCaptionChange(newCaption: String) {
-        if (newCaption.length <= PhotoEntry.MAX_CAPTION_LENGTH) {
+        if (newCaption.length <= PhotoEntryModel.MAX_CAPTION_LENGTH) {
             _uiState.update { it.copy(caption = newCaption) }
         }
     }
@@ -90,9 +90,9 @@ class PhotoOfTheDayViewModel(
         if (state.isSaving) return
 
         //le preguntamos al modelo si la nota cumple las reglas
-        val entry = PhotoEntry(localFilePath = uri, caption = state.caption.trim(), takenAt = now())
+        val entry = PhotoEntryModel(localFilePath = uri, caption = state.caption.trim(), takenAt = now())
         if (!entry.isValidCaption()) {
-            _uiState.update { it.copy(errorMessage = "Your note can have up to ${PhotoEntry.MAX_CAPTION_LENGTH} characters") }
+            _uiState.update { it.copy(errorMessage = "Your note can have up to ${PhotoEntryModel.MAX_CAPTION_LENGTH} characters") }
             return
         }
 
