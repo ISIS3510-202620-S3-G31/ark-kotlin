@@ -30,6 +30,7 @@ import com.moviles.ark.domain.repositories.ToolRepository
 import com.moviles.ark.data.local.sensors.AudioPlayerHelper
 import com.moviles.ark.data.repositories.BreathingRepositoryImpl
 import com.moviles.ark.domain.repositories.BreathingRepository
+import com.moviles.ark.data.local.sensors.NetworkConnectivityObserver
 
 interface AppContainer {
     val auth: FirebaseAuth
@@ -45,6 +46,7 @@ interface AppContainer {
     val feedbackDao: FeedbackDao
     val breathingRepository: BreathingRepository
     val audioPlayerHelper: AudioPlayerHelper
+    val networkConnectivityObserver: NetworkConnectivityObserver
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -74,4 +76,6 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     // repositorio de la herramienta de respiracion con pistas de jamendo (#7)
     override val breathingRepository: BreathingRepository by lazy { BreathingRepositoryImpl() }
     override val audioPlayerHelper: AudioPlayerHelper by lazy { AudioPlayerHelper(context) }
+    // observador reactivo de conectividad a internet (#32)
+    override val networkConnectivityObserver: NetworkConnectivityObserver by lazy { NetworkConnectivityObserver(context) }
 }
