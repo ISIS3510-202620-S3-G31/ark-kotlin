@@ -28,6 +28,9 @@ import com.moviles.ark.domain.repositories.StatsRepository
 import com.moviles.ark.domain.repositories.ToolRepository
 
 import com.moviles.ark.data.local.sensors.NetworkConnectivityObserver
+import com.moviles.ark.data.local.sensors.SyncManager
+import com.moviles.ark.data.repositories.SyncRepositoryImpl
+import com.moviles.ark.domain.repositories.SyncRepository
 
 interface AppContainer {
     val auth: FirebaseAuth
@@ -42,6 +45,8 @@ interface AppContainer {
     val toolLatencyTracker: ToolLatencyTracker
     val feedbackDao: FeedbackDao
     val networkConnectivityObserver: NetworkConnectivityObserver
+    val syncRepository: SyncRepository
+    val syncManager: SyncManager
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -70,4 +75,18 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val feedbackDao: FeedbackDao by lazy { database.feedbackDao() }
     // observador reactivo de conectividad a internet (#32)
     override val networkConnectivityObserver: NetworkConnectivityObserver by lazy { NetworkConnectivityObserver(context) }
+    // repositorio y gestor de resincronizacion de datos offline (#33)
+    override val syncRepository: SyncRepository by lazy {
+        SyncRepositoryImpl(
+            auth = auth,
+            firestore = firestore,
+            photoEntryDao = database.photoEntryDao(),
+            toolRecordDao = database.toolRecordDao(),
+            emotionCheckInDao = database.emotionCheckInDao(),
+            feedbackDao = database.feedbackDao()
+        )
+    }
+    override val syncManager: SyncManager by lazy {
+        SyncManager(networkConnectivityObserver, syncRepository)
+    }
 }

@@ -11,5 +11,7 @@ class ArkApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         container = DefaultAppContainer(this)
+        //iniciar el observador de sincronizacion automatica offline (#33)
+        container.syncManager.startMonitoring()
     }
 }
