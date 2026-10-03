@@ -12,6 +12,7 @@ import com.moviles.ark.domain.models.RecommendationContextResolver
 import com.moviles.ark.domain.models.RecommendationDecision
 import com.moviles.ark.domain.models.Tool
 import com.moviles.ark.domain.models.ToolCategory
+import com.moviles.ark.domain.models.ToolLatencyTracker
 import com.moviles.ark.domain.repositories.MoodRepository
 import com.moviles.ark.domain.repositories.ToolRepository
 import kotlinx.coroutines.Dispatchers
@@ -26,6 +27,8 @@ class HomeViewModel(
     private val moodRepository: MoodRepository? = null,
     //elige la estrategia de recomendacion segun el contexto del usuario (#23)
     private val contextResolver: RecommendationContextResolver = RecommendationContextResolver(),
+    //cronometro de la pregunta de negocio #1: arranca cuando el usuario toca una herramienta (#90)
+    private val toolLatencyTracker: ToolLatencyTracker? = null,
     initialTools: List<Tool> = FakeToolRepository.sampleTools
 ) : ViewModel() {
 
@@ -96,7 +99,10 @@ class HomeViewModel(
         }
     }
 
+    //las tres entradas del home (catalogo, recomendacion y surprise me) llegan aqui
     fun onToolClick(toolId: String) {
+        //el toque es el inicio de la medicion; la pantalla de la herramienta la cierra al dibujarse (#90)
+        toolLatencyTracker?.start(toolId)
         _uiState.value = _uiState.value.copy(navigateToToolId = toolId)
     }
 
@@ -130,7 +136,8 @@ class HomeViewModel(
                 val app = this[APPLICATION_KEY] as ArkApplication
                 HomeViewModel(
                     toolRepository = app.container.toolRepository,
-                    moodRepository = app.container.moodRepository
+                    moodRepository = app.container.moodRepository,
+                    toolLatencyTracker = app.container.toolLatencyTracker
                 )
             }
         }
