@@ -35,10 +35,10 @@ class StatsRepositoryImpl(
         val checkInDocs = checkInsSnapshot.documents
         val totalCheckIns = checkInDocs.size
 
-        //consulta las entradas de herramientas de firestore
+        //consulta las interacciones de herramientas de firestore
         val toolsSnapshot = firestore.collection("users")
             .document(currentUserId)
-            .collection("tool_entries")
+            .collection("tool_interactions")
             .get()
             .await()
         val toolDocs = toolsSnapshot.documents
@@ -85,14 +85,27 @@ class StatsRepositoryImpl(
         val toolInteractions = mutableListOf<ToolInteraction>()
         for (doc in toolDocs) {
             val toolId = doc.getString("toolId") ?: "breathing_pacer"
-            val timestamp = doc.getLong("timestamp") ?: System.currentTimeMillis()
+            val timestampDate = doc.getDate("timestamp")
+                ?: doc.getLong("timestamp")?.let { Date(it) }
+                ?: Date()
+            val duration = (doc.getLong("duration") ?: 60L).toInt()
+            val interactionType = doc.getString("interactionType") ?: "touch"
+            val intensity = (doc.getLong("intensity") ?: 0L).toInt()
+            val complete = doc.getBoolean("complete") ?: true
+            val value = (doc.getLong("value") ?: 0L).toInt()
+            val description = doc.getString("description") ?: ""
+
             toolInteractions.add(
                 ToolInteraction(
                     userId = currentUserId,
                     toolId = toolId,
-                    duration = 60,
-                    interactionType = "touch",
-                    timestamp = Date(timestamp)
+                    duration = duration,
+                    interactionType = interactionType,
+                    intensity = intensity,
+                    complete = complete,
+                    value = value,
+                    timestamp = timestampDate,
+                    description = description
                 )
             )
         }
@@ -118,7 +131,7 @@ class StatsRepositoryImpl(
         val todayKey = SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date())
         val toolsSnapshot = firestore.collection("users")
             .document(currentUserId)
-            .collection("tool_entries")
+            .collection("tool_interactions")
             .get()
             .await()
         saveUserStatsInternal(currentUserId, stats, toolsSnapshot.documents.size, todayKey)
@@ -188,17 +201,15 @@ class StatsRepositoryImpl(
         val toolCountsMap = mutableMapOf<String, Int>()
 
         for (doc in toolDocs) {
-            val toolName = doc.getString("toolName") ?: doc.getString("toolId") ?: "Breathing"
-            toolCountsMap[toolName] = toolCountsMap.getOrDefault(toolName, 0) + 1
+            val rawName = doc.getString("toolName") ?: doc.getString("toolId")
+            if (!rawName.isNullOrBlank()) {
+                val toolName = formatToolName(rawName)
+                toolCountsMap[toolName] = toolCountsMap.getOrDefault(toolName, 0) + 1
+            }
         }
 
         if (toolCountsMap.isEmpty()) {
-            return mapOf(
-                "Breathing Pacer" to 42f,
-                "Photo of the Day" to 25f,
-                "Achievement Jar" to 17f,
-                "Blow It Out" to 16f
-            )
+            return emptyMap()
         }
 
         val total = toolCountsMap.values.sum()
@@ -207,5 +218,17 @@ class StatsRepositoryImpl(
             result[name] = (count.toFloat() / total.toFloat()) * 100f
         }
         return result
+    }
+
+    private fun formatToolName(raw: String): String {
+        return when (raw.lowercase().replace("-", "_").trim()) {
+            "breathing_pacer", "breathing", "respiracion" -> "Breathing Pacer"
+            "photo_of_the_day", "photo", "foto" -> "Photo of the Day"
+            "achievement_jar", "jar", "frasco" -> "Achievement Jar"
+            "blow_it_out", "blow", "sopla" -> "Blow It Out"
+            else -> raw.split("_", "-").joinToString(" ") { word ->
+                word.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
+            }
+        }
     }
 }

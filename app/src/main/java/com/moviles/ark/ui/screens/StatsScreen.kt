@@ -82,6 +82,7 @@ fun StatsScreen(
     StatsScreenContent(
         stats = uiState.stats,
         isLoading = uiState.isLoading,
+        errorMessage = uiState.errorMessage,
         onRefresh = { viewModel.refresh() },
         onNavigateToHome = onNavigateToHome
     )
@@ -92,6 +93,7 @@ fun StatsScreen(
 fun StatsScreenContent(
     stats: StatsModel?,
     isLoading: Boolean,
+    errorMessage: String? = null,
     onRefresh: () -> Unit = {},
     onNavigateToHome: () -> Unit = {}
 ) {
@@ -144,10 +146,91 @@ fun StatsScreenContent(
                 ) {
                     CircularProgressIndicator(color = PrimaryColor)
                 }
-            } else if (stats == null || stats.totalCheckIns == 0) {
+            } else if (errorMessage != null && stats == null) {
+                StatsErrorView(
+                    message = errorMessage,
+                    onRetry = onRefresh
+                )
+            } else if (stats == null || (stats.totalCheckIns == 0 && stats.toolUsagePercentages.isEmpty())) {
                 StatsEmptyView()
             } else {
                 StatsMainView(stats = stats, onNavigateToHome = onNavigateToHome)
+            }
+        }
+    }
+}
+
+//vista cuando ocurre un error al cargar estadisticas
+@Composable
+private fun StatsErrorView(
+    message: String,
+    onRetry: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(28.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .shadow(6.dp, RoundedCornerShape(24.dp), ambientColor = Color(0x35351B08), spotColor = Color(0x35351B08)),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF5E6)),
+            border = BorderStroke(1.2.dp, Color(0xFFE8D3B9))
+        ) {
+            Column(
+                modifier = Modifier.padding(28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFE57373).copy(alpha = 0.18f))
+                        .border(1.2.dp, Color.White.copy(alpha = 0.9f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = null,
+                        tint = Color(0xFFD32F2F),
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "Unable to load stats",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = TextColor
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = TextColor.copy(alpha = 0.7f),
+                    textAlign = TextAlign.Center,
+                    fontSize = 14.sp
+                )
+                Spacer(modifier = Modifier.height(20.dp))
+                Surface(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(PrimaryColor)
+                        .clickable { onRetry() }
+                        .padding(horizontal = 20.dp, vertical = 10.dp),
+                    color = PrimaryColor,
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        text = "Retry",
+                        color = Color.White,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp
+                    )
+                }
             }
         }
     }
@@ -591,11 +674,26 @@ private fun ToolsUsagePieChartCard(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceAround
-            ) {
+            if (toolUsagePercentages.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 20.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "No tool usage recorded yet",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = TextColor.copy(alpha = 0.6f),
+                        fontSize = 13.sp
+                    )
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceAround
+                ) {
                 //dibujo del grafico de torta (donut chart)
                 Box(
                     modifier = Modifier.size(130.dp),
@@ -675,6 +773,7 @@ private fun ToolsUsagePieChartCard(
             }
         }
     }
+}
 }
 
 @Preview(showBackground = true, name = "Stats Screen Preview")
