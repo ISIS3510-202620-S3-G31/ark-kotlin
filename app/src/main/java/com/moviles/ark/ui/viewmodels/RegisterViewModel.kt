@@ -9,7 +9,7 @@ import com.google.firebase.FirebaseNetworkException
 import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
 import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.moviles.ark.ArkApplication
-import com.moviles.ark.domain.models.User
+import com.moviles.ark.domain.models.UserModel
 import com.moviles.ark.domain.repositories.AuthRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -48,7 +48,7 @@ class RegisterViewModel(private val authRepository: AuthRepository): ViewModel()
     }
 
     //hacer el registro cuando el usuario presiona el boton en la screen
-    //aqui solo hacemos validaciones de presentacion de la pantalla y le delegamos las de negocio al modelo User
+    //aqui solo hacemos validaciones de presentacion de la pantalla y le delegamos las de negocio al modelo UserModel
     //onSuccess se ejecuta cuando firebase termina de crear la cuenta
     fun register(onSuccess: () -> Unit) {
         val state = privateUiState.value
@@ -74,10 +74,10 @@ class RegisterViewModel(private val authRepository: AuthRepository): ViewModel()
         }
 
         //creamos el objeto del modelo con los datos listos
-        val userModel = User(state.name, ageNumber, state.email, state.password)
+        val userModel = UserModel(state.name, ageNumber, state.email, state.password)
 
         //reglas de negocio
-        //le preguntamos al modelo User si cumple con reglas de negocio
+        //le preguntamos al modelo UserModel si cumple con reglas de negocio
         if (!userModel.isValidName()) {
             privateUiState.value = state.copy(errorMessage = "Name is too short")
             return

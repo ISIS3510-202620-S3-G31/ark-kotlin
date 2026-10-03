@@ -17,6 +17,7 @@ import com.moviles.ark.ui.screens.LoginRoute
 import com.moviles.ark.ui.screens.MoodCheckInScreen
 import com.moviles.ark.ui.screens.PlaceholderScreen
 import com.moviles.ark.ui.screens.RegisterScreen
+import com.moviles.ark.ui.screens.StatsScreen
 import com.moviles.ark.ui.theme.BackgroundColor
 
 @Composable
@@ -86,9 +87,8 @@ fun AppNavigation(
                     }
                 )
             }
-            //pestana stats: provisional hasta el #15
             composable("stats_screen") {
-                PlaceholderScreen(title = "Stats", message = "Your progress will show up here soon.")
+                StatsScreen()
             }
             //pestana profile: provisional hasta el #6
             composable("profile_screen") {
