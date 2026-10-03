@@ -7,6 +7,7 @@ import com.moviles.ark.data.remote.CrashlyticsHelper
 import com.moviles.ark.domain.models.CheckInModel
 import com.moviles.ark.domain.repositories.MoodRepository
 import kotlinx.coroutines.tasks.await
+import java.util.Calendar
 
 class MoodRepositoryImpl(
     private val auth: FirebaseAuth,
@@ -49,5 +50,25 @@ class MoodRepositoryImpl(
             )
         )
     }
-}
 
+    override suspend fun hasCheckedInToday(): Result<Boolean> = runCatching {
+        val currentUserId = auth.currentUser?.uid ?: return@runCatching false
+        val calendar = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val todayStartMillis = calendar.timeInMillis
+
+        val snapshot = firestore.collection("users")
+            .document(currentUserId)
+            .collection("mood_checkins")
+            .whereGreaterThanOrEqualTo("timestamp", todayStartMillis)
+            .limit(1)
+            .get()
+            .await()
+
+        !snapshot.isEmpty
+    }.recover { false }
+}

@@ -1,6 +1,6 @@
 package com.moviles.ark.domain.strategies
 
-import com.moviles.ark.domain.composite.Emotion as CompositeEmotion
+import com.moviles.ark.domain.composite.Emotion
 import com.moviles.ark.domain.models.CheckInModel
 import com.moviles.ark.domain.models.Tool
 import com.moviles.ark.domain.models.ToolCategory

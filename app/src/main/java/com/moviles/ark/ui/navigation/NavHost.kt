@@ -89,7 +89,14 @@ fun AppNavigation(
                 )
             }
             composable("stats_screen") {
-                StatsScreen()
+                StatsScreen(
+                    onNavigateToHome = {
+                        navController.navigate("home_screen") {
+                            popUpTo("home_screen") { saveState = true }
+                            launchSingleTop = true
+                        }
+                    }
+                )
             }
             //pestana profile: al cerrar sesion vuelve al login y borra el historial
             composable("profile_screen") {

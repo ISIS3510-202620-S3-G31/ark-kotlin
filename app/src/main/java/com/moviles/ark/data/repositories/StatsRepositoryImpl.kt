@@ -3,48 +3,28 @@ package com.moviles.ark.data.repositories
 import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.moviles.ark.domain.composite.CompoundMood
 import com.moviles.ark.domain.composite.Emotion
+import com.moviles.ark.domain.composite.SingleEmotion
+import com.moviles.ark.domain.models.CheckInModel
+import com.moviles.ark.domain.models.StatsCalculator
 import com.moviles.ark.domain.models.StatsModel
+import com.moviles.ark.domain.models.ToolInteraction
 import com.moviles.ark.domain.repositories.StatsRepository
 import kotlinx.coroutines.tasks.await
 import java.text.SimpleDateFormat
-import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
 class StatsRepositoryImpl(
     private val auth: FirebaseAuth,
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore,
+    private val statsCalculator: StatsCalculator = StatsCalculator()
 ) : StatsRepository {
     @Suppress("UNCHECKED_CAST")
     override suspend fun getUserStats(): Result<StatsModel> = runCatching {
         val currentUserId = auth.currentUser?.uid ?: "anonymous"
-        val dateFormat = SimpleDateFormat("yyyyMMdd", Locale.getDefault())
-        val dayNameFormat = SimpleDateFormat("EEE", Locale.ENGLISH)
-
-        //calcular los ultimos 7 dias parados en el dia de hoy (desde hace 6 dias hasta hoy)
-        val weekDateKeys = mutableListOf<String>()
-        val dayLabels = mutableListOf<String>()
-        for (i in 0..6) {
-            val daysAgo = 6 - i
-            val tempCal = Calendar.getInstance()
-            tempCal.add(Calendar.DAY_OF_YEAR, -daysAgo)
-            weekDateKeys.add(dateFormat.format(tempCal.time))
-            dayLabels.add(dayNameFormat.format(tempCal.time))
-        }
-        val todayKey = weekDateKeys.last()
-
-        //consulta si ya hay un resumen de stats guardado en firestore
-        val cachedSummaryDoc = try {
-            firestore.collection("users")
-                .document(currentUserId)
-                .collection("stats_summary")
-                .document("latest")
-                .get()
-                .await()
-        } catch (e: Exception) {
-            null
-        }
+        val todayKey = SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date())
 
         //consulta los checkins emocionales de firestore
         val checkInsSnapshot = firestore.collection("users")
@@ -64,92 +44,72 @@ class StatsRepositoryImpl(
         val toolDocs = toolsSnapshot.documents
         val totalToolEntries = toolDocs.size
 
-        //si el cache existe, es de hoy y ni los checkins ni las herramientas han cambiado, usa el cache
-        if (cachedSummaryDoc != null && cachedSummaryDoc.exists()) {
-            val cachedTotal = cachedSummaryDoc.getLong("totalCheckIns")?.toInt() ?: -1
-            val cachedToolsTotal = cachedSummaryDoc.getLong("totalToolEntries")?.toInt() ?: -1
-            val cachedDayKey = cachedSummaryDoc.getString("lastDayKey") ?: ""
-            if (cachedTotal == totalCheckIns && cachedToolsTotal == totalToolEntries && cachedDayKey == todayKey) {
-                val cachedTopEmotion = cachedSummaryDoc.getString("topEmotion")?.let { parseEmotionSafe(it) }
-                val cachedIntensitiesRaw = cachedSummaryDoc.get("weeklyIntensities") as? Map<String, Number> ?: emptyMap()
-                val cachedEmotionsRaw = cachedSummaryDoc.get("weeklyEmotions") as? Map<String, String> ?: emptyMap()
-                val cachedToolPercentagesRaw = cachedSummaryDoc.get("toolUsagePercentages") as? Map<String, Number> ?: emptyMap()
-
-                val cachedIntensities = LinkedHashMap<String, Float>()
-                for (day in dayLabels) {
-                    cachedIntensities[day] = cachedIntensitiesRaw[day]?.toFloat() ?: 0f
-                }
-                val cachedEmotions = LinkedHashMap<String, Emotion>()
-                for ((day, emName) in cachedEmotionsRaw) {
-                    cachedEmotions[day] = parseEmotionSafe(emName)
-                }
-                val cachedTools = cachedToolPercentagesRaw.mapValues { it.value.toFloat() }
-
-                return@runCatching StatsModel(
-                    totalCheckIns = cachedTotal,
-                    topEmotion = cachedTopEmotion,
-                    weeklyIntensities = cachedIntensities,
-                    weeklyEmotions = cachedEmotions,
-                    toolUsagePercentages = if (cachedTools.isNotEmpty()) cachedTools else computeToolPercentages(toolDocs)
-                )
-            }
-        }
-
-        //si no hay cache valido, calcula las estadisticas desde los documentos
-        val dayEmotionsList = Array(7) { mutableListOf<Emotion>() }
-        val dayIntensitiesList = Array(7) { mutableListOf<Int>() }
-        val allEmotionsCount = mutableMapOf<Emotion, Int>()
-
+        //transforma los documentos crudos de firestore a modelos de dominio
+        val checkInModels = mutableListOf<CheckInModel>()
         for (doc in checkInDocs) {
             val timestamp = doc.getLong("timestamp") ?: continue
-            val dateKey = dateFormat.format(Date(timestamp))
             val emotionsRaw = doc.get("emotions") as? List<Map<String, Any>> ?: emptyList()
+            val note = doc.getString("note") ?: ""
+            val lat = doc.getDouble("latitude")
+            val lon = doc.getDouble("longitude")
 
-            val indexInWeek = weekDateKeys.indexOf(dateKey)
+            val parsedEmotions = mutableListOf<SingleEmotion>()
             for (em in emotionsRaw) {
                 val rawName = em["name"] as? String ?: continue
                 val emotionEnum = parseEmotionSafe(rawName)
                 val intensity = (em["intensity"] as? Number)?.toInt() ?: 3
-
-                if (indexInWeek in 0..6) {
-                    dayEmotionsList[indexInWeek].add(emotionEnum)
-                    dayIntensitiesList[indexInWeek].add(intensity)
-                }
-                allEmotionsCount[emotionEnum] = allEmotionsCount.getOrDefault(emotionEnum, 0) + 1
+                parsedEmotions.add(SingleEmotion(emotion = emotionEnum, intensity = intensity))
             }
+
+            val moodComponent = when {
+                parsedEmotions.size > 1 -> {
+                    val compound = CompoundMood()
+                    parsedEmotions.forEach { compound.add(it) }
+                    compound
+                }
+                parsedEmotions.size == 1 -> parsedEmotions[0]
+                else -> SingleEmotion(Emotion.HAPPINESS, 3)
+            }
+
+            checkInModels.add(
+                CheckInModel(
+                    mood = moodComponent,
+                    note = note,
+                    latitude = lat,
+                    longitude = lon,
+                    timestamp = timestamp
+                )
+            )
         }
 
-        val weeklyIntensities = LinkedHashMap<String, Float>()
-        val weeklyEmotions = LinkedHashMap<String, Emotion>()
-
-        for (i in 0..6) {
-            val dayLabel = dayLabels[i]
-            if (dayEmotionsList[i].isNotEmpty()) {
-                val dominant = dayEmotionsList[i].groupingBy { it }.eachCount().maxByOrNull { it.value }?.key
-                if (dominant != null) {
-                    weeklyEmotions[dayLabel] = dominant
-                }
-                weeklyIntensities[dayLabel] = dayIntensitiesList[i].average().toFloat()
-            } else {
-                weeklyIntensities[dayLabel] = 0f
-            }
+        val toolInteractions = mutableListOf<ToolInteraction>()
+        for (doc in toolDocs) {
+            val toolId = doc.getString("toolId") ?: "breathing_pacer"
+            val timestamp = doc.getLong("timestamp") ?: System.currentTimeMillis()
+            toolInteractions.add(
+                ToolInteraction(
+                    userId = currentUserId,
+                    toolId = toolId,
+                    duration = 60,
+                    interactionType = "touch",
+                    timestamp = Date(timestamp)
+                )
+            )
         }
 
-        val mostFrequent = allEmotionsCount.maxByOrNull { it.value }?.key
         val toolPercentages = computeToolPercentages(toolDocs)
 
-        val computedStats = StatsModel(
-            totalCheckIns = totalCheckIns,
-            topEmotion = mostFrequent,
-            weeklyIntensities = weeklyIntensities,
-            weeklyEmotions = weeklyEmotions,
-            toolUsagePercentages = toolPercentages
+        //la logica de calculo de estadisticas e insights vive en StatsCalculator (dominio)
+        val computedStats = statsCalculator.calculateStats(
+            checkIns = checkInModels,
+            interactions = toolInteractions,
+            toolPercentages = toolPercentages
         )
 
-        //guarda el resumen de estadisticas en firestore con timestamp
+        //guarda el resumen de estadisticas e insights historicos en firestore
         saveUserStatsInternal(currentUserId, computedStats, totalToolEntries, todayKey)
 
-        Log.d("StatsRepository", "Computed and saved stats: total=$totalCheckIns, topEmotion=$mostFrequent")
+        Log.d("StatsRepository", "Calculated and persisted stats with ${computedStats.allInsights.size} insights: total=$totalCheckIns")
         return@runCatching computedStats
     }
 
@@ -165,6 +125,15 @@ class StatsRepositoryImpl(
     }
 
     private suspend fun saveUserStatsInternal(userId: String, stats: StatsModel, totalTools: Int, dayKey: String) {
+        val currentInsightMap = stats.currentInsight?.let {
+            hashMapOf(
+                "title" to it.title,
+                "message" to it.message,
+                "advice" to it.advice,
+                "actionLabel" to it.actionLabel
+            )
+        }
+
         val data = hashMapOf(
             "totalCheckIns" to stats.totalCheckIns,
             "totalToolEntries" to totalTools,
@@ -172,6 +141,7 @@ class StatsRepositoryImpl(
             "weeklyIntensities" to stats.weeklyIntensities,
             "weeklyEmotions" to stats.weeklyEmotions.mapValues { it.value.name },
             "toolUsagePercentages" to stats.toolUsagePercentages,
+            "currentInsight" to currentInsightMap,
             "lastDayKey" to dayKey,
             "lastUpdated" to System.currentTimeMillis()
         )
@@ -182,8 +152,25 @@ class StatsRepositoryImpl(
                 .document("latest")
                 .set(data)
                 .await()
+
+            //persiste los hallazgos calculados en la subcoleccion de insights historicos
+            for (insight in stats.allInsights) {
+                val insightDoc = hashMapOf(
+                    "title" to insight.title,
+                    "message" to insight.message,
+                    "advice" to insight.advice,
+                    "actionLabel" to insight.actionLabel,
+                    "savedAt" to System.currentTimeMillis()
+                )
+                firestore.collection("users")
+                    .document(userId)
+                    .collection("useful_insights")
+                    .document(insight.title.lowercase().replace(" ", "_"))
+                    .set(insightDoc)
+                    .await()
+            }
         } catch (e: Exception) {
-            Log.e("StatsRepository", "Error saving stats summary to firestore", e)
+            Log.e("StatsRepository", "Error saving stats summary and insights to firestore", e)
         }
     }
 
