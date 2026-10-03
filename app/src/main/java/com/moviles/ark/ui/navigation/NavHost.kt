@@ -131,7 +131,7 @@ fun AppNavigation(
             composable("photo_of_the_day_screen") {
                 PhotoOfTheDayRoute(onBack = { navController.popBackStack() })
             }
-            //herramienta de respiracion personalizada (#19)
+            //herramienta de respiracion guiada con musica ambiental de Jamendo (#7)
             composable("custom_breathing_screen") {
                 CustomBreathingRoute(onBack = { navController.popBackStack() })
             }

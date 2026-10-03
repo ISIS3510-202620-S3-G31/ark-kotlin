@@ -2,28 +2,115 @@ package com.moviles.ark.ui.viewmodels
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.moviles.ark.ArkApplication
+import com.moviles.ark.data.local.sensors.AudioPlayerHelper
+import com.moviles.ark.domain.models.AmbientTrackModel
+import com.moviles.ark.domain.repositories.BreathingRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
- * ViewModel managing the breathing exercise timer, phase transitions, and cycle counts.
- * State survives configuration changes (like screen rotation) because it is tied to viewModelScope.
+ * ViewModel managing the breathing exercise timer, phase transitions, and Jamendo ambient audio playback (#7).
  */
-class BreathingViewModel : ViewModel() {
+class BreathingViewModel(
+    private val breathingRepository: BreathingRepository? = null,
+    private val audioPlayerHelper: AudioPlayerHelper? = null
+) : ViewModel() {
 
     private val _uiState = MutableStateFlow(BreathingUiState())
     val uiState: StateFlow<BreathingUiState> = _uiState.asStateFlow()
 
     private var timerJob: Job? = null
     private var phaseElapsedMs: Long = 0L
+
+    init {
+        loadAmbientTracks()
+    }
+
+    //carga las canciones relajantes desde el repositorio de respiracion (jamendo)
+    fun loadAmbientTracks() {
+        if (breathingRepository == null) return
+
+        _uiState.update { it.copy(isLoadingMusic = true) }
+        viewModelScope.launch {
+            val result = breathingRepository.getAmbientTracks()
+            result.onSuccess { tracks ->
+                _uiState.update { current ->
+                    current.copy(
+                        ambientTracks = tracks,
+                        selectedTrack = current.selectedTrack ?: tracks.firstOrNull(),
+                        isLoadingMusic = false
+                    )
+                }
+            }
+            result.onFailure {
+                _uiState.update { it.copy(isLoadingMusic = false) }
+            }
+        }
+    }
+
+    //reproduce o pausa la musica ambiental
+    fun toggleMusic() {
+        val currentState = _uiState.value
+        val track = currentState.selectedTrack ?: currentState.ambientTracks.firstOrNull() ?: return
+
+        if (currentState.isMusicPlaying) {
+            audioPlayerHelper?.pause()
+            _uiState.update { it.copy(isMusicPlaying = false) }
+        } else {
+            audioPlayerHelper?.playUrl(track.audioUrl) { isPlaying ->
+                _uiState.update { it.copy(isMusicPlaying = isPlaying) }
+            }
+            _uiState.update { it.copy(isMusicPlaying = true, selectedTrack = track) }
+        }
+    }
+
+    //cambia de cancion seleccionada
+    fun selectTrack(track: AmbientTrackModel) {
+        val wasPlaying = _uiState.value.isMusicPlaying
+        _uiState.update { it.copy(selectedTrack = track) }
+
+        if (wasPlaying) {
+            audioPlayerHelper?.playUrl(track.audioUrl) { isPlaying ->
+                _uiState.update { it.copy(isMusicPlaying = isPlaying) }
+            }
+        }
+    }
+
+    //pasa a la siguiente cancion de la lista
+    fun nextTrack() {
+        val tracks = _uiState.value.ambientTracks
+        if (tracks.isEmpty()) return
+
+        val currentIndex = tracks.indexOfFirst { it.id == _uiState.value.selectedTrack?.id }
+        val nextIndex = if (currentIndex in 0 until tracks.size - 1) currentIndex + 1 else 0
+        selectTrack(tracks[nextIndex])
+    }
+
+    //vuelve a la cancion anterior de la lista
+    fun previousTrack() {
+        val tracks = _uiState.value.ambientTracks
+        if (tracks.isEmpty()) return
+
+        val currentIndex = tracks.indexOfFirst { it.id == _uiState.value.selectedTrack?.id }
+        val prevIndex = if (currentIndex > 0) currentIndex - 1 else tracks.size - 1
+        selectTrack(tracks[prevIndex])
+    }
+
+    //muestra u oculta el selector desplegable de canciones
+    fun toggleTrackSelector() {
+        _uiState.update { it.copy(showTrackSelector = !it.showTrackSelector) }
+    }
 
     fun togglePlayPause() {
         if (_uiState.value.isRunning) {
@@ -59,10 +146,11 @@ class BreathingViewModel : ViewModel() {
     fun reset() {
         pause()
         phaseElapsedMs = 0L
-        _uiState.value = BreathingUiState(
-            inhaleDuration = _uiState.value.inhaleDuration,
-            holdDuration = _uiState.value.holdDuration,
-            exhaleDuration = _uiState.value.exhaleDuration
+        _uiState.value = _uiState.value.copy(
+            phase = BreathingPhase.READY,
+            completedCycles = 0,
+            secondsRemainingInPhase = _uiState.value.inhaleDuration,
+            phaseProgress = 0f
         )
     }
 
@@ -149,12 +237,17 @@ class BreathingViewModel : ViewModel() {
     override fun onCleared() {
         super.onCleared()
         timerJob?.cancel()
+        audioPlayerHelper?.release()
     }
 
     companion object {
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
-                BreathingViewModel()
+                val app = this[APPLICATION_KEY] as ArkApplication
+                BreathingViewModel(
+                    breathingRepository = app.container.breathingRepository,
+                    audioPlayerHelper = app.container.audioPlayerHelper
+                )
             }
         }
     }

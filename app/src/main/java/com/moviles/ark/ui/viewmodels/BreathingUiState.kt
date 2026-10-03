@@ -1,5 +1,7 @@
 package com.moviles.ark.ui.viewmodels
 
+import com.moviles.ark.domain.models.AmbientTrackModel
+
 /**
  * Breathing exercise phases.
  */
@@ -11,7 +13,7 @@ enum class BreathingPhase(val label: String, val instruction: String) {
 }
 
 /**
- * UI State for Custom Breathing tool exercise.
+ * UI State for Custom Breathing tool exercise with Jamendo ambient music integration (#7).
  */
 data class BreathingUiState(
     val phase: BreathingPhase = BreathingPhase.READY,
@@ -21,5 +23,11 @@ data class BreathingUiState(
     val inhaleDuration: Int = 4,
     val holdDuration: Int = 4,
     val exhaleDuration: Int = 4,
-    val phaseProgress: Float = 0f // 0.0f to 1.0f progress within current phase
+    val phaseProgress: Float = 0f, // 0.0f to 1.0f progress within current phase
+    // Estado de musica ambiental (#7)
+    val ambientTracks: List<AmbientTrackModel> = emptyList(),
+    val selectedTrack: AmbientTrackModel? = null,
+    val isMusicPlaying: Boolean = false,
+    val isLoadingMusic: Boolean = false,
+    val showTrackSelector: Boolean = false
 )
