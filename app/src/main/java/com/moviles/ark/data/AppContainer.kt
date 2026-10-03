@@ -8,6 +8,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.firestore
 import com.moviles.ark.data.local.sensors.Location
 import com.moviles.ark.data.repositories.AuthRepositoryImpl
+import com.moviles.ark.data.repositories.FakeToolRepository
 import com.moviles.ark.data.repositories.LocationRepositoryImpl
 import com.moviles.ark.data.repositories.MoodRepositoryImpl
 import com.moviles.ark.domain.repositories.AuthRepository

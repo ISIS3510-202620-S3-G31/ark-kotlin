@@ -3,9 +3,9 @@ package com.moviles.ark.ui.screens
 import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,7 +18,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -43,6 +50,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.R
 import com.moviles.ark.ui.theme.AppTheme
+import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.theme.PrimaryColor
 import com.moviles.ark.ui.theme.TextColor
 import com.moviles.ark.ui.viewmodels.MoodCheckInViewModel
@@ -52,25 +60,32 @@ import kotlinx.coroutines.delay
 @Composable
 fun HomeScreen() {
     var showCheckInPopup by remember { mutableStateOf(false) }
+    var isCheckInCompleted by remember { mutableStateOf(false) }
+    var hasAutoPrompted by remember { mutableStateOf(false) }
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions -> }
 
     LaunchedEffect(Unit) {
+        //solicita permisos de localizacion al entrar
         locationPermissionLauncher.launch(
             arrayOf(
                 Manifest.permission.ACCESS_FINE_LOCATION,
                 Manifest.permission.ACCESS_COARSE_LOCATION
             )
         )
-        delay(2000)
-        showCheckInPopup = true
+        //espera un momento antes de mostrar el popup inicial automaticamente
+        if (!hasAutoPrompted && !isCheckInCompleted) {
+            delay(1500)
+            hasAutoPrompted = true
+            showCheckInPopup = true
+        }
     }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
+        color = BackgroundColor
     ) {
         Column(
             modifier = Modifier
@@ -91,48 +106,37 @@ fun HomeScreen() {
                     color = PrimaryColor
                 )
             }
+
             Spacer(modifier = Modifier.height(28.dp))
+
             Image(
                 painter = painterResource(R.drawable.ic_mascot_log),
                 contentDescription = "Mascot",
                 modifier = Modifier.size(110.dp)
             )
+
             Spacer(modifier = Modifier.height(16.dp))
+
             Text(
                 text = "Welcome back!",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground
             )
+
             Text(
                 text = "Track your wellbeing and explore tools",
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextColor.copy(alpha = 0.7f)
             )
+
             Spacer(modifier = Modifier.height(28.dp))
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color.White.copy(alpha = 0.65f))
-                    .border(1.dp, Color(0xFFEADBCE), RoundedCornerShape(16.dp))
-                    .clickable { showCheckInPopup = true }
-                    .padding(horizontal = 18.dp, vertical = 14.dp)
-            ) {
-                Column {
-                    Text(
-                        text = "Mood Check-In",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = TextColor
-                    )
-                    Text(
-                        text = "Tap to record your current emotions",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextColor.copy(alpha = 0.6f),
-                        fontSize = 12.sp
-                    )
-                }
+
+            //si no ha completado el checkin muestra la tarjeta sutil para abrirlo
+            if (!isCheckInCompleted) {
+                MoodCheckInPromptCard(
+                    onClick = { showCheckInPopup = true }
+                )
             }
         }
     }
@@ -153,9 +157,76 @@ fun HomeScreen() {
                 MoodCheckInScreen(
                     viewModel = viewModel(factory = MoodCheckInViewModel.Factory),
                     onNavigateBack = { showCheckInPopup = false },
-                    onCheckInSaved = { showCheckInPopup = false }
+                    onCheckInSaved = {
+                        isCheckInCompleted = true
+                        showCheckInPopup = false
+                    }
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun MoodCheckInPromptCard(
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .clickable { onClick() },
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF2E3CD)),
+        border = BorderStroke(1.dp, Color(0xFFE2CEB5))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(PrimaryColor.copy(alpha = 0.35f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.FavoriteBorder,
+                        contentDescription = "Mood",
+                        tint = TextColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = "Daily Mood Check-in",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = TextColor
+                    )
+                    Text(
+                        text = "How are you feeling right now? Tap to record",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextColor.copy(alpha = 0.65f),
+                        fontSize = 12.sp
+                    )
+                }
+            }
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = "Open check-in",
+                tint = TextColor.copy(alpha = 0.5f),
+                modifier = Modifier.size(20.dp)
+            )
         }
     }
 }
@@ -163,7 +234,7 @@ fun HomeScreen() {
 @Preview(showBackground = true)
 @Composable
 fun HomeScreenPreview() {
-    AppTheme({
+    AppTheme {
         HomeScreen()
-    })
+    }
 }
