@@ -1,47 +1,53 @@
 rules_version = '2';
 
+// Same rules published in the Firebase console (project ark-mobiles), shared by the Kotlin and Flutter apps.
+// Keep this file in sync with the console: `firebase deploy --only firestore:rules` publishes it as is.
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-
     function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+      return request.auth != null && request.auth.uid == userId;
     }
 
-    // Default rule: Deny all reads and writes unless explicitly permitted below
-    match /{document=**} {
-      allow read, write: if false;
+    // Profile saved by register: name, age, email
+    function isValidUser(data) {
+      return data.keys().hasOnly(['name', 'age', 'email'])
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 100
+        && data.age is int && data.age >= 0 && data.age <= 120
+        && data.email is string && data.email.size() <= 254;
     }
 
-    // User profile documents and all subcollections
-    match /users/{userId} {
+    match /users/{userId}/check_ins/{day} {
       allow read, write: if isOwner(userId);
+    }
 
-      match /{allSubcollections=**} {
-        allow read, write: if isOwner(userId);
+    match /users/{userId}/tool_feedback/{feedbackId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    match /users/{userId}/recommendations/{recommendationId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // Tools catalog: logged users can read, only the console can write
+    match /tools/{toolId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    match /users/{userId} {
+      allow read, delete: if isOwner(userId);
+      allow create, update: if isOwner(userId) && isValidUser(request.resource.data);
+
+      // Private data of each user
+      // Flutter: photos, breathing_sessions, tear_entries, tool_sessions, stats, feedback
+      // Kotlin: mood_checkins, photos, tool_interactions (#33), stats_summary and useful_insights (Stats, #15/#29)
+      match /{collection}/{docId} {
+        allow read, write: if isOwner(userId)
+          && collection in ['photos', 'breathing_sessions', 'mood_checkins', 'tear_entries',
+                            'tool_sessions', 'stats', 'feedback',
+                            'tool_interactions', 'stats_summary', 'useful_insights'];
       }
-    }
-
-    // Check-in entries collection
-    match /checkins/{checkInId} {
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow read, update, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
-    }
-
-    // Tool feedback collection
-    match /tool_feedback/{feedbackId} {
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow read, update, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
-    }
-
-    // Tool interactions and stats collection
-    match /tool_interactions/{interactionId} {
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow read, update, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
     }
   }
 }
