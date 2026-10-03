@@ -21,11 +21,11 @@ interface ToolRecordDao {
     suspend fun insertInteraction(interaction: ToolInteractionEntity): Long
 
     //todas las interacciones, de la mas nueva a la mas vieja
-    @Query("SELECT * FROM tool_interactions ORDER BY startedAt DESC")
+    @Query("SELECT * FROM tool_interactions ORDER BY timestamp DESC")
     fun getInteractions(): Flow<List<ToolInteractionEntity>>
 
-    //interacciones desde una fecha (estadisticas e insights)
-    @Query("SELECT * FROM tool_interactions WHERE startedAt >= :fromMillis ORDER BY startedAt ASC")
+    //interacciones desde una fecha en milisegundos (estadisticas e insights)
+    @Query("SELECT * FROM tool_interactions WHERE timestamp >= :fromMillis ORDER BY timestamp ASC")
     fun getInteractionsSince(fromMillis: Long): Flow<List<ToolInteractionEntity>>
 
     //cuantas veces se uso cada herramienta, de la mas usada a la menos (#15 torta y #22 por frecuencia)
