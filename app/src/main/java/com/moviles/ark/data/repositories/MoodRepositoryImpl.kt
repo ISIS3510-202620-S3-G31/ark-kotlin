@@ -3,6 +3,7 @@ package com.moviles.ark.data.repositories
 import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.moviles.ark.data.remote.CrashlyticsHelper
 import com.moviles.ark.domain.models.CheckInModel
 import com.moviles.ark.domain.repositories.MoodRepository
 import kotlinx.coroutines.tasks.await
@@ -37,5 +38,16 @@ class MoodRepositoryImpl(
         Unit
     }.onFailure { error ->
         Log.e("MoodCheckIn", "Failed to save checkin to Firestore", error)
+        CrashlyticsHelper.logNonFatal(
+            componentName = "MoodRepository",
+            action = "saveCheckIn",
+            throwable = error,
+            extraKeys = mapOf(
+                "user_id" to (auth.currentUser?.uid ?: "anonymous"),
+                "has_location" to (checkIn.latitude != null && checkIn.longitude != null),
+                "emotions_count" to checkIn.mood.getEmotions().size
+            )
+        )
     }
 }
+

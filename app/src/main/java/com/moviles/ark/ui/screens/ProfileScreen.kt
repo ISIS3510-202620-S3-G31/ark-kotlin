@@ -56,7 +56,8 @@ private val CardFill = TextColor.copy(alpha = 0.06f)
 fun ProfileScreen(
     uiState: ProfileUiState,
     onSignOutClick: () -> Unit,
-    onRetryClick: () -> Unit
+    onRetryClick: () -> Unit,
+    onTestCrashClick: (() -> Unit)? = null
 ) {
     Surface(modifier = Modifier.fillMaxSize(), color = BackgroundColor) {
         Column(
@@ -133,6 +134,16 @@ fun ProfileScreen(
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("Sign out", style = MaterialTheme.typography.labelLarge)
             }
+
+            onTestCrashClick?.let { onCrash ->
+                Spacer(modifier = Modifier.height(12.dp))
+                TextButton(
+                    onClick = onCrash,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Test Crashlytics (Fatal Crash)", color = MaterialTheme.colorScheme.error.copy(alpha = 0.7f), style = MaterialTheme.typography.bodySmall)
+                }
+            }
         }
     }
 }
@@ -173,7 +184,8 @@ fun ProfileRoute(
     ProfileScreen(
         uiState = uiState,
         onSignOutClick = viewModel::onSignOutClick,
-        onRetryClick = viewModel::loadProfile
+        onRetryClick = viewModel::loadProfile,
+        onTestCrashClick = { com.moviles.ark.data.remote.CrashlyticsHelper.triggerTestFatalCrash() }
     )
 }
 
