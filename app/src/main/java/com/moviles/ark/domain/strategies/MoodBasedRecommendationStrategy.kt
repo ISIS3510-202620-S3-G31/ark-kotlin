@@ -24,7 +24,7 @@ class MoodBasedRecommendationStrategy(
         // asi es más facil cuando la persona sienta muchas cosas y me da to do juntito lindo
         val targetCategories = emotions.flatMap { emotion ->
             mapEmotionToToolCategories(emotion)
-        }.toSet() // osea puedo recorrer to do pero aja más fail así y no me complico con un dic
+        }.toSet() // osea puedo recorrer to do pero aja más fail así y no me complico con un dic tipo si tengo todas las emociones de un mood quiero tener solo una lista de categorias no 10 mil
 
         if (targetCategories.isEmpty()) return tools
 
