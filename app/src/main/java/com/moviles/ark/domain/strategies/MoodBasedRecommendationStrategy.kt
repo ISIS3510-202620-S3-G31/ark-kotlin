@@ -20,10 +20,11 @@ class MoodBasedRecommendationStrategy(
         val checkIn = context.latestCheckIn ?: defaultCheckIn ?: return tools
         val emotions = checkIn.mood.getEmotions()
         if (emotions.isEmpty()) return tools
-
+        // mejor usar el flat porqeu el map normal me deja matrices entonces mejor el flat wque me deja una lista por las dif emociones qeu tenga un mood y con eso lo vuelvo set y asi no se repiten porque no habia contemplado cuando se repetian
+        // asi es más facil cuando la persona sienta muchas cosas y me da to do juntito lindo
         val targetCategories = emotions.flatMap { emotion ->
             mapEmotionToToolCategories(emotion)
-        }.toSet()
+        }.toSet() // osea puedo recorrer to do pero aja más fail así y no me complico con un dic tipo si tengo todas las emociones de un mood quiero tener solo una lista de categorias no 10 mil
 
         if (targetCategories.isEmpty()) return tools
 
@@ -36,7 +37,8 @@ class MoodBasedRecommendationStrategy(
 
     companion object {
         /**
-         * Maps user emotions (ANGER, FEAR, SADNESS, HAPPINESS, etc.) to strongly typed ToolCategory enum sets.
+         * Maps user emotion to a direct ToolCategory enum sets por lo general es mejor dejarla como statica poorque no depende de nad es estandar y además
+         * asi se puede llamar en cualqueir otra pantalla si es el caso
          */
         fun mapEmotionToToolCategories(emotion: Any): Set<ToolCategory> {
             val name = when (emotion) {

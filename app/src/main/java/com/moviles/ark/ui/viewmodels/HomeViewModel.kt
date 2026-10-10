@@ -26,11 +26,11 @@ import kotlinx.coroutines.launch
 class HomeViewModel(
     private val toolRepository: com.moviles.ark.domain.repositories.ToolRepository,
     private val moodRepository: MoodRepository? = null,
-    //elige la estrategia de recomendacion segun el contexto del usuario (#23)
+    //elige la estrategia de recomendacion segun el contexto del usuario
     private val contextResolver: RecommendationContextResolver = RecommendationContextResolver(),
-    //cronometro de la pregunta de negocio #1: arranca cuando el usuario toca una herramienta (#90)
+    //cronometro de la pregunta de negocio #1: arranca cuando el usuario toca una herramienta
     private val toolLatencyTracker: ToolLatencyTracker? = null,
-    //herramientas que el usuario ya termino (room), para recomendar por frecuencia (#96)
+    //herramientas que el usuario ya termino para tener la info parecomendar por frecuencia
     private val toolInteractionRepository: ToolInteractionRepository? = null,
     private val now: () -> Long = { System.currentTimeMillis() },
     initialTools: List<Tool> = ToolRepositoryImpl.sampleTools
@@ -112,7 +112,7 @@ class HomeViewModel(
 
     //las tres entradas del home (catalogo, recomendacion y surprise me) llegan aqui
     fun onToolClick(toolId: String) {
-        //el toque es el inicio de la medicion; la pantalla de la herramienta la cierra al dibujarse (#90)
+        //el toque es el inicio de la medicion; la pantalla de la herramienta la cierra al dibujarse
         toolLatencyTracker?.start(toolId)
         _uiState.value = _uiState.value.copy(navigateToToolId = toolId)
     }
@@ -122,7 +122,7 @@ class HomeViewModel(
         _uiState.value = _uiState.value.copy(navigateToToolId = null)
     }
 
-    //el home se vuelve a mostrar: si venia de una herramienta, puede haber una interaccion nueva en room (#96)
+    //el home se vuelve a mostrar: si venia de una herramienta, puede haber una interaccion nueva en room
     fun onHomeShown() {
         if (!isAwayInTool) return
         isAwayInTool = false
@@ -134,7 +134,7 @@ class HomeViewModel(
         loadTools()
     }
 
-    //decide la estrategia con el ultimo check-in del usuario (#23) y las herramientas que termino (#96)
+    //decide la estrategia con el ultimo check-in del usuario  y las herramientas que termino
     private suspend fun resolveDecision(): RecommendationDecision {
         val latestCheckIn = moodRepository?.getLatestCheckIn()?.getOrNull()
         val from = now() - RecommendationContextResolver.USAGE_WINDOW_DAYS * DAY_MILLIS
