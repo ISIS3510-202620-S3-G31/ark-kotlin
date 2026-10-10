@@ -6,7 +6,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 
 //repositorio falso con datos de ejemplo, para previews y para avanzar en las pantallas
-//mientras llega el repositorio real con room y firestore (#9 + #11 + #20)
+//mientras llega el repositorio real con room y firestore
 class FakeToolRepository(initialTools: List<Tool> = sampleTools) : ToolRepository {
     private val tools = MutableStateFlow(initialTools)
 
