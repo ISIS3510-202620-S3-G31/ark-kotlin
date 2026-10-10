@@ -7,7 +7,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
-import com.moviles.ark.data.repositories.FakeToolRepository
+import com.moviles.ark.data.repositories.ToolRepositoryImpl
 import com.moviles.ark.domain.models.RecommendationContextResolver
 import com.moviles.ark.domain.models.RecommendationDecision
 import com.moviles.ark.domain.models.Tool
@@ -15,7 +15,6 @@ import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.domain.models.ToolLatencyTracker
 import com.moviles.ark.domain.repositories.MoodRepository
 import com.moviles.ark.domain.repositories.ToolInteractionRepository
-import com.moviles.ark.domain.repositories.ToolRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,7 +24,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
 
 class HomeViewModel(
-    private val toolRepository: ToolRepository,
+    private val toolRepository: com.moviles.ark.domain.repositories.ToolRepository,
     private val moodRepository: MoodRepository? = null,
     //elige la estrategia de recomendacion segun el contexto del usuario
     private val contextResolver: RecommendationContextResolver = RecommendationContextResolver(),
@@ -34,7 +33,7 @@ class HomeViewModel(
     //herramientas que el usuario ya termino para tener la info parecomendar por frecuencia
     private val toolInteractionRepository: ToolInteractionRepository? = null,
     private val now: () -> Long = { System.currentTimeMillis() },
-    initialTools: List<Tool> = FakeToolRepository.sampleTools
+    initialTools: List<Tool> = ToolRepositoryImpl.sampleTools
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -46,7 +45,7 @@ class HomeViewModel(
     )
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
-    //carga activa del catalogo getTools nunca termina, asi que antes de volver a cargar se cancela la anterior
+    //carga activa del catalogo getToolsnunca termina, asi que antes de volver a cargar se cancela la anterior
     private var loadToolsJob: Job? = null
 
     //true mientras el usuario esta en una herramienta; al volver se recalculan las recomendaciones

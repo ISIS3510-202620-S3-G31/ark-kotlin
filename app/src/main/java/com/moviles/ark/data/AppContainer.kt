@@ -18,7 +18,7 @@ import com.moviles.ark.data.local.sensors.SyncManager
 import com.moviles.ark.data.repositories.AnalyticsRepositoryImpl
 import com.moviles.ark.data.repositories.AuthRepositoryImpl
 import com.moviles.ark.data.repositories.BreathingRepositoryImpl
-import com.moviles.ark.data.repositories.FakeToolRepository
+import com.moviles.ark.data.repositories.ToolRepositoryImpl
 import com.moviles.ark.data.repositories.LocationRepositoryImpl
 import com.moviles.ark.data.repositories.MoodRepositoryImpl
 import com.moviles.ark.data.repositories.PhotoRepositoryImpl
@@ -35,7 +35,6 @@ import com.moviles.ark.domain.repositories.PhotoRepository
 import com.moviles.ark.domain.repositories.StatsRepository
 import com.moviles.ark.domain.repositories.SyncRepository
 import com.moviles.ark.domain.repositories.ToolInteractionRepository
-import com.moviles.ark.domain.repositories.ToolRepository
 
 interface AppContainer {
     val auth: FirebaseAuth
@@ -43,7 +42,7 @@ interface AppContainer {
     val authRepository: AuthRepository
     val locationRepository: LocationRepository
     val moodRepository: MoodRepository
-    val toolRepository: ToolRepository
+    val toolRepository: com.moviles.ark.domain.repositories.ToolRepository
     val toolInteractionRepository: ToolInteractionRepository
     val statsRepository: StatsRepository
     val photoRepository: PhotoRepository
@@ -73,7 +72,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val locationRepository: LocationRepository by lazy { LocationRepositoryImpl(Location(context)) }
     override val moodRepository: MoodRepository by lazy { MoodRepositoryImpl(auth, firestore) }
     // fake catalog until the Room implementation of #9 is ready; then only this line changes
-    override val toolRepository: ToolRepository by lazy { FakeToolRepository() }
+    override val toolRepository: com.moviles.ark.domain.repositories.ToolRepository by lazy { ToolRepositoryImpl() }
     // interacciones con herramientas guardadas en room; las usa la recomendacion por frecuencia del home (#96)
     override val toolInteractionRepository: ToolInteractionRepository by lazy { ToolInteractionRepositoryImpl(database.toolRecordDao()) }
     override val statsRepository: StatsRepository by lazy { StatsRepositoryImpl(auth, firestore) }
