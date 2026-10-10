@@ -7,7 +7,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 
 //repositorio falso con datos de ejemplo para previews y para ir avanzarndo en las pantallas
 //por ahora le voy a poner datos asi fijos ya despues si se implemnta bien esta clase para que tenga bien el llamado al firebase segun la division de los issues y ya
-class FakeToolRepository(initialTools: List<Tool> = sampleTools) : ToolRepository {
+class ToolRepositoryImpl(initialTools: List<Tool> = sampleTools) : ToolRepository {
     private val tools = MutableStateFlow(initialTools)
 
     override fun getTools(): Flow<List<Tool>> = tools

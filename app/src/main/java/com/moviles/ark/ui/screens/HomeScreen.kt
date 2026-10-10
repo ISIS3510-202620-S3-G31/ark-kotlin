@@ -59,7 +59,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -70,9 +69,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.moviles.ark.ArkApplication
 import com.moviles.ark.R
-import com.moviles.ark.data.repositories.FakeToolRepository
+import com.moviles.ark.data.repositories.ToolRepositoryImpl
 import com.moviles.ark.domain.models.Tool
 import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.ui.components.RecommendationCardComponent
@@ -120,7 +118,7 @@ fun HomeRoute(
 
 @Composable
 fun HomeScreen(
-    uiState: HomeUiState = HomeUiState(tools = FakeToolRepository.sampleTools, filteredTools = FakeToolRepository.sampleTools),
+    uiState: HomeUiState = HomeUiState(tools = ToolRepositoryImpl.sampleTools, filteredTools = ToolRepositoryImpl.sampleTools),
     onCategorySelect: (ToolCategory?) -> Unit = {},
     onSurpriseMe: () -> Unit = {},
     onToolClick: (String) -> Unit = {},
