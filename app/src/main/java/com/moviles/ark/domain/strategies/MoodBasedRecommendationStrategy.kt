@@ -36,7 +36,7 @@ class MoodBasedRecommendationStrategy(
 
     companion object {
         /**
-         * Maps user emotions (ANGER, FEAR, SADNESS, HAPPINESS, etc.) to strongly typed ToolCategory enum sets.
+         * Maps user emotion to a direct ToolCategory enum sets.
          */
         fun mapEmotionToToolCategories(emotion: Any): Set<ToolCategory> {
             val name = when (emotion) {

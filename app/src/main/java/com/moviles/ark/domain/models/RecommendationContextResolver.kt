@@ -24,10 +24,10 @@ data class RecommendationDecision(
     val reason: RecommendationReason
 )
 
-//logica de decision del home (#23): mira el contexto actual del usuario y elige la estrategia de recomendacion (#22)
-//1. si hizo check-in hoy -> por animo (MoodBasedRecommendationStrategy)
-//2. si no, pero termino al menos 3 herramientas en los ultimos 30 dias -> por frecuencia (FrequencyBasedRecommendationStrategy)
-//3. si no -> orden por defecto (DefaultRecommendationStrategy)
+// mira el contexto actual del usuario y elige la estrategia de recomendacion (#22)
+// si hizo check-in hoy por mood
+// si no pero termino al menos 3 herramientas en los ultimos 30 dias  por frecuencia estos ddatos igual los podemos cambiar más adelante si llega a ser el caso de como susen los ususraior nuestra app
+// si no orden por defecto
 class RecommendationContextResolver(
     private val zone: TimeZone = TimeZone.getDefault(),
     //se puede cambiar para fijar "ahora"
@@ -41,16 +41,16 @@ class RecommendationContextResolver(
     fun resolve(checkIns: List<CheckInModel>, interactions: List<ToolInteraction>): RecommendationDecision {
         val today = dayOf(now())
 
-        //el check-in mas reciente de hoy (hora local), si trae al menos una emocion
+        //el check-in mas reciente de hoy (hora local) si trae al menos una emocion
         val todayCheckIn = checkIns
-            .filter { dayOf(it.timestamp) == today && it.isValidMood() }
-            .maxByOrNull { it.timestamp }
+            .filter { dayOf(it.timestamp) == today && it.isValidMood() } // uso dayof para hacer bien la comparacion para el tema de dif horarias e
+            .maxByOrNull { it.timestamp } // Se queda con el más reciente por si hizo varios
 
         //cuantas veces termino cada herramienta en los ultimos 30 dias
         val usageCounts = interactions
-            .filter { it.complete && today - dayOf(it.timestamp.time) in 0 until USAGE_WINDOW_DAYS }
-            .groupingBy { it.toolId }
-            .eachCount()
+            .filter { it.complete && today - dayOf(it.timestamp.time) in 0 until USAGE_WINDOW_DAYS } // Solo si complelto la herramienta pooruqe puede uqe enre pero al final no
+            .groupingBy { it.toolId }  // miramos que tan lejos fue con el tiempo  y luego miro si esta entre 0 y 30 y si si pues la incluyo
+            .eachCount() // contamos ya qeu agrupamos por herramienta
 
         val context = RecommendationContext(usageCounts = usageCounts, latestCheckIn = todayCheckIn)
         return when {
@@ -61,7 +61,7 @@ class RecommendationContextResolver(
         }
     }
 
-    //atajo para el HomeViewModel (#13): decide y ordena el catalogo con la estrategia elegida
+    //atajo para el decide y ordena el catalogo con la estrategia elegida
     fun recommend(
         tools: List<Tool>,
         checkIns: List<CheckInModel>,
