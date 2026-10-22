@@ -33,9 +33,6 @@ class RecommendationContextResolver(
     //se puede cambiar para fijar "ahora"
     private val now: () -> Long = { System.currentTimeMillis() }
 ) {
-    private val moodBased = MoodBasedRecommendationStrategy()
-    private val frequencyBased = FrequencyBasedRecommendationStrategy()
-    private val default = DefaultRecommendationStrategy()
 
     //arma el contexto con los datos del usuario y decide la estrategia
     fun resolve(checkIns: List<CheckInModel>, interactions: List<ToolInteraction>): RecommendationDecision {
@@ -54,10 +51,10 @@ class RecommendationContextResolver(
 
         val context = RecommendationContext(usageCounts = usageCounts, latestCheckIn = todayCheckIn)
         return when {
-            todayCheckIn != null -> RecommendationDecision(moodBased, context, RecommendationReason.TODAY_MOOD)
+            todayCheckIn != null -> RecommendationDecision(MoodBasedRecommendationStrategy(), context, RecommendationReason.TODAY_MOOD)
             usageCounts.values.sum() >= MIN_COMPLETED_INTERACTIONS ->
-                RecommendationDecision(frequencyBased, context, RecommendationReason.USAGE_HISTORY)
-            else -> RecommendationDecision(default, context, RecommendationReason.DEFAULT)
+                RecommendationDecision(FrequencyBasedRecommendationStrategy(), context, RecommendationReason.USAGE_HISTORY)
+            else -> RecommendationDecision(DefaultRecommendationStrategy(), context, RecommendationReason.DEFAULT)
         }
     }
 
