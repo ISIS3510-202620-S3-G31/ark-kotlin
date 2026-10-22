@@ -58,15 +58,6 @@ class RecommendationContextResolver(
         }
     }
 
-    //atajo para el decide y ordena el catalogo con la estrategia elegida
-    fun recommend(
-        tools: List<Tool>,
-        checkIns: List<CheckInModel>,
-        interactions: List<ToolInteraction>
-    ): List<Tool> {
-        val decision = resolve(checkIns, interactions)
-        return decision.strategy.recommend(tools, decision.context)
-    }
 
     //numero del dia en la hora local; se suma el desfase de la zona para que el dia cambie a medianoche de colombia
     private fun dayOf(millis: Long): Long = (millis + zone.getOffset(millis)) / DAY_MILLIS
