@@ -1,0 +1,184 @@
+package com.moviles.ark.data.repositories
+
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
+import android.net.Uri
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
+import com.moviles.ark.data.local.daos.UserDao
+import com.moviles.ark.data.local.entities.UserEntity
+import com.moviles.ark.data.local.entities.toDomain
+import com.moviles.ark.data.remote.CrashlyticsHelper
+import com.moviles.ark.domain.models.UserProfile
+import com.moviles.ark.domain.repositories.UserRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import java.io.File
+import java.io.FileOutputStream
+
+//perfil del usuario: room primero, firestore despues (#119)
+class UserRepositoryImpl(
+    private val context: Context,
+    private val auth: FirebaseAuth,
+    private val firestore: FirebaseFirestore,
+    private val userDao: UserDao
+) : UserRepository {
+
+    override fun observeProfile(): Flow<UserProfile?> {
+        val uid = auth.currentUser?.uid ?: return flowOf(null)
+        return userDao.observeUser(uid).map { it?.toDomain() }
+    }
+
+    override suspend fun refreshProfile(): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val user = auth.currentUser ?: error("No user is logged in")
+            val local = userDao.getUser(user.uid)
+
+            //el usuario edito su perfil sin internet: se sube lo local en vez de pisarlo con lo de firestore
+            if (local != null && !local.isSynced) {
+                pushProfile(user.uid, local.name, local.age)
+                return@runCatching
+            }
+
+            //email y fecha de creacion vienen de la sesion guardada en el telefono; nombre y edad de firestore
+            //sin internet firestore responde con su copia local; si no tiene, se queda lo que habia en room
+            val document = runCatching {
+                firestore.collection("users").document(user.uid).get().await()
+            }.onFailure { firestoreError ->
+                CrashlyticsHelper.logNonFatal(
+                    componentName = "UserRepository",
+                    action = "refreshProfile_firestore_fetch",
+                    throwable = firestoreError,
+                    extraKeys = mapOf("user_id" to user.uid)
+                )
+            }.getOrNull()
+
+            val remoteName = document?.getString("name").orEmpty()
+            val remoteAge = document?.getLong("age")?.toInt() ?: 0
+            userDao.upsertUser(
+                UserEntity(
+                    uid = user.uid,
+                    name = remoteName.ifBlank { local?.name.orEmpty() },
+                    email = user.email.orEmpty(),
+                    age = if (remoteAge > 0) remoteAge else local?.age ?: 0,
+                    streakDays = local?.streakDays ?: 0,
+                    lastCheckInAt = local?.lastCheckInAt,
+                    createdAt = user.metadata?.creationTimestamp ?: local?.createdAt ?: 0L,
+                    avatarPath = local?.avatarPath,
+                    isSynced = true
+                )
+            )
+            //si firestore no respondio y room tampoco tenia nada, la pantalla debe saber que fallo
+            if (document == null && local == null) error("Could not load the profile")
+        }.onFailure { error ->
+            CrashlyticsHelper.logNonFatal(
+                componentName = "UserRepository",
+                action = "refreshProfile",
+                throwable = error
+            )
+        }
+    }
+
+    override suspend fun updateProfile(name: String, age: Int): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val uid = auth.currentUser?.uid ?: error("No user is logged in")
+            //primero room: la pantalla cambia de una vez, haya o no internet
+            userDao.updateProfile(uid, name.trim(), age)
+            pushProfile(uid, name.trim(), age)
+        }.onFailure { error ->
+            CrashlyticsHelper.logNonFatal(
+                componentName = "UserRepository",
+                action = "updateProfile",
+                throwable = error,
+                extraKeys = mapOf("age" to age)
+            )
+        }
+    }
+
+    override suspend fun updateAvatar(sourceUri: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val uid = auth.currentUser?.uid ?: error("No user is logged in")
+            val avatarsDir = File(context.filesDir, "avatars").apply { if (!exists()) mkdirs() }
+            //nombre nuevo cada vez para que la pantalla note el cambio; la foto anterior se borra
+            val destFile = File(avatarsDir, "avatar_${uid}_${System.currentTimeMillis()}.jpg")
+            val avatar = decodeAvatar(Uri.parse(sourceUri))
+            FileOutputStream(destFile).use { output ->
+                avatar.compress(Bitmap.CompressFormat.JPEG, AVATAR_JPEG_QUALITY, output)
+            }
+            avatar.recycle()
+
+            val previousPath = userDao.getUser(uid)?.avatarPath
+            userDao.updateAvatar(uid, destFile.absolutePath)
+            if (previousPath != null && previousPath != destFile.absolutePath) File(previousPath).delete()
+            Unit
+        }.onFailure { error ->
+            CrashlyticsHelper.logNonFatal(
+                componentName = "UserRepository",
+                action = "updateAvatar",
+                throwable = error
+            )
+        }
+    }
+
+    override suspend fun saveStreak(streakDays: Int, lastCheckInAt: Long?): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val uid = auth.currentUser?.uid ?: error("No user is logged in")
+            userDao.updateStreak(uid, streakDays, lastCheckInAt)
+        }
+    }
+
+    //las reglas de firestore solo aceptan name, age y email en users/{uid}: la racha y el avatar se quedan en room
+    //sin internet firestore guarda la escritura en su cola y la manda sola al volver la conexion,
+    //pero el await no termina hasta que el servidor responde; por eso se espera poco y se deja pendiente en room
+    private suspend fun pushProfile(uid: String, name: String, age: Int) {
+        //update devuelve Task<Void>: su await da null, por eso el bloque devuelve true para saber que si termino
+        val written = withTimeoutOrNull(PUSH_TIMEOUT_MILLIS) {
+            firestore.collection("users").document(uid)
+                .update("name", name, "age", age)
+                .await()
+            true
+        } ?: false
+        if (written) userDao.markAsSynced(uid)
+    }
+
+    //el avatar se guarda pequeno y ya derecho (segun el exif de la camara), asi la pantalla solo lo lee
+    private fun decodeAvatar(uri: Uri): Bitmap {
+        val resolver = context.contentResolver
+        //primero solo las medidas (con inJustDecodeBounds decodeStream siempre devuelve null)
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        val stream = resolver.openInputStream(uri) ?: error("Cannot open the photo: $uri")
+        stream.use { BitmapFactory.decodeStream(it, null, bounds) }
+        var sample = 1
+        while (bounds.outWidth / (sample * 2) >= AVATAR_SIZE_PX && bounds.outHeight / (sample * 2) >= AVATAR_SIZE_PX) sample *= 2
+
+        val options = BitmapFactory.Options().apply { inSampleSize = sample }
+        val bitmap = resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
+            ?: error("Cannot decode the photo: $uri")
+        val rotation = resolver.openInputStream(uri)?.use { stream ->
+            when (ExifInterface(stream).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
+                ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+                ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+                ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+                else -> 0f
+            }
+        } ?: 0f
+        if (rotation == 0f) return bitmap
+        val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, Matrix().apply { postRotate(rotation) }, true)
+        if (rotated != bitmap) bitmap.recycle()
+        return rotated
+    }
+
+    companion object {
+        private const val PUSH_TIMEOUT_MILLIS = 5_000L
+        private const val AVATAR_SIZE_PX = 512
+        private const val AVATAR_JPEG_QUALITY = 90
+    }
+}

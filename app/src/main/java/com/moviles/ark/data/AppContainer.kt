@@ -25,6 +25,7 @@ import com.moviles.ark.data.repositories.PhotoRepositoryImpl
 import com.moviles.ark.data.repositories.StatsRepositoryImpl
 import com.moviles.ark.data.repositories.SyncRepositoryImpl
 import com.moviles.ark.data.repositories.ToolInteractionRepositoryImpl
+import com.moviles.ark.data.repositories.UserRepositoryImpl
 import com.moviles.ark.domain.models.ToolLatencyTracker
 import com.moviles.ark.domain.repositories.AnalyticsRepository
 import com.moviles.ark.domain.repositories.AuthRepository
@@ -35,11 +36,13 @@ import com.moviles.ark.domain.repositories.PhotoRepository
 import com.moviles.ark.domain.repositories.StatsRepository
 import com.moviles.ark.domain.repositories.SyncRepository
 import com.moviles.ark.domain.repositories.ToolInteractionRepository
+import com.moviles.ark.domain.repositories.UserRepository
 
 interface AppContainer {
     val auth: FirebaseAuth
     val firestore: FirebaseFirestore
     val authRepository: AuthRepository
+    val userRepository: UserRepository
     val locationRepository: LocationRepository
     val moodRepository: MoodRepository
     val toolRepository: com.moviles.ark.domain.repositories.ToolRepository
@@ -69,6 +72,8 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val auth: FirebaseAuth by lazy { Firebase.auth }
     override val firestore: FirebaseFirestore by lazy { Firebase.firestore }
     override val authRepository: AuthRepository by lazy { AuthRepositoryImpl(auth, firestore) }
+    // perfil guardado en room para verlo sin internet, con nombre y edad sincronizados con firestore (#119)
+    override val userRepository: UserRepository by lazy { UserRepositoryImpl(context, auth, firestore, database.userDao()) }
     override val locationRepository: LocationRepository by lazy { LocationRepositoryImpl(Location(context)) }
     override val moodRepository: MoodRepository by lazy { MoodRepositoryImpl(auth, firestore) }
     // fake catalog until the Room implementation of #9 is ready; then only this line changes

@@ -23,6 +23,14 @@ class CheckInStreak(
         return streak
     }
 
+    //racha guardada en el telefono (#119): solo sigue valiendo si el ultimo check-in fue hoy o ayer
+    //si no, el usuario ya perdio un dia completo y la racha es 0 aunque room diga otra cosa
+    fun stillAlive(savedStreak: Int, lastCheckInAt: Long?): Int {
+        if (lastCheckInAt == null || savedStreak <= 0) return 0
+        val daysAgo = dayOf(now()) - dayOf(lastCheckInAt)
+        return if (daysAgo in 0..1) savedStreak else 0
+    }
+
     //numero del dia en la hora local; se suma el desfase de la zona para que el dia cambie a medianoche de colombia
     private fun dayOf(millis: Long): Long = (millis + zone.getOffset(millis)) / DAY_MILLIS
 
