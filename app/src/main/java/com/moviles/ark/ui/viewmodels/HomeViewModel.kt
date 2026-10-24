@@ -15,6 +15,8 @@ import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.domain.models.ToolLatencyTracker
 import com.moviles.ark.domain.repositories.MoodRepository
 import com.moviles.ark.domain.repositories.ToolInteractionRepository
+import com.moviles.ark.domain.strategies.DefaultRecommendationStrategy
+import com.moviles.ark.domain.strategies.RecommendationStrategy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -51,6 +53,10 @@ class HomeViewModel(
     //true mientras el usuario esta en una herramienta; al volver se recalculan las recomendaciones
     private var isAwayInTool = false
 
+    //unica estrategia de recomendacion del home (#121); el resolver la cambia segun el contexto del usuario
+    //arranca con el orden por defecto mientras llegan el check-in y el historial
+    private var activeStrategy: RecommendationStrategy = DefaultRecommendationStrategy()
+
     init {
         checkTodayStatus()
         loadTools()
@@ -77,7 +83,8 @@ class HomeViewModel(
                 }
                 .collect { rawTools ->
                     val decision = resolveDecision()
-                    val recommendedTools = decision.strategy.recommend(rawTools, decision.context)
+                    activeStrategy = decision.strategy
+                    val recommendedTools = activeStrategy.recommend(rawTools, decision.context)
                     val filtered = applyCategoryFilter(recommendedTools, _uiState.value.selectedCategory)
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
@@ -139,7 +146,7 @@ class HomeViewModel(
         val latestCheckIn = moodRepository?.getLatestCheckIn()?.getOrNull()
         val from = now() - RecommendationContextResolver.USAGE_WINDOW_DAYS * DAY_MILLIS
         val interactions = toolInteractionRepository?.getInteractionsSince(from)?.getOrNull().orEmpty()
-        return contextResolver.resolve(listOfNotNull(latestCheckIn), interactions)
+        return contextResolver.resolve(listOfNotNull(latestCheckIn), interactions, current = activeStrategy)
     }
 
     private fun applyCategoryFilter(tools: List<Tool>, category: ToolCategory?): List<Tool> {
