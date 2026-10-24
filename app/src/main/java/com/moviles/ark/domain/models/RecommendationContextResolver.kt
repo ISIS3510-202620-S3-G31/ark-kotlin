@@ -35,7 +35,12 @@ class RecommendationContextResolver(
 ) {
 
     //arma el contexto con los datos del usuario y decide la estrategia
-    fun resolve(checkIns: List<CheckInModel>, interactions: List<ToolInteraction>): RecommendationDecision {
+    //current es la estrategia que ya esta activa en el home: si sigue siendo la correcta se reutiliza (#121)
+    fun resolve(
+        checkIns: List<CheckInModel>,
+        interactions: List<ToolInteraction>,
+        current: RecommendationStrategy? = null
+    ): RecommendationDecision {
         val today = dayOf(now())
 
         //el check-in mas reciente de hoy (hora local) si trae al menos una emocion
@@ -50,14 +55,23 @@ class RecommendationContextResolver(
             .eachCount() // contamos ya qeu agrupamos por herramienta
 
         val context = RecommendationContext(usageCounts = usageCounts, latestCheckIn = todayCheckIn)
-        return when {
-            todayCheckIn != null -> RecommendationDecision(MoodBasedRecommendationStrategy(), context, RecommendationReason.TODAY_MOOD)
-            usageCounts.values.sum() >= MIN_COMPLETED_INTERACTIONS ->
-                RecommendationDecision(FrequencyBasedRecommendationStrategy(), context, RecommendationReason.USAGE_HISTORY)
-            else -> RecommendationDecision(DefaultRecommendationStrategy(), context, RecommendationReason.DEFAULT)
+        //primero se decide el motivo y despues se crea solo la estrategia de ese motivo
+        val reason = when {
+            todayCheckIn != null -> RecommendationReason.TODAY_MOOD
+            usageCounts.values.sum() >= MIN_COMPLETED_INTERACTIONS -> RecommendationReason.USAGE_HISTORY
+            else -> RecommendationReason.DEFAULT
         }
+        return RecommendationDecision(strategyFor(reason, current), context, reason)
     }
 
+    //si la estrategia activa ya es la del motivo se deja la misma; si no, se instancia unicamente la nueva
+    private fun strategyFor(reason: RecommendationReason, current: RecommendationStrategy?): RecommendationStrategy {
+        return when (reason) {
+            RecommendationReason.TODAY_MOOD -> current as? MoodBasedRecommendationStrategy ?: MoodBasedRecommendationStrategy()
+            RecommendationReason.USAGE_HISTORY -> current as? FrequencyBasedRecommendationStrategy ?: FrequencyBasedRecommendationStrategy()
+            RecommendationReason.DEFAULT -> current as? DefaultRecommendationStrategy ?: DefaultRecommendationStrategy()
+        }
+    }
 
     //numero del dia en la hora local; se suma el desfase de la zona para que el dia cambie a medianoche de colombia
     private fun dayOf(millis: Long): Long = (millis + zone.getOffset(millis)) / DAY_MILLIS
