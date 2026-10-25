@@ -23,13 +23,12 @@ data class LocationResult(
 class Location(private val context: Context) {
     private val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
 
-    suspend fun fetchLastKnownLocation(): LocationResult? {
-        val coords = fetchCoordinates() ?: return null
-        val cityName = resolveCityName(coords.first, coords.second)
-        return LocationResult(coords.first, coords.second, cityName)
+    companion object {
+        // Ventana de frescura maxima de 48 horas para reutilizar coordenadas en cache (#110)
+        const val MAX_LOCATION_AGE_MILLIS = 48 * 60 * 60 * 1000L
     }
 
-    private suspend fun fetchCoordinates(): Pair<Double, Double>? = suspendCancellableCoroutine { continuation ->
+    fun hasLocationPermission(): Boolean {
         val hasFine = ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.ACCESS_FINE_LOCATION
@@ -38,20 +37,50 @@ class Location(private val context: Context) {
             context,
             Manifest.permission.ACCESS_COARSE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
+        return hasFine || hasCoarse
+    }
 
-        if (!hasFine && !hasCoarse) {
+    // 1. Verifica si el hardware del GPS o el proveedor de red estan habilitados en los ajustes del dispositivo
+    fun isGpsEnabled(): Boolean {
+        val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return false
+        return locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
+               locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+    }
+
+    suspend fun fetchLastKnownLocation(): LocationResult? {
+        val coords = fetchCoordinates() ?: return null
+        val cityName = resolveCityName(coords.first, coords.second)
+        return LocationResult(coords.first, coords.second, cityName)
+    }
+
+    private suspend fun fetchCoordinates(): Pair<Double, Double>? = suspendCancellableCoroutine { continuation ->
+        if (!hasLocationPermission()) {
             continuation.resume(null)
             return@suspendCancellableCoroutine
         }
 
+        val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+
+        // Si el GPS esta desactivado a nivel de sistema, se evita consultar o reutilizar coordenadas obsoletas en silencio
+        if (!isGpsEnabled()) {
+            continuation.resume(null)
+            return@suspendCancellableCoroutine
+        }
+
+        val currentTime = System.currentTimeMillis()
+
+        // 2. Verificar cache reciente en LocationManager aplicando la ventana de frescura de 48 horas
         try {
-            val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
             val gpsLoc = locationManager?.getLastKnownLocation(LocationManager.GPS_PROVIDER)
             val netLoc = locationManager?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
             val passiveLoc = locationManager?.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER)
-            val bestLoc = gpsLoc ?: netLoc ?: passiveLoc
-            if (bestLoc != null) {
-                continuation.resume(Pair(bestLoc.latitude, bestLoc.longitude))
+
+            val freshCachedLocation = listOfNotNull(gpsLoc, netLoc, passiveLoc)
+                .filter { (currentTime - it.time) <= MAX_LOCATION_AGE_MILLIS }
+                .maxByOrNull { it.time }
+
+            if (freshCachedLocation != null) {
+                continuation.resume(Pair(freshCachedLocation.latitude, freshCachedLocation.longitude))
                 return@suspendCancellableCoroutine
             }
         } catch (e: SecurityException) {
@@ -62,9 +91,10 @@ class Location(private val context: Context) {
             )
         }
 
+        // 3. Si la cache es mayor a 48h o nula, consultar FusedLocationProviderClient con filtro de frescura o solicitud fresca
         fusedLocationClient.lastLocation
             .addOnSuccessListener { location ->
-                if (location != null) {
+                if (location != null && (currentTime - location.time) <= MAX_LOCATION_AGE_MILLIS) {
                     continuation.resume(Pair(location.latitude, location.longitude))
                 } else {
                     try {
@@ -107,6 +137,7 @@ class Location(private val context: Context) {
     private suspend fun resolveCityName(latitude: Double, longitude: Double): String = withContext(Dispatchers.IO) {
         try {
             val geocoder = Geocoder(context, Locale.getDefault())
+            @Suppress("DEPRECATION")
             val addresses = geocoder.getFromLocation(latitude, longitude, 1)
             if (!addresses.isNullOrEmpty()) {
                 val address = addresses[0]
@@ -134,4 +165,3 @@ class Location(private val context: Context) {
         }
     }
 }
-
