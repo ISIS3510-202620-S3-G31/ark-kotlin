@@ -1,7 +1,14 @@
 package com.moviles.ark.ui.screens
 
+import android.graphics.BitmapFactory
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,21 +27,35 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Whatshot
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -42,10 +63,15 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.ui.theme.AppTheme
 import com.moviles.ark.ui.theme.BackgroundColor
+import com.moviles.ark.ui.theme.FigtreeFontFamily
+import com.moviles.ark.ui.theme.PrimaryColor
 import com.moviles.ark.ui.theme.SecondaryColor
 import com.moviles.ark.ui.theme.TextColor
 import com.moviles.ark.ui.viewmodels.ProfileUiState
 import com.moviles.ark.ui.viewmodels.ProfileViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 //solo se usan colores de la paleta (ms6); las tarjetas son el texto muy transparente sobre el fondo
 private val CardFill = TextColor.copy(alpha = 0.06f)
@@ -55,7 +81,13 @@ private val CardFill = TextColor.copy(alpha = 0.06f)
 fun ProfileScreen(
     uiState: ProfileUiState,
     onSignOutClick: () -> Unit,
-    onRetryClick: () -> Unit
+    onRetryClick: () -> Unit,
+    onAvatarClick: () -> Unit = {},
+    onEditProfileClick: () -> Unit = {},
+    onEditNameChange: (String) -> Unit = {},
+    onEditAgeChange: (String) -> Unit = {},
+    onEditDismiss: () -> Unit = {},
+    onSaveProfileClick: () -> Unit = {}
 ) {
     Surface(modifier = Modifier.fillMaxSize(), color = BackgroundColor) {
         Column(
@@ -75,21 +107,28 @@ fun ProfileScreen(
                 Text(uiState.errorMessage, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyLarge)
                 TextButton(onClick = onRetryClick) { Text("Try again", style = MaterialTheme.typography.labelLarge, color = TextColor) }
             } else {
-                //avatar con iniciales, mismo circulo secondary del boton de perfil del home
-                Box(
-                    modifier = Modifier.size(88.dp).background(SecondaryColor, CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(uiState.initials, style = MaterialTheme.typography.headlineMedium, color = TextColor)
-                }
+                //avatar: la foto que eligio el usuario o sus iniciales; al tocarlo se elige otra foto (#119)
+                Avatar(path = uiState.avatarPath, initials = uiState.initials, onClick = onAvatarClick)
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(uiState.name, style = MaterialTheme.typography.headlineMedium, color = TextColor, textAlign = TextAlign.Center)
                 Text(uiState.email, style = MaterialTheme.typography.bodyLarge, color = TextColor.copy(alpha = 0.7f))
+                if (uiState.age > 0) {
+                    Text("${uiState.age} years old", style = MaterialTheme.typography.bodyLarge, color = TextColor.copy(alpha = 0.7f))
+                }
                 if (uiState.memberSince.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text("Member since ${uiState.memberSince}", style = MaterialTheme.typography.bodyLarge, color = TextColor.copy(alpha = 0.7f))
                 }
-                Spacer(modifier = Modifier.height(28.dp))
+                Spacer(modifier = Modifier.height(8.dp))
+                TextButton(onClick = onEditProfileClick) {
+                    Icon(Icons.Filled.Edit, contentDescription = null, tint = TextColor, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Edit profile", style = MaterialTheme.typography.labelLarge, color = TextColor)
+                }
+                uiState.message?.let { message ->
+                    Text(message, style = MaterialTheme.typography.bodyLarge, color = SecondaryColor, textAlign = TextAlign.Center)
+                }
+                Spacer(modifier = Modifier.height(20.dp))
 
                 //dos datos lado a lado: racha y dias usando la app
                 Row(modifier = Modifier.fillMaxWidth()) {
@@ -134,6 +173,127 @@ fun ProfileScreen(
             }
         }
     }
+
+    if (uiState.isEditing) {
+        EditProfileDialog(
+            uiState = uiState,
+            onNameChange = onEditNameChange,
+            onAgeChange = onEditAgeChange,
+            onDismiss = onEditDismiss,
+            onSaveClick = onSaveProfileClick
+        )
+    }
+}
+
+//circulo secondary como el boton de perfil del home; la camarita avisa que se puede cambiar la foto
+@Composable
+private fun Avatar(path: String?, initials: String, onClick: () -> Unit) {
+    val avatar = rememberAvatar(path)
+    Box(modifier = Modifier.size(96.dp).clickable(onClick = onClick)) {
+        Box(
+            modifier = Modifier.size(88.dp).align(Alignment.Center).clip(CircleShape).background(SecondaryColor, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            if (avatar != null) {
+                Image(bitmap = avatar, contentDescription = "Profile photo", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            } else {
+                Text(initials, style = MaterialTheme.typography.headlineMedium, color = TextColor)
+            }
+        }
+        Box(
+            modifier = Modifier
+                .size(30.dp)
+                .align(Alignment.BottomEnd)
+                .background(PrimaryColor, CircleShape)
+                .border(2.dp, BackgroundColor, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Filled.PhotoCamera, contentDescription = "Change profile photo", tint = TextColor, modifier = Modifier.size(16.dp))
+        }
+    }
+}
+
+//el repositorio ya guarda el avatar pequeno y derecho, asi que aqui solo se lee el archivo fuera del hilo principal
+@Composable
+private fun rememberAvatar(path: String?): ImageBitmap? {
+    val avatar by produceState<ImageBitmap?>(initialValue = null, path) {
+        value = if (path == null) null else withContext(Dispatchers.IO) {
+            runCatching { BitmapFactory.decodeFile(path)?.asImageBitmap() }.getOrNull()
+        }
+    }
+    return avatar
+}
+
+//dialogo para cambiar nombre y edad; el correo no se edita porque es el de la cuenta
+@Composable
+private fun EditProfileDialog(
+    uiState: ProfileUiState,
+    onNameChange: (String) -> Unit,
+    onAgeChange: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onSaveClick: () -> Unit
+) {
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = SecondaryColor,
+        unfocusedBorderColor = TextColor.copy(alpha = 0.3f),
+        focusedLabelColor = TextColor,
+        unfocusedLabelColor = TextColor.copy(alpha = 0.7f),
+        cursorColor = TextColor
+    )
+    AlertDialog(
+        onDismissRequest = { if (!uiState.isSaving) onDismiss() },
+        containerColor = BackgroundColor,
+        title = { Text("Edit profile", style = MaterialTheme.typography.headlineSmall, color = TextColor) },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = uiState.editName,
+                    onValueChange = onNameChange,
+                    enabled = !uiState.isSaving,
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = TextColor),
+                    //se cambia solo la fuente: material anima el tamano de la etiqueta y usaria su letra por defecto
+                    label = { Text("Name", style = LocalTextStyle.current.copy(fontFamily = FigtreeFontFamily)) },
+                    colors = fieldColors
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = uiState.editAge,
+                    onValueChange = onAgeChange,
+                    enabled = !uiState.isSaving,
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = TextColor),
+                    label = { Text("Age", style = LocalTextStyle.current.copy(fontFamily = FigtreeFontFamily)) },
+                    colors = fieldColors
+                )
+                if (uiState.editError != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(uiState.editError, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onSaveClick,
+                enabled = !uiState.isSaving,
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryColor, contentColor = TextColor)
+            ) {
+                if (uiState.isSaving) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), color = TextColor, strokeWidth = 2.dp)
+                } else {
+                    Text("Save", style = MaterialTheme.typography.labelLarge)
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !uiState.isSaving) {
+                Text("Cancel", style = MaterialTheme.typography.labelLarge, color = TextColor)
+            }
+        }
+    )
 }
 
 //tarjeta de un dato: icono en cuadro secondary (como las tarjetas del home), numero y texto
@@ -164,8 +324,14 @@ fun ProfileRoute(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    //cada vez que se abre la pestana se recalcula la racha (#96)
+    //selector de fotos del sistema: no pide permisos y solo deja elegir imagenes (#119)
+    val avatarPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) viewModel.onAvatarPicked(uri.toString())
+    }
+
+    //cada vez que se abre la pestana se refresca el perfil (#119) y se recalcula la racha (#96)
     LaunchedEffect(Unit) {
+        viewModel.loadProfile()
         viewModel.loadStreak()
     }
 
@@ -174,12 +340,28 @@ fun ProfileRoute(
         if (uiState.isSignedOut) onSignedOut()
     }
 
+    //el aviso de "guardado" se quita solo
+    LaunchedEffect(uiState.message) {
+        if (uiState.message != null) {
+            delay(MESSAGE_MILLIS)
+            viewModel.onMessageShown()
+        }
+    }
+
     ProfileScreen(
         uiState = uiState,
         onSignOutClick = viewModel::onSignOutClick,
-        onRetryClick = viewModel::loadProfile
+        onRetryClick = viewModel::loadProfile,
+        onAvatarClick = { avatarPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+        onEditProfileClick = viewModel::onEditProfileClick,
+        onEditNameChange = viewModel::onEditNameChange,
+        onEditAgeChange = viewModel::onEditAgeChange,
+        onEditDismiss = viewModel::onEditDismiss,
+        onSaveProfileClick = viewModel::onSaveProfileClick
     )
 }
+
+private const val MESSAGE_MILLIS = 2_500L
 
 @Preview(showBackground = true, name = "Profile with streak")
 @Composable
@@ -190,6 +372,7 @@ fun ProfileScreenPreview() {
                 name = "Laura Avelino",
                 initials = "LA",
                 email = "laura@uniandes.edu.co",
+                age = 21,
                 memberSince = "October 2026",
                 daysWithArk = 12,
                 streakDays = 3
@@ -211,6 +394,27 @@ fun ProfileScreenNoStreakPreview() {
                 email = "lau3@mail.com",
                 memberSince = "October 2026",
                 daysWithArk = 1
+            ),
+            onSignOutClick = {},
+            onRetryClick = {}
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "Profile editing")
+@Composable
+fun ProfileScreenEditingPreview() {
+    AppTheme {
+        ProfileScreen(
+            uiState = ProfileUiState(
+                name = "Laura Avelino",
+                initials = "LA",
+                email = "laura@uniandes.edu.co",
+                age = 21,
+                memberSince = "October 2026",
+                isEditing = true,
+                editName = "Laura Avelino",
+                editAge = "21"
             ),
             onSignOutClick = {},
             onRetryClick = {}
