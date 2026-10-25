@@ -11,7 +11,7 @@ import java.util.UUID
 
 //tabla de check-ins emocionales guardados en el telefono (#12, #33)
 //cada fila es un check-in; el id lo pone room solo (autoGenerate)
-//version 4 de la base: se agregaron userId y remoteId (#143)
+//version 5 de la base: se agregaron userId y remoteId (#143)
 @Entity(tableName = "mood_checkins")
 data class CheckInEntity(
     @PrimaryKey(autoGenerate = true)
