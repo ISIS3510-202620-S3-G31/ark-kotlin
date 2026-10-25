@@ -76,8 +76,8 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val userRepository: UserRepository by lazy { UserRepositoryImpl(context, auth, firestore, database.userDao()) }
     override val locationRepository: LocationRepository by lazy { LocationRepositoryImpl(Location(context)) }
     override val moodRepository: MoodRepository by lazy { MoodRepositoryImpl(auth, firestore) }
-    // fake catalog until the Room implementation of #9 is ready; then only this line changes
-    override val toolRepository: com.moviles.ark.domain.repositories.ToolRepository by lazy { ToolRepositoryImpl() }
+    // catalogo de herramientas en room como unica fuente de verdad, actualizado desde firestore (#132)
+    override val toolRepository: com.moviles.ark.domain.repositories.ToolRepository by lazy { ToolRepositoryImpl(database.toolDao(), firestore) }
     // interacciones con herramientas guardadas en room; las usa la recomendacion por frecuencia del home (#96)
     override val toolInteractionRepository: ToolInteractionRepository by lazy { ToolInteractionRepositoryImpl(database.toolRecordDao()) }
     override val statsRepository: StatsRepository by lazy { StatsRepositoryImpl(auth, firestore, database.emotionCheckInDao(), database.toolRecordDao(), com.moviles.ark.data.local.StatsDiskCache(context.cacheDir)) }
