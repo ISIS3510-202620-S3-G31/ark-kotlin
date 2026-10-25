@@ -30,12 +30,12 @@ interface PhotoEntryDao {
         }
     }
 
-    //todas las fotos, de la mas nueva a la mas vieja
-    @Query("SELECT * FROM photo_entries ORDER BY takenAt DESC")
-    fun getPhotosRaw(): Flow<List<PhotoEntryEntity>>
+    //todas las fotos de un usuario, de la mas nueva a la mas vieja (#133)
+    @Query("SELECT * FROM photo_entries WHERE userId = :currentUserId ORDER BY takenAt DESC")
+    fun getPhotosRaw(currentUserId: String): Flow<List<PhotoEntryEntity>>
 
-    fun getPhotos(): Flow<List<PhotoEntryEntity>> {
-        return getPhotosRaw().catch { e ->
+    fun getPhotos(currentUserId: String): Flow<List<PhotoEntryEntity>> {
+        return getPhotosRaw(currentUserId).catch { e ->
             CrashlyticsHelper.logNonFatal(
                 componentName = "PhotoEntryDao",
                 action = "getPhotos",
@@ -45,12 +45,12 @@ interface PhotoEntryDao {
         }
     }
 
-    //fotos entre dos momentos; para "la foto de hoy" se pasa el inicio y el fin del dia
-    @Query("SELECT * FROM photo_entries WHERE takenAt >= :fromMillis AND takenAt < :toMillis ORDER BY takenAt DESC")
-    fun getPhotosBetweenRaw(fromMillis: Long, toMillis: Long): Flow<List<PhotoEntryEntity>>
+    //fotos de un usuario entre dos momentos; para "la foto de hoy" se pasa el inicio y el fin del dia
+    @Query("SELECT * FROM photo_entries WHERE userId = :currentUserId AND takenAt >= :fromMillis AND takenAt < :toMillis ORDER BY takenAt DESC")
+    fun getPhotosBetweenRaw(currentUserId: String, fromMillis: Long, toMillis: Long): Flow<List<PhotoEntryEntity>>
 
-    fun getPhotosBetween(fromMillis: Long, toMillis: Long): Flow<List<PhotoEntryEntity>> {
-        return getPhotosBetweenRaw(fromMillis, toMillis).catch { e ->
+    fun getPhotosBetween(currentUserId: String, fromMillis: Long, toMillis: Long): Flow<List<PhotoEntryEntity>> {
+        return getPhotosBetweenRaw(currentUserId, fromMillis, toMillis).catch { e ->
             CrashlyticsHelper.logNonFatal(
                 componentName = "PhotoEntryDao",
                 action = "getPhotosBetween",
@@ -61,13 +61,13 @@ interface PhotoEntryDao {
         }
     }
 
-    //las que faltan por subir a firebase storage (#33)
-    @Query("SELECT * FROM photo_entries WHERE isSynced = 0")
-    suspend fun getUnsyncedPhotosRaw(): List<PhotoEntryEntity>
+    //las de un usuario que faltan por subir a firebase (#33, #133)
+    @Query("SELECT * FROM photo_entries WHERE userId = :currentUserId AND isSynced = 0")
+    suspend fun getUnsyncedPhotosRaw(currentUserId: String): List<PhotoEntryEntity>
 
-    suspend fun getUnsyncedPhotos(): List<PhotoEntryEntity> {
+    suspend fun getUnsyncedPhotos(currentUserId: String): List<PhotoEntryEntity> {
         return try {
-            getUnsyncedPhotosRaw()
+            getUnsyncedPhotosRaw(currentUserId)
         } catch (e: Exception) {
             CrashlyticsHelper.logNonFatal(
                 componentName = "PhotoEntryDao",

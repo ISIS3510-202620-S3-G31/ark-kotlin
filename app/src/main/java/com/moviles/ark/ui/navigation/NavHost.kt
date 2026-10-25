@@ -30,6 +30,7 @@ import com.moviles.ark.ui.screens.PhotoOfTheDayRoute
 import com.moviles.ark.ui.screens.PostToolFeedbackRoute
 import com.moviles.ark.ui.screens.ProfileRoute
 import com.moviles.ark.ui.screens.RegisterScreen
+import com.moviles.ark.ui.screens.ScreamTankRoute
 import com.moviles.ark.ui.screens.StatsScreen
 import com.moviles.ark.ui.screens.ToolsCatalogRoute
 import com.moviles.ark.ui.theme.BackgroundColor
@@ -177,6 +178,18 @@ fun AppNavigation(
                     if (wasCompleted) {
                         navController.navigate("post_tool_feedback/custom_breathing") {
                             popUpTo("custom_breathing_screen") { inclusive = true }
+                        }
+                    } else {
+                        navController.popBackStack("home_screen", inclusive = false)
+                    }
+                })
+            }
+            //herramienta scream tank (#157); si el microfono alcanzo a escuchar navega a feedback (#21)
+            composable("scream_tank_screen") {
+                ScreamTankRoute(onBack = { wasCompleted ->
+                    if (wasCompleted) {
+                        navController.navigate("post_tool_feedback/scream_tank") {
+                            popUpTo("scream_tank_screen") { inclusive = true }
                         }
                     } else {
                         navController.popBackStack("home_screen", inclusive = false)

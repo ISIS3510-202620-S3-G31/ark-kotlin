@@ -5,8 +5,9 @@ import kotlinx.coroutines.flow.Flow
 
 //fotos del dia guardadas en el telefono
 //la implementacion real (#26) copia el jpg a context.filesDir y lo registra en room (PhotoEntryDao)
-interface PhotoRepository {
-    //fotos tomadas entre dos momentos; vuelve a emitir cada vez que se guarda una
+//cada usuario solo ve y guarda sus propias fotos (#133)
+interface PhotoEntryRepository {
+    //fotos del usuario con sesion tomadas entre dos momentos; vuelve a emitir cada vez que se guarda una
     fun getPhotosBetween(fromMillis: Long, toMillis: Long): Flow<List<PhotoEntryModel>>
 
     //guarda la foto que entrego la camara (#31); sourceUri es la direccion de la foto como texto
