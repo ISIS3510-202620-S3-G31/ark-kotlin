@@ -53,6 +53,7 @@ interface AppContainer {
     val toolLatencyTracker: ToolLatencyTracker
     val feedbackDao: FeedbackDao
     val breathingRepository: BreathingRepository
+    val screamTankRepository: com.moviles.ark.domain.repositories.ScreamTankRepository
     val audioPlayerHelper: AudioPlayerHelper
     val networkConnectivityObserver: NetworkConnectivityObserver
     val syncRepository: SyncRepository
@@ -94,6 +95,14 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             toolRecordDao = database.toolRecordDao(),
             auth = auth,
             bundledAudioUri = "android.resource://${context.packageName}/${R.raw.breathing_ambient}"
+        )
+    }
+    // scream tank: volumen del microfono medido en memoria, sin guardar audio; la sesion va a room (#157)
+    override val screamTankRepository: com.moviles.ark.domain.repositories.ScreamTankRepository by lazy {
+        com.moviles.ark.data.repositories.ScreamTankRepositoryImpl(
+            microphoneLevelMeter = com.moviles.ark.data.local.sensors.MicrophoneLevelMeter(context),
+            toolRecordDao = database.toolRecordDao(),
+            auth = auth
         )
     }
     override val audioPlayerHelper: AudioPlayerHelper by lazy { AudioPlayerHelper(context) }
