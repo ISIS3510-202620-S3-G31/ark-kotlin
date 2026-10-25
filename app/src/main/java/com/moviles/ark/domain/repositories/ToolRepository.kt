@@ -16,4 +16,7 @@ interface ToolRepository {
     //descarga el catalogo de firestore y actualiza room
     //sin internet devuelve failure y la ui sigue mostrando lo que ya estaba guardado
     suspend fun refreshTools(): Result<Unit>
+
+    //guarda en room y en el archivo interno un catalogo que ya llego (por ejemplo en un push) sin ir a la red (#156)
+    suspend fun saveCatalog(tools: List<Tool>): Result<Unit>
 }
