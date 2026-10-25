@@ -51,6 +51,7 @@ interface AppContainer {
     val photoRepository: PhotoRepository
     val analyticsRepository: AnalyticsRepository
     val toolLatencyTracker: ToolLatencyTracker
+    val recommendationRepository: com.moviles.ark.domain.repositories.RecommendationRepository
     val feedbackDao: FeedbackDao
     val breathingRepository: BreathingRepository
     val audioPlayerHelper: AudioPlayerHelper
@@ -86,6 +87,10 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val analyticsRepository: AnalyticsRepository by lazy { AnalyticsRepositoryImpl(Firebase.analytics) }
     // one tracker for the whole app: the tap on a tool and its screen live in different places (#8)
     override val toolLatencyTracker: ToolLatencyTracker by lazy { ToolLatencyTracker(analyticsRepository) }
+    // ultima recomendacion del home en cacheDir/last_recommendation.json para usarla sin internet (#159)
+    override val recommendationRepository: com.moviles.ark.domain.repositories.RecommendationRepository by lazy {
+        com.moviles.ark.data.repositories.RecommendationRepositoryImpl(context.cacheDir)
+    }
     override val feedbackDao: FeedbackDao by lazy { database.feedbackDao() }
     // repositorio de la herramienta de respiracion con pistas de jamendo (#7) y sesiones guardadas en room (#82)
     override val breathingRepository: BreathingRepository by lazy {
