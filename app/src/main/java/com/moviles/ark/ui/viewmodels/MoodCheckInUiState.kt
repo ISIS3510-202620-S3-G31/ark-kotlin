@@ -13,5 +13,7 @@ data class MoodCheckInUiState(
     val cityName: String? = null,
     val isLoading: Boolean = false,
     val isSaved: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val showLocationDisabledDialog: Boolean = false,
+    val isLocationChecked: Boolean = false
 )

@@ -34,17 +34,40 @@ class MoodCheckInViewModel(
     fun loadCurrentLocation() {
         if (locationRepository != null) {
             viewModelScope.launch {
+                // 1. Verificar si el GPS o permisos estan disponibles antes de consultar
+                val isAvailable = locationRepository.isLocationAvailable()
+                if (!isAvailable) {
+                    privateUiState.value = privateUiState.value.copy(
+                        showLocationDisabledDialog = true,
+                        isLocationChecked = true
+                    )
+                    return@launch
+                }
+
                 val result = locationRepository.getCurrentLocation()
                 if (result != null) {
                     privateUiState.value = privateUiState.value.copy(
                         latitude = result.latitude,
                         longitude = result.longitude,
-                        cityName = result.cityName
+                        cityName = result.cityName,
+                        isLocationChecked = true
                     )
                     Log.d("MoodCheckIn", "GPS loaded: lat=${result.latitude}, lon=${result.longitude}, city=${result.cityName}")
+                } else {
+                    // Si el GPS esta apagado o no se logro obtener ubicacion fresca, avisar amigablemente
+                    privateUiState.value = privateUiState.value.copy(
+                        showLocationDisabledDialog = true,
+                        isLocationChecked = true
+                    )
                 }
             }
         }
+    }
+
+    fun dismissLocationWarningDialog() {
+        privateUiState.value = privateUiState.value.copy(
+            showLocationDisabledDialog = false
+        )
     }
 
     fun onEmotionToggle(emotion: Emotion) {
@@ -86,7 +109,8 @@ class MoodCheckInViewModel(
         privateUiState.value = privateUiState.value.copy(
             latitude = latitude,
             longitude = longitude,
-            cityName = cityName
+            cityName = cityName,
+            isLocationChecked = true
         )
     }
 
