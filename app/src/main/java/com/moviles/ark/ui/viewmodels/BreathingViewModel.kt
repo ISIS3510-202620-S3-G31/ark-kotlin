@@ -9,6 +9,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
 import com.moviles.ark.data.local.sensors.AudioPlayerHelper
 import com.moviles.ark.domain.models.AmbientTrackModel
+import com.moviles.ark.domain.models.BreathingPreset
 import com.moviles.ark.domain.models.BreathingSession
 import com.moviles.ark.domain.models.ToolLatencyTracker
 import com.moviles.ark.domain.repositories.BreathingRepository
@@ -24,7 +25,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * ViewModel managing the breathing exercise timer, phase transitions, and Jamendo ambient audio playback (#7).
+ * ViewModel managing the breathing exercise timer, phase transitions, and Jamendo ambient audio playback .
  */
 class BreathingViewModel(
     private val breathingRepository: BreathingRepository? = null,
@@ -91,7 +92,7 @@ class BreathingViewModel(
         }
     }
 
-    //reproduce una pista; si falla (por ejemplo sin internet) pasa a la pista que viene en la app (#82)
+    //reproduce una pista; si falla (por ejemplo sin internet) pasa a la pista que viene en la app )
     private fun playTrack(track: AmbientTrackModel) {
         audioPlayerHelper?.playUrl(
             url = track.audioUrl,
@@ -178,19 +179,50 @@ class BreathingViewModel(
         )
     }
 
-    fun updateDurations(inhale: Int, hold: Int, exhale: Int) {
+    fun selectPreset(preset: BreathingPreset) {
         val wasRunning = _uiState.value.isRunning
         pause()
         phaseElapsedMs = 0L
-        _uiState.value = _uiState.value.copy(
-            inhaleDuration = inhale.coerceAtLeast(1),
-            holdDuration = hold.coerceAtLeast(1),
-            exhaleDuration = exhale.coerceAtLeast(1),
-            phase = BreathingPhase.READY,
-            secondsRemainingInPhase = inhale,
-            phaseProgress = 0f
-        )
+        _uiState.update { current ->
+            current.copy(
+                selectedPreset = preset,
+                inhaleDuration = preset.inhale,
+                holdDuration = preset.hold,
+                exhaleDuration = preset.exhale,
+                holdPostExhaleDuration = preset.holdPostExhale,
+                phase = BreathingPhase.READY,
+                secondsRemainingInPhase = preset.inhale,
+                phaseProgress = 0f
+            )
+        }
         if (wasRunning) start()
+    }
+
+    fun updateDurations(inhale: Int, hold: Int, exhale: Int, holdPostExhale: Int = 0) {
+        val wasRunning = _uiState.value.isRunning
+        pause()
+        phaseElapsedMs = 0L
+        val matchingPreset = BreathingPreset.entries.find {
+            it.inhale == inhale && it.hold == hold && it.exhale == exhale && it.holdPostExhale == holdPostExhale
+        } ?: _uiState.value.selectedPreset
+
+        _uiState.update { current ->
+            current.copy(
+                selectedPreset = matchingPreset,
+                inhaleDuration = inhale.coerceAtLeast(1),
+                holdDuration = hold.coerceAtLeast(0),
+                exhaleDuration = exhale.coerceAtLeast(1),
+                holdPostExhaleDuration = holdPostExhale.coerceAtLeast(0),
+                phase = BreathingPhase.READY,
+                secondsRemainingInPhase = inhale,
+                phaseProgress = 0f
+            )
+        }
+        if (wasRunning) start()
+    }
+
+    fun updateDurations(inhale: Int, hold: Int, exhale: Int) {
+        updateDurations(inhale, hold, exhale, 0)
     }
 
     private fun startTimerLoop() {
@@ -227,11 +259,25 @@ class BreathingViewModel(
         phaseElapsedMs = 0L
         val currentPhase = _uiState.value.phase
 
+        val state = _uiState.value
         val (nextPhase, isCycleCompleted) = when (currentPhase) {
             BreathingPhase.READY -> Pair(BreathingPhase.INHALE, false)
-            BreathingPhase.INHALE -> Pair(BreathingPhase.HOLD, false)
+            BreathingPhase.INHALE -> {
+                if (state.holdDuration > 0) {
+                    Pair(BreathingPhase.HOLD, false)
+                } else {
+                    Pair(BreathingPhase.EXHALE, false)
+                }
+            }
             BreathingPhase.HOLD -> Pair(BreathingPhase.EXHALE, false)
-            BreathingPhase.EXHALE -> Pair(BreathingPhase.INHALE, true)
+            BreathingPhase.EXHALE -> {
+                if (state.holdPostExhaleDuration > 0) {
+                    Pair(BreathingPhase.HOLD_POST_EXHALE, false)
+                } else {
+                    Pair(BreathingPhase.INHALE, true)
+                }
+            }
+            BreathingPhase.HOLD_POST_EXHALE -> Pair(BreathingPhase.INHALE, true)
         }
 
         val updatedCycles = if (isCycleCompleted) {
@@ -263,7 +309,7 @@ class BreathingViewModel(
             completedCycles = state.completedCycles,
             durationSeconds = (sessionRunningMs / 1000L).toInt(),
             timestamp = System.currentTimeMillis(),
-            pattern = BreathingSession.patternOf(state.inhaleDuration, state.holdDuration, state.exhaleDuration)
+            pattern = BreathingSession.patternOf(state.inhaleDuration, state.holdDuration, state.exhaleDuration, state.holdPostExhaleDuration)
         )
         //se reinicia el tiempo para que la misma sesion no se guarde dos veces
         sessionRunningMs = 0L
@@ -286,6 +332,7 @@ class BreathingViewModel(
             BreathingPhase.INHALE -> _uiState.value.inhaleDuration
             BreathingPhase.HOLD -> _uiState.value.holdDuration
             BreathingPhase.EXHALE -> _uiState.value.exhaleDuration
+            BreathingPhase.HOLD_POST_EXHALE -> _uiState.value.holdPostExhaleDuration
         }
     }
 

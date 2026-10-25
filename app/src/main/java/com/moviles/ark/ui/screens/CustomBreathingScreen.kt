@@ -2,7 +2,7 @@ package com.moviles.ark.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -33,7 +33,6 @@ import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SelfImprovement
 import androidx.compose.material.icons.filled.SkipNext
@@ -51,22 +50,25 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.moviles.ark.data.local.sensors.HapticFeedbackHelper
 import com.moviles.ark.domain.models.AmbientTrackModel
+import com.moviles.ark.domain.models.BreathingPreset
 import com.moviles.ark.ui.theme.AppTheme
 import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.theme.FigtreeFontFamily
@@ -85,15 +87,24 @@ fun CustomBreathingRoute(
     onBack: (Boolean) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val hapticHelper = remember(context) { HapticFeedbackHelper(context) }
 
-    //al salir (flecha o boton atras del sistema) se guarda la sesion antes de volver (#82)
+    // Dispara vibraciones hapticas sutiles con VibrationEffect en cada transicion de fase
+    LaunchedEffect(uiState.phase, uiState.isRunning) {
+        if (uiState.isRunning && uiState.phase != BreathingPhase.READY) {
+            hapticHelper.triggerPhaseTransition(uiState.phase)
+        }
+    }
+
+    // Al salir (flecha o boton atras del sistema) se guarda la sesion antes de volver (#82)
     val leave = {
         val wasCompleted = viewModel.finishSession()
         onBack(wasCompleted)
     }
     BackHandler(onBack = leave)
 
-    //#90: se espera al siguiente cuadro; para entonces el primer dibujo de la pantalla ya termino
+    // #90: se espera al siguiente cuadro; para entonces el primer dibujo de la pantalla ya termino
     LaunchedEffect(Unit) {
         withFrameNanos { }
         viewModel.onScreenRendered()
@@ -104,7 +115,10 @@ fun CustomBreathingRoute(
         onBack = leave,
         onTogglePlayPause = viewModel::togglePlayPause,
         onReset = viewModel::reset,
-        onPresetSelected = viewModel::updateDurations,
+        onSelectPreset = viewModel::selectPreset,
+        onPresetSelected = { inhale, hold, exhale ->
+            viewModel.updateDurations(inhale, hold, exhale)
+        },
         onToggleMusic = viewModel::toggleMusic,
         onSelectTrack = viewModel::selectTrack,
         onNextTrack = viewModel::nextTrack,
@@ -119,7 +133,8 @@ fun CustomBreathingScreen(
     onBack: () -> Unit,
     onTogglePlayPause: () -> Unit,
     onReset: () -> Unit,
-    onPresetSelected: (inhale: Int, hold: Int, exhale: Int) -> Unit,
+    onSelectPreset: (BreathingPreset) -> Unit = {},
+    onPresetSelected: (inhale: Int, hold: Int, exhale: Int) -> Unit = { _, _, _ -> },
     onToggleMusic: () -> Unit = {},
     onSelectTrack: (AmbientTrackModel) -> Unit = {},
     onNextTrack: () -> Unit = {},
@@ -189,17 +204,17 @@ fun CustomBreathingScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Animated Visual Breathing Circle
+            // Circulo visual de respiracion guiada sincronizado con el preset activo
             BreathingCircleVisualizer(uiState = uiState)
 
             Spacer(modifier = Modifier.height(28.dp))
 
-            // Cycle Counter Card
+            // Contador de ciclos completados
             CycleCounterCard(completedCycles = uiState.completedCycles)
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Control Buttons (Play/Pause, Reset)
+            // Botones de control (Iniciar / Pausar / Reiniciar)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center,
@@ -255,18 +270,16 @@ fun CustomBreathingScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Preset Patterns Selector
+            // Selector de Presets Verificados Medicamente
             PresetPatternsSection(
-                currentInhale = uiState.inhaleDuration,
-                currentHold = uiState.holdDuration,
-                currentExhale = uiState.exhaleDuration,
-                onPresetSelected = onPresetSelected
+                selectedPreset = uiState.selectedPreset,
+                onSelectPreset = onSelectPreset
             )
         }
     }
 }
 
-//tarjeta de reproduccion de musica ambiental de jamendo (#7)
+// Tarjeta de reproduccion de musica ambiental de Jamendo (#7)
 @Composable
 private fun AmbientMusicCard(
     uiState: BreathingUiState,
@@ -300,56 +313,42 @@ private fun AmbientMusicCard(
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(40.dp)
+                            .size(38.dp)
                             .clip(CircleShape)
-                            .background(SecondaryColor.copy(alpha = 0.18f)),
+                            .background(SecondaryColor.copy(alpha = 0.2f)),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = if (uiState.isMusicPlaying) Icons.Default.GraphicEq else Icons.Default.MusicNote,
-                            contentDescription = "Ambient Music",
+                            contentDescription = "Music",
                             tint = SecondaryColor,
                             modifier = Modifier.size(20.dp)
                         )
                     }
 
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
 
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "AMBIENT MUSIC",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontFamily = FigtreeFontFamily,
-                            fontWeight = FontWeight.Bold,
-                            color = SecondaryColor,
-                            fontSize = 11.sp,
-                            letterSpacing = 0.5.sp
-                        )
-
-                        Text(
-                            text = currentTrack?.title ?: "Select ambient track",
-                            style = MaterialTheme.typography.titleMedium,
+                            text = currentTrack?.title ?: "Ambient Melodies",
+                            style = MaterialTheme.typography.labelLarge,
                             fontFamily = FigtreeFontFamily,
                             fontWeight = FontWeight.Bold,
                             color = TextColor,
-                            fontSize = 14.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            fontSize = 13.sp,
+                            maxLines = 1
                         )
-
                         Text(
-                            text = currentTrack?.artist ?: "Jamendo Audio",
+                            text = currentTrack?.artist ?: "Jamendo Royalty-free",
                             style = MaterialTheme.typography.bodySmall,
                             fontFamily = FigtreeFontFamily,
                             color = TextColor.copy(alpha = 0.65f),
                             fontSize = 11.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            maxLines = 1
                         )
                     }
                 }
 
-                // Botones de control de reproduccion
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(
                         onClick = onPrevTrack,
@@ -363,19 +362,15 @@ private fun AmbientMusicCard(
                         )
                     }
 
-                    Box(
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .background(SecondaryColor)
-                            .clickable { onToggleMusic() },
-                        contentAlignment = Alignment.Center
+                    IconButton(
+                        onClick = onToggleMusic,
+                        modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
                             imageVector = if (uiState.isMusicPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (uiState.isMusicPlaying) "Pause Music" else "Play Music",
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp)
+                            contentDescription = if (uiState.isMusicPlaying) "Pause music" else "Play music",
+                            tint = SecondaryColor,
+                            modifier = Modifier.size(22.dp)
                         )
                     }
 
@@ -455,16 +450,18 @@ private fun AmbientMusicCard(
 private fun BreathingCircleVisualizer(
     uiState: BreathingUiState
 ) {
+    // Escala del circulo sincronizada con la fase actual y su progreso
     val targetScale = when (uiState.phase) {
         BreathingPhase.READY -> 0.5f
         BreathingPhase.INHALE -> 0.45f + (0.55f * uiState.phaseProgress)
         BreathingPhase.HOLD -> 1.0f
         BreathingPhase.EXHALE -> 1.0f - (0.55f * uiState.phaseProgress)
+        BreathingPhase.HOLD_POST_EXHALE -> 0.45f
     }
 
     val animatedScale by animateFloatAsState(
         targetValue = targetScale,
-        animationSpec = tween(durationMillis = 100, easing = FastOutSlowInEasing),
+        animationSpec = tween(durationMillis = 80, easing = LinearEasing),
         label = "breathing_circle_scale"
     )
 
@@ -473,66 +470,89 @@ private fun BreathingCircleVisualizer(
         BreathingPhase.INHALE -> PrimaryColor
         BreathingPhase.HOLD -> SecondaryColor
         BreathingPhase.EXHALE -> SuccessColor
+        BreathingPhase.HOLD_POST_EXHALE -> SecondaryColor.copy(alpha = 0.85f)
     }
 
-    Box(
-        modifier = Modifier.size(240.dp),
-        contentAlignment = Alignment.Center
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
-        // Outer pulsing ring
-        Box(
-            modifier = Modifier
-                .size(220.dp)
-                .scale(animatedScale)
-                .clip(CircleShape)
-                .background(circleColor.copy(alpha = 0.35f))
-        )
-
-        // Inner solid circle
-        Box(
-            modifier = Modifier
-                .size(160.dp)
-                .scale(animatedScale * 0.9f)
-                .clip(CircleShape)
-                .background(circleColor)
-        )
-
-        // Center Text Content
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-            modifier = Modifier.padding(16.dp)
+        // Tag indicador de preset sincronizado
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = SecondaryColor.copy(alpha = 0.15f),
+            modifier = Modifier.padding(bottom = 14.dp)
         ) {
             Text(
-                text = uiState.phase.label,
-                style = MaterialTheme.typography.headlineMedium,
-                fontFamily = SoreanFontFamily,
+                text = "${uiState.selectedPreset.title} • ${uiState.selectedPreset.patternLabel}",
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = FigtreeFontFamily,
                 fontWeight = FontWeight.Bold,
-                color = TextColor,
-                textAlign = TextAlign.Center
+                color = SecondaryColor,
+                fontSize = 11.sp,
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+            )
+        }
+
+        Box(
+            modifier = Modifier.size(240.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            // Anillo exterior con expansion reactiva
+            Box(
+                modifier = Modifier
+                    .size(220.dp)
+                    .scale(animatedScale)
+                    .clip(CircleShape)
+                    .background(circleColor.copy(alpha = 0.35f))
             )
 
-            if (uiState.isRunning) {
+            // Circulo solido interior
+            Box(
+                modifier = Modifier
+                    .size(160.dp)
+                    .scale(animatedScale * 0.9f)
+                    .clip(CircleShape)
+                    .background(circleColor)
+            )
+
+            // Contenido central: fase, contador y guia
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier.padding(16.dp)
+            ) {
+                Text(
+                    text = uiState.phase.label,
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontFamily = SoreanFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    color = TextColor,
+                    textAlign = TextAlign.Center
+                )
+
+                if (uiState.isRunning) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "${uiState.secondsRemainingInPhase}s",
+                        style = MaterialTheme.typography.headlineLarge,
+                        fontFamily = FigtreeFontFamily,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = TextColor
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = "${uiState.secondsRemainingInPhase}s",
-                    style = MaterialTheme.typography.headlineLarge,
+                    text = uiState.phase.instruction,
+                    style = MaterialTheme.typography.bodySmall,
                     fontFamily = FigtreeFontFamily,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = TextColor
+                    color = TextColor.copy(alpha = 0.85f),
+                    textAlign = TextAlign.Center,
+                    fontSize = 11.sp,
+                    lineHeight = 14.sp
                 )
             }
-
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = uiState.phase.instruction,
-                style = MaterialTheme.typography.bodySmall,
-                fontFamily = FigtreeFontFamily,
-                color = TextColor.copy(alpha = 0.85f),
-                textAlign = TextAlign.Center,
-                fontSize = 11.sp,
-                lineHeight = 14.sp
-            )
         }
     }
 }
@@ -598,49 +618,115 @@ private fun CycleCounterCard(completedCycles: Int) {
 
 @Composable
 private fun PresetPatternsSection(
-    currentInhale: Int,
-    currentHold: Int,
-    currentExhale: Int,
-    onPresetSelected: (Int, Int, Int) -> Unit
+    selectedPreset: BreathingPreset,
+    onSelectPreset: (BreathingPreset) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = "Breathing Patterns",
-            style = MaterialTheme.typography.titleMedium,
-            fontFamily = FigtreeFontFamily,
-            fontWeight = FontWeight.Bold,
-            color = TextColor
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Medically Verified Presets",
+                style = MaterialTheme.typography.titleMedium,
+                fontFamily = FigtreeFontFamily,
+                fontWeight = FontWeight.Bold,
+                color = TextColor
+            )
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = SecondaryColor.copy(alpha = 0.16f)
+            ) {
+                Text(
+                    text = "CLINICAL",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = FigtreeFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    color = SecondaryColor,
+                    fontSize = 10.sp,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+            }
+        }
+
         Spacer(modifier = Modifier.height(10.dp))
+
+        // Fila de Presets Medicos: Box (4-4-4-4), Relaxing (4-7-8), Quick Calm (4-6)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            PresetChip(
-                label = "Box (4-4-4)",
-                isSelected = currentInhale == 4 && currentHold == 4 && currentExhale == 4,
-                onClick = { onPresetSelected(4, 4, 4) },
-                modifier = Modifier.weight(1f)
-            )
-            PresetChip(
-                label = "Calm (4-7-8)",
-                isSelected = currentInhale == 4 && currentHold == 7 && currentExhale == 8,
-                onClick = { onPresetSelected(4, 7, 8) },
-                modifier = Modifier.weight(1f)
-            )
-            PresetChip(
-                label = "Deep (5-5-5)",
-                isSelected = currentInhale == 5 && currentHold == 5 && currentExhale == 5,
-                onClick = { onPresetSelected(5, 5, 5) },
-                modifier = Modifier.weight(1f)
-            )
+            BreathingPreset.entries.forEach { preset ->
+                PresetChip(
+                    preset = preset,
+                    isSelected = selectedPreset == preset,
+                    onClick = { onSelectPreset(preset) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Tarjeta explicativa con el beneficio medico y ritmo detallado
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFF3E4CF)),
+            border = BorderStroke(1.dp, SecondaryColor.copy(alpha = 0.35f))
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = selectedPreset.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontFamily = FigtreeFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        color = TextColor
+                    )
+                    Text(
+                        text = selectedPreset.patternLabel,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontFamily = FigtreeFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        color = SecondaryColor
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(3.dp))
+
+                Text(
+                    text = selectedPreset.formattedDescription,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = FigtreeFontFamily,
+                    color = PrimaryColor,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Text(
+                    text = selectedPreset.clinicalBenefit,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FigtreeFontFamily,
+                    color = TextColor.copy(alpha = 0.8f),
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp
+                )
+            }
         }
     }
 }
 
 @Composable
 private fun PresetChip(
-    label: String,
+    preset: BreathingPreset,
     isSelected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
@@ -650,19 +736,32 @@ private fun PresetChip(
             .clip(RoundedCornerShape(16.dp))
             .clickable { onClick() },
         color = if (isSelected) PrimaryColor else Color(0xFFEFE0C2),
-        shape = RoundedCornerShape(16.dp)
+        shape = RoundedCornerShape(16.dp),
+        border = if (isSelected) BorderStroke(1.2.dp, PrimaryColor) else null
     ) {
-        Box(
-            modifier = Modifier.padding(vertical = 10.dp, horizontal = 8.dp),
-            contentAlignment = Alignment.Center
+        Column(
+            modifier = Modifier.padding(vertical = 10.dp, horizontal = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
             Text(
-                text = label,
+                text = preset.title,
                 style = MaterialTheme.typography.labelMedium,
                 fontFamily = FigtreeFontFamily,
                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                 color = TextColor,
                 fontSize = 12.sp,
+                textAlign = TextAlign.Center,
+                maxLines = 1
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = "(${preset.patternLabel})",
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = FigtreeFontFamily,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                color = if (isSelected) TextColor else TextColor.copy(alpha = 0.7f),
+                fontSize = 10.sp,
                 textAlign = TextAlign.Center
             )
         }
@@ -684,6 +783,7 @@ fun CustomBreathingScreenPreview() {
             onBack = {},
             onTogglePlayPause = {},
             onReset = {},
+            onSelectPreset = {},
             onPresetSelected = { _, _, _ -> }
         )
     }
