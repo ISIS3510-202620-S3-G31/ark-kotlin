@@ -2,9 +2,9 @@ package com.moviles.ark.data.repositories
 
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Source
+import com.moviles.ark.data.local.ToolCatalogFileStore
 import com.moviles.ark.data.local.daos.ToolDao
 import com.moviles.ark.data.local.entities.toDomain
-import com.moviles.ark.data.local.entities.toEntity
 import com.moviles.ark.data.remote.CrashlyticsHelper
 import com.moviles.ark.data.remote.dtos.ToolDto
 import com.moviles.ark.data.remote.dtos.toEntity
@@ -21,14 +21,16 @@ import kotlinx.coroutines.withContext
 
 //catalogo de herramientas con room como unica fuente de verdad (#132)
 //la ui solo escucha la tabla tools; firestore solo se usa en refreshTools para traer lo nuevo y guardarlo en room
+//filesDir/tools.json guarda la misma copia para no perder el catalogo sin internet (#145)
 class ToolRepositoryImpl(
     private val toolDao: ToolDao,
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore,
+    private val catalogFileStore: ToolCatalogFileStore
 ) : ToolRepository {
 
     override fun getTools(): Flow<List<Tool>> {
         return toolDao.getTools()
-            //la primera vez la tabla esta vacia: se llena con el catalogo por defecto antes de emitir
+            //la primera vez la tabla esta vacia: se llena con el catalogo del archivo interno antes de emitir
             .onStart { seedIfEmpty() }
             .map { entities -> entities.map { it.toDomain() } }
             .flowOn(Dispatchers.IO)
@@ -47,9 +49,10 @@ class ToolRepositoryImpl(
                 //si el documento no trae el campo id se usa el id del documento
                 document.toObject(ToolDto::class.java)?.let { dto -> if (dto.id.isBlank()) dto.copy(id = document.id) else dto }
             }
-            //solo se reemplaza room si llego algo: una coleccion vacia no borra el catalogo del telefono
+            //solo se reemplaza el catalogo si llego algo: una coleccion vacia no borra el del telefono
             if (remoteTools.isNotEmpty()) {
                 toolDao.replaceTools(remoteTools.map { it.toEntity() })
+                catalogFileStore.writeCatalog(remoteTools)
             }
         }.onFailure { error ->
             CrashlyticsHelper.logNonFatal(
@@ -60,17 +63,18 @@ class ToolRepositoryImpl(
         }
     }
 
+    //room se llena desde filesDir/tools.json (o assets/tools.json si el archivo falta o esta danado) (#145)
     //insertTools usa REPLACE, asi que si dos pantallas siembran a la vez no se duplica nada
     private suspend fun seedIfEmpty() {
         if (toolDao.getTools().first().isEmpty()) {
-            toolDao.insertTools(sampleTools.map { it.toEntity() })
+            toolDao.insertTools(catalogFileStore.readCatalog().map { it.toEntity() })
         }
     }
 
     companion object {
         private const val TOOLS_COLLECTION = "tools"
 
-        //catalogo por defecto del tool hub (frontend-kotlin); con el se llena room la primera vez y lo usan los previews
+        //catalogo por defecto del tool hub (frontend-kotlin), el mismo de assets/tools.json; lo usan los previews y el home al abrir
         val sampleTools = listOf(
             Tool("custom_breathing", "Custom breathing", "Build the rhythm that fits you.", "calm_down", "touch", "ic_tool_custom_breathing"),
             Tool("blow_it_out", "Blow it out", "Blow out the tension, one breath at a time.", "release", "voice", "ic_tool_blow_it_out"),
