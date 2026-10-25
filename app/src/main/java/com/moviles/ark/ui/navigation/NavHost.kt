@@ -103,57 +103,46 @@ fun AppNavigation(
                     }
                 )
             }
-            composable("home_screen") { backStackEntry ->
-                //categoria que deja la tarjeta de insight de stats (#135); se aplica una vez y vuelve a null
-                //cuando exista tools_catalog_screen (#171) este bloque se mueve a esa ruta
-                val homeViewModel: com.moviles.ark.ui.viewmodels.HomeViewModel =
+            composable("home_screen") {
+                HomeRoute(
+                    onNavigateToTool = { toolId ->
+                        when (toolId) {
+                            "photo_of_the_day" -> navController.navigate("photo_of_the_day_screen")
+                            "custom_breathing" -> navController.navigate("custom_breathing_screen")
+                            "tools_catalog_screen" -> navController.navigate("tools_catalog_screen")
+                        }
+                    }
+                )
+            }
+            composable("tools_catalog_screen") { backStackEntry ->
+                //categoria que deja la tarjeta de insight de stats (#135); se aplica una vez y vuelve a null (#190)
+                val catalogViewModel: com.moviles.ark.ui.viewmodels.HomeViewModel =
                     viewModel(factory = com.moviles.ark.ui.viewmodels.HomeViewModel.Factory)
                 val pendingCategoryId by backStackEntry.savedStateHandle
                     .getStateFlow<String?>(TOOLS_CATEGORY_KEY, null)
                     .collectAsStateWithLifecycle()
                 LaunchedEffect(pendingCategoryId) {
                     pendingCategoryId?.let { id ->
-                        homeViewModel.onCategorySelect(ToolCategory.fromId(id))
+                        catalogViewModel.onCategorySelect(ToolCategory.fromId(id))
                         backStackEntry.savedStateHandle[TOOLS_CATEGORY_KEY] = null
                     }
                 }
-                HomeRoute(
-                    viewModel = homeViewModel,
+                ToolsCatalogRoute(
+                    viewModel = catalogViewModel,
                     onNavigateToTool = { toolId ->
                         when (toolId) {
                             "photo_of_the_day" -> navController.navigate("photo_of_the_day_screen")
                             "custom_breathing" -> navController.navigate("custom_breathing_screen")
                             "tools_catalog_screen" -> navController.navigate("tools_catalog_screen")
-                        }
-                    }
-                )
-            }
-            composable("tools_catalog_screen") {
-                ToolsCatalogRoute(
-                    onNavigateToTool = { toolId ->
-                        when (toolId) {
-                            "photo_of_the_day" -> navController.navigate("photo_of_the_day_screen")
-                            "custom_breathing" -> navController.navigate("custom_breathing_screen")
-                            "tools_catalog_screen" -> navController.navigate("tools_catalog_screen")
-                        }
-                    }
-                )
-            }
-            composable("tools_catalog_screen") {
-                ToolsCatalogRoute(
-                    onNavigateToTool = { toolId ->
-                        when (toolId) {
-                            "photo_of_the_day" -> navController.navigate("photo_of_the_day_screen")
-                            "custom_breathing" -> navController.navigate("custom_breathing_screen")
                         }
                     }
                 )
             }
             composable("stats_screen") {
                 StatsScreen(
-                    //la tarjeta de insight abre el catalogo (hoy en home) con la categoria ya filtrada (#135)
+                    //la tarjeta de insight abre el catalogo con la categoria ya filtrada (#135, #190)
                     onNavigateToToolsCatalog = { category ->
-                        navController.navigate("home_screen") {
+                        navController.navigate("tools_catalog_screen") {
                             popUpTo("home_screen") { saveState = true }
                             launchSingleTop = true
                         }
