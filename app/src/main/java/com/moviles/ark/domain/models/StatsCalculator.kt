@@ -69,10 +69,11 @@ class StatsCalculator(
         val topEmotion = allEmotionsCount.maxByOrNull { it.value }?.key
 
         //llamamos al motor de hallazgos utiles que creo el companero (#28)
+        //si el hallazgo no trae emocion propia se usa la mas frecuente para filtrar el catalogo (#135)
         val allInsights = insightsEngine.generateInsights(
             checkIns = checkIns,
             interactions = interactions
-        )
+        ).map { if (it.emotion == null) it.copy(emotion = topEmotion) else it }
 
         //seleccionamos el insight actual: si hay varios, rotamos dinamicamente para darle variedad al entrar
         val currentInsight = if (allInsights.isNotEmpty()) {

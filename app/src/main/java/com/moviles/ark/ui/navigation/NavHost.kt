@@ -4,10 +4,12 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -15,6 +17,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.moviles.ark.ArkApplication
+import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.domain.repositories.AuthRepository
 import com.moviles.ark.ui.components.BottomNavItem
 import com.moviles.ark.ui.components.BottomNavigationBar
@@ -99,8 +102,22 @@ fun AppNavigation(
                     }
                 )
             }
-            composable("home_screen") {
+            composable("home_screen") { backStackEntry ->
+                //categoria que deja la tarjeta de insight de stats (#135); se aplica una vez y vuelve a null
+                //cuando exista tools_catalog_screen (#171) este bloque se mueve a esa ruta
+                val homeViewModel: com.moviles.ark.ui.viewmodels.HomeViewModel =
+                    viewModel(factory = com.moviles.ark.ui.viewmodels.HomeViewModel.Factory)
+                val pendingCategoryId by backStackEntry.savedStateHandle
+                    .getStateFlow<String?>(TOOLS_CATEGORY_KEY, null)
+                    .collectAsStateWithLifecycle()
+                LaunchedEffect(pendingCategoryId) {
+                    pendingCategoryId?.let { id ->
+                        homeViewModel.onCategorySelect(ToolCategory.fromId(id))
+                        backStackEntry.savedStateHandle[TOOLS_CATEGORY_KEY] = null
+                    }
+                }
                 HomeRoute(
+                    viewModel = homeViewModel,
                     onNavigateToTool = { toolId ->
                         when (toolId) {
                             "photo_of_the_day" -> navController.navigate("photo_of_the_day_screen")
@@ -111,10 +128,14 @@ fun AppNavigation(
             }
             composable("stats_screen") {
                 StatsScreen(
-                    onNavigateToHome = {
+                    //la tarjeta de insight abre el catalogo (hoy en home) con la categoria ya filtrada (#135)
+                    onNavigateToToolsCatalog = { category ->
                         navController.navigate("home_screen") {
                             popUpTo("home_screen") { saveState = true }
                             launchSingleTop = true
+                        }
+                        if (category != null) {
+                            navController.currentBackStackEntry?.savedStateHandle?.set(TOOLS_CATEGORY_KEY, category.id)
                         }
                     }
                 )
@@ -175,3 +196,6 @@ fun AppNavigation(
         }
     }
 }
+
+//clave del savedStateHandle con la que stats le pasa al catalogo la categoria a filtrar (#135)
+private const val TOOLS_CATEGORY_KEY = "tools_category"
