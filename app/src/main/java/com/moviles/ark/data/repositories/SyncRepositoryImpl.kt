@@ -68,10 +68,11 @@ class SyncRepositoryImpl(
             val unsyncedPhotos = if (sessionUserId != null) photoEntryDao.getUnsyncedPhotos(sessionUserId) else emptyList()
             for (photo in unsyncedPhotos) {
                 try {
+                    //cada foto va a users/{su userId}/photos, el de la fila
                     val docRef = firestore.collection("users")
                         .document(photo.userId)
                         .collection("photos")
-                        .add(photo.toDto(currentUserId))
+                        .add(photo.toDto())
                         .await()
 
                     photoEntryDao.markAsSynced(photo.id, remoteUrl = docRef.id)
