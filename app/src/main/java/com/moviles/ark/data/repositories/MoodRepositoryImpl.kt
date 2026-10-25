@@ -4,6 +4,9 @@ import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.moviles.ark.data.remote.CrashlyticsHelper
+import com.moviles.ark.data.remote.dtos.MoodCheckInDto
+import com.moviles.ark.data.remote.dtos.toDomain
+import com.moviles.ark.data.remote.dtos.toDto
 import com.moviles.ark.domain.models.CheckInModel
 import com.moviles.ark.domain.repositories.MoodRepository
 import kotlinx.coroutines.tasks.await
@@ -15,25 +18,12 @@ class MoodRepositoryImpl(
 ) : MoodRepository {
     override suspend fun saveCheckIn(checkIn: CheckInModel): Result<Unit> = runCatching {
         val currentUserId = auth.currentUser?.uid ?: "anonymous"
-        val emotionsData = checkIn.mood.getEmotions().map { emotion ->
-            mapOf(
-                "name" to emotion.name,
-                "intensity" to checkIn.mood.getIntensity().toInt()
-            )
-        }
-        val checkInMap = hashMapOf(
-            "userId" to currentUserId,
-            "timestamp" to checkIn.timestamp,
-            "latitude" to checkIn.latitude,
-            "longitude" to checkIn.longitude,
-            "emotions" to emotionsData,
-            "note" to checkIn.note
-        )
         //guarda en la subcoleccion mood_checkins del usuario segun las reglas de seguridad
+        //mismo dto que usa el sync (#163), asi los dos caminos escriben los mismos campos
         firestore.collection("users")
             .document(currentUserId)
             .collection("mood_checkins")
-            .add(checkInMap)
+            .add(checkIn.toDto(currentUserId))
             .await()
         Log.d("MoodCheckIn", "Successfully saved checkin in users/$currentUserId/mood_checkins")
         Unit
@@ -101,38 +91,8 @@ class MoodRepositoryImpl(
             .await()
 
         if (snapshot.isEmpty) return@runCatching null
-        val doc = snapshot.documents.first()
-        val timestamp = doc.getLong("timestamp") ?: System.currentTimeMillis()
-        val note = doc.getString("note").orEmpty()
-        val latitude = doc.getDouble("latitude")
-        val longitude = doc.getDouble("longitude")
-
-        @Suppress("UNCHECKED_CAST")
-        val emotionsList = doc.get("emotions") as? List<Map<String, Any>> ?: emptyList()
-        val parsedEmotions = emotionsList.mapNotNull { item ->
-            val name = item["name"] as? String ?: return@mapNotNull null
-            val intensity = (item["intensity"] as? Long)?.toInt() ?: 3
-            val enumVal = com.moviles.ark.domain.composite.Emotion.entries.find { it.name.equals(name, ignoreCase = true) } ?: return@mapNotNull null
-            com.moviles.ark.domain.composite.SingleEmotion(enumVal, intensity)
-        }
-
-        val moodComponent: com.moviles.ark.domain.composite.MoodComponent = if (parsedEmotions.size == 1) {
-            parsedEmotions.first()
-        } else if (parsedEmotions.size > 1) {
-            val compound = com.moviles.ark.domain.composite.CompoundMood()
-            parsedEmotions.forEach { compound.add(it) }
-            compound
-        } else {
-            com.moviles.ark.domain.composite.SingleEmotion(com.moviles.ark.domain.composite.Emotion.HAPPINESS, 3)
-        }
-
-        CheckInModel(
-            mood = moodComponent,
-            note = note,
-            latitude = latitude,
-            longitude = longitude,
-            timestamp = timestamp
-        )
+        //firestore arma el dto con los campos del documento y el mapper lo pasa al modelo (#163)
+        snapshot.documents.first().toObject(MoodCheckInDto::class.java)?.toDomain()
     }.recover { null }
 }
 
