@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.domain.composite.Emotion
 import com.moviles.ark.domain.models.StatsModel
+import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.ui.components.UsefulInsightComponent
 import com.moviles.ark.ui.components.getEmotionColor
 import com.moviles.ark.ui.components.getEmotionEmoji
@@ -70,7 +71,7 @@ import com.moviles.ark.ui.viewmodels.StatsViewModel
 @Composable
 fun StatsScreen(
     viewModel: StatsViewModel = viewModel(factory = StatsViewModel.Factory),
-    onNavigateToHome: () -> Unit = {}
+    onNavigateToToolsCatalog: (ToolCategory?) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
@@ -84,7 +85,7 @@ fun StatsScreen(
         isLoading = uiState.isLoading,
         errorMessage = uiState.errorMessage,
         onRefresh = { viewModel.refresh() },
-        onNavigateToHome = onNavigateToHome
+        onNavigateToToolsCatalog = onNavigateToToolsCatalog
     )
 }
 
@@ -95,7 +96,7 @@ fun StatsScreenContent(
     isLoading: Boolean,
     errorMessage: String? = null,
     onRefresh: () -> Unit = {},
-    onNavigateToHome: () -> Unit = {}
+    onNavigateToToolsCatalog: (ToolCategory?) -> Unit = {}
 ) {
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -154,7 +155,7 @@ fun StatsScreenContent(
             } else if (stats == null || (stats.totalCheckIns == 0 && stats.toolUsagePercentages.isEmpty())) {
                 StatsEmptyView()
             } else {
-                StatsMainView(stats = stats, onNavigateToHome = onNavigateToHome)
+                StatsMainView(stats = stats, onNavigateToToolsCatalog = onNavigateToToolsCatalog)
             }
         }
     }
@@ -295,7 +296,7 @@ private fun StatsEmptyView() {
 @Composable
 private fun StatsMainView(
     stats: StatsModel,
-    onNavigateToHome: () -> Unit = {}
+    onNavigateToToolsCatalog: (ToolCategory?) -> Unit = {}
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -442,12 +443,12 @@ private fun StatsMainView(
             }
         }
 
-        //tarjeta del hallazgo util si existe (#29)
+        //tarjeta compacta del hallazgo util si existe; abre el catalogo filtrado por la emocion (#29, #135)
         if (stats.currentInsight != null) {
             item {
                 UsefulInsightComponent(
                     insight = stats.currentInsight,
-                    onActionClick = onNavigateToHome
+                    onClick = { onNavigateToToolsCatalog(stats.currentInsight.toolCategory()) }
                 )
             }
         }
@@ -809,7 +810,8 @@ fun StatsScreenPreview() {
             title = "Breathing helps you",
             message = "On days you used Breathing, your difficult feelings were 35% lower than on other days.",
             advice = "Keep Breathing close for tough days.",
-            actionLabel = "Open Breathing"
+            actionLabel = "Open Breathing",
+            emotion = Emotion.FEAR
         )
     )
 

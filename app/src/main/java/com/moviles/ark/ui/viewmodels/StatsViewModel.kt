@@ -10,6 +10,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
 import com.moviles.ark.domain.models.StatsModel
 import com.moviles.ark.domain.repositories.StatsRepository
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,27 +29,49 @@ class StatsViewModel(
     private val privateUiState = MutableStateFlow(StatsUiState())
     val uiState: StateFlow<StatsUiState> = privateUiState.asStateFlow()
 
+    //se cancela la carga anterior para que una respuesta vieja no pise a una nueva
+    private var loadJob: Job? = null
+
     init {
         loadStats()
     }
 
-    //carga las estadisticas del usuario desde el repositorio
+    //primero calcula con room (instantaneo y sin red) y despues trae firestore en segundo plano (#135)
     fun loadStats() {
         if (statsRepository == null) {
             privateUiState.value = StatsUiState(isLoading = false, stats = null)
             return
         }
-        privateUiState.value = privateUiState.value.copy(isLoading = true, errorMessage = null)
-        viewModelScope.launch {
+        privateUiState.value = privateUiState.value.copy(
+            isLoading = privateUiState.value.stats == null,
+            errorMessage = null
+        )
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
+            val local = statsRepository.getLocalStats()
+            local.onSuccess { data ->
+                privateUiState.value = StatsUiState(isLoading = false, stats = data)
+                Log.d("StatsViewModel", "Local stats from room: total=${data.totalCheckIns}")
+            }
+
+            //firestore trae el historial completo; mientras los check-ins no esten todos en room (#143) completa lo local
             val result = statsRepository.getUserStats()
             if (result.isSuccess) {
                 val data = result.getOrNull()
-                privateUiState.value = StatsUiState(isLoading = false, stats = data, errorMessage = null)
+                //si room tiene check-ins que aun no subieron, no se cambian por un resumen con menos
+                if (data != null && data.canReplace(privateUiState.value.stats)) {
+                    privateUiState.value = StatsUiState(isLoading = false, stats = data, errorMessage = null)
+                } else {
+                    privateUiState.value = privateUiState.value.copy(isLoading = false)
+                }
                 Log.d("StatsViewModel", "Stats loaded successfully: total=${data?.totalCheckIns}")
             } else {
                 val errorMsg = result.exceptionOrNull()?.localizedMessage ?: "Could not load statistics"
                 Log.e("StatsViewModel", "Error loading stats: $errorMsg")
-                privateUiState.value = StatsUiState(isLoading = false, errorMessage = errorMsg)
+                //sin red se queda lo de room (aunque este vacio); solo hay error si room tambien fallo
+                if (privateUiState.value.stats == null) {
+                    privateUiState.value = StatsUiState(isLoading = false, errorMessage = errorMsg)
+                }
             }
         }
     }

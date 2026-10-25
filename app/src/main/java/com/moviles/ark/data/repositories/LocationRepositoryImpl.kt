@@ -11,4 +11,8 @@ class LocationRepositoryImpl(
     override suspend fun getCurrentLocation(): LocationResult? {
         return locationDataSource.fetchLastKnownLocation()
     }
+
+    override fun isLocationAvailable(): Boolean {
+        return locationDataSource.hasLocationPermission() && locationDataSource.isGpsEnabled()
+    }
 }
