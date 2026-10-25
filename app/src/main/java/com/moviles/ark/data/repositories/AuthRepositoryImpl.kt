@@ -2,6 +2,7 @@ package com.moviles.ark.data.repositories
 
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.moviles.ark.data.remote.dtos.toDto
 import com.moviles.ark.domain.models.UserModel
 import com.moviles.ark.data.remote.CrashlyticsHelper
 import com.moviles.ark.domain.repositories.AuthRepository
@@ -34,7 +35,7 @@ class AuthRepositoryImpl(
         val result = auth.createUserWithEmailAndPassword(user.email.trim(), user.password).await()
         // the password stays in Firebase Auth, Firestore only gets the profile
         firestore.collection("users").document(result.user!!.uid)
-            .set(mapOf("name" to user.name.trim(), "age" to user.age, "email" to user.email.trim()))
+            .set(user.toDto())
             .await()
         Unit
     }.onFailure { error ->
