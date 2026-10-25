@@ -28,6 +28,7 @@ import com.moviles.ark.ui.screens.PostToolFeedbackRoute
 import com.moviles.ark.ui.screens.ProfileRoute
 import com.moviles.ark.ui.screens.RegisterScreen
 import com.moviles.ark.ui.screens.StatsScreen
+import com.moviles.ark.ui.screens.ToolsCatalogRoute
 import com.moviles.ark.ui.theme.BackgroundColor
 
 @Composable
@@ -101,6 +102,17 @@ fun AppNavigation(
             }
             composable("home_screen") {
                 HomeRoute(
+                    onNavigateToTool = { toolId ->
+                        when (toolId) {
+                            "photo_of_the_day" -> navController.navigate("photo_of_the_day_screen")
+                            "custom_breathing" -> navController.navigate("custom_breathing_screen")
+                            "tools_catalog_screen" -> navController.navigate("tools_catalog_screen")
+                        }
+                    }
+                )
+            }
+            composable("tools_catalog_screen") {
+                ToolsCatalogRoute(
                     onNavigateToTool = { toolId ->
                         when (toolId) {
                             "photo_of_the_day" -> navController.navigate("photo_of_the_day_screen")
