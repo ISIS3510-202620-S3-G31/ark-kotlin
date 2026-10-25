@@ -3,6 +3,9 @@ package com.moviles.ark.data.repositories
 import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.moviles.ark.data.local.daos.EmotionCheckInDao
+import com.moviles.ark.data.local.daos.ToolRecordDao
+import com.moviles.ark.data.local.entities.toDomain
 import com.moviles.ark.domain.composite.CompoundMood
 import com.moviles.ark.domain.composite.Emotion
 import com.moviles.ark.domain.composite.SingleEmotion
@@ -11,7 +14,10 @@ import com.moviles.ark.domain.models.StatsCalculator
 import com.moviles.ark.domain.models.StatsModel
 import com.moviles.ark.domain.models.ToolInteraction
 import com.moviles.ark.domain.repositories.StatsRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -19,8 +25,26 @@ import java.util.Locale
 class StatsRepositoryImpl(
     private val auth: FirebaseAuth,
     private val firestore: FirebaseFirestore,
+    //los daos de room se quedan en el repositorio: el viewmodel nunca toca la base directo (#135)
+    private val emotionCheckInDao: EmotionCheckInDao,
+    private val toolRecordDao: ToolRecordDao,
     private val statsCalculator: StatsCalculator = StatsCalculator()
 ) : StatsRepository {
+
+    //lee check-ins e interacciones de room en IO y calcula en Default; si la base esta vacia devuelve stats en cero (#135)
+    override suspend fun getLocalStats(): Result<StatsModel> = runCatching {
+        val (checkInEntities, interactionEntities) = withContext(Dispatchers.IO) {
+            emotionCheckInDao.getCheckIns().first() to toolRecordDao.getInteractions().first()
+        }
+        withContext(Dispatchers.Default) {
+            statsCalculator.calculateStats(
+                checkIns = checkInEntities.map { it.toDomain() },
+                interactions = interactionEntities.map { it.toDomain() },
+                toolPercentages = computeToolPercentages(interactionEntities.map { it.toolId })
+            )
+        }
+    }
+
     @Suppress("UNCHECKED_CAST")
     override suspend fun getUserStats(): Result<StatsModel> = runCatching {
         val currentUserId = auth.currentUser?.uid ?: "anonymous"
@@ -110,7 +134,7 @@ class StatsRepositoryImpl(
             )
         }
 
-        val toolPercentages = computeToolPercentages(toolDocs)
+        val toolPercentages = computeToolPercentages(toolDocs.mapNotNull { it.getString("toolName") ?: it.getString("toolId") })
 
         //la logica de calculo de estadisticas e insights vive en StatsCalculator (dominio)
         val computedStats = statsCalculator.calculateStats(
@@ -196,13 +220,12 @@ class StatsRepositoryImpl(
         }
     }
 
-    //calcula la distribucion porcentual de herramientas a partir de los documentos
-    private fun computeToolPercentages(toolDocs: List<com.google.firebase.firestore.DocumentSnapshot>): Map<String, Float> {
+    //calcula la distribucion porcentual de herramientas a partir de sus nombres o ids (firestore o room)
+    private fun computeToolPercentages(rawToolNames: List<String>): Map<String, Float> {
         val toolCountsMap = mutableMapOf<String, Int>()
 
-        for (doc in toolDocs) {
-            val rawName = doc.getString("toolName") ?: doc.getString("toolId")
-            if (!rawName.isNullOrBlank()) {
+        for (rawName in rawToolNames) {
+            if (rawName.isNotBlank()) {
                 val toolName = formatToolName(rawName)
                 toolCountsMap[toolName] = toolCountsMap.getOrDefault(toolName, 0) + 1
             }

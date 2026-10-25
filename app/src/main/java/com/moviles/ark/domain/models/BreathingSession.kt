@@ -43,6 +43,21 @@ data class BreathingSession(
         const val MIN_COMPLETED_CYCLES = 1
 
         //patron legible a partir de las tres duraciones
+        fun patternOf(
+            inhaleSeconds: Int,
+            holdSeconds: Int,
+            exhaleSeconds: Int,
+            holdPostExhaleSeconds: Int = 0
+        ): String {
+            return if (holdPostExhaleSeconds > 0) {
+                "$inhaleSeconds-$holdSeconds-$exhaleSeconds-$holdPostExhaleSeconds"
+            } else if (holdSeconds == 0) {
+                "$inhaleSeconds-$exhaleSeconds"
+            } else {
+                "$inhaleSeconds-$holdSeconds-$exhaleSeconds"
+            }
+        }
+
         fun patternOf(inhaleSeconds: Int, holdSeconds: Int, exhaleSeconds: Int): String {
             return "$inhaleSeconds-$holdSeconds-$exhaleSeconds"
         }
