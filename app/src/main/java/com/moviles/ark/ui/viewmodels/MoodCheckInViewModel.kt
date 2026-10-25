@@ -52,7 +52,9 @@ class MoodCheckInViewModel(
             privateUiState.value = privateUiState.value.copy(
                 latitude = result.latitude,
                 longitude = result.longitude,
-                locationStatus = result.status
+                locationStatus = result.status,
+                //con el gps apagado o sin permiso se avisa con el dialogo; el check-in se guarda sin coordenadas (#112)
+                showLocationDisabledDialog = result.status == LocationStatus.DISABLED
             )
             Log.d("MoodCheckIn", "GPS loaded: status=${result.status}, lat=${result.latitude}, lon=${result.longitude}")
             val latitude = result.latitude ?: return@launch
@@ -64,6 +66,12 @@ class MoodCheckInViewModel(
                 privateUiState.value = current.copy(cityName = cityName)
             }
         }
+    }
+
+    fun dismissLocationWarningDialog() {
+        privateUiState.value = privateUiState.value.copy(
+            showLocationDisabledDialog = false
+        )
     }
 
     fun onEmotionToggle(emotion: Emotion) {

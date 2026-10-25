@@ -17,7 +17,9 @@ data class MoodCheckInUiState(
     val locationStatus: LocationStatus? = null,
     val isLoading: Boolean = false,
     val isSaved: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    //dialogo amable cuando el gps esta apagado o no hay permiso (#112)
+    val showLocationDisabledDialog: Boolean = false
 ) {
     //texto del chip de ubicacion; sin red no hay ciudad y se muestran las coordenadas (#144)
     val locationLabel: String
