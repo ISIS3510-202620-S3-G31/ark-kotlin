@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
+import com.moviles.ark.domain.adapters.WeatherServiceAdapter
 import com.moviles.ark.data.repositories.ToolRepositoryImpl
 import com.moviles.ark.domain.models.CachedRecommendation
 import com.moviles.ark.domain.models.RecommendationContextResolver
@@ -14,11 +15,13 @@ import com.moviles.ark.domain.models.RecommendationDecision
 import com.moviles.ark.domain.models.Tool
 import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.domain.models.ToolLatencyTracker
+import com.moviles.ark.domain.repositories.LocationRepository
 import com.moviles.ark.domain.repositories.MoodRepository
 import com.moviles.ark.domain.repositories.RecommendationRepository
 import com.moviles.ark.domain.repositories.ToolInteractionRepository
 import com.moviles.ark.domain.strategies.DefaultRecommendationStrategy
 import com.moviles.ark.domain.strategies.RecommendationStrategy
+import com.moviles.ark.domain.strategies.WeatherRecommendationStrategy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,6 +45,9 @@ class HomeViewModel(
     private val recommendationRepository: RecommendationRepository? = null,
     //true si hay internet en este momento
     private val isOnline: () -> Boolean = { true },
+    //clima de afuera para la tarjeta de clima (#134); necesita la ubicacion del telefono
+    private val weatherServiceAdapter: WeatherServiceAdapter? = null,
+    private val locationRepository: LocationRepository? = null,
     private val now: () -> Long = { System.currentTimeMillis() },
     initialTools: List<Tool> = ToolRepositoryImpl.sampleTools
 ) : ViewModel() {
@@ -68,6 +74,23 @@ class HomeViewModel(
     init {
         checkTodayStatus()
         loadTools()
+        loadWeatherSuggestion()
+    }
+
+    //la estrategia del clima va fuera del resolver: no cambia el orden del catalogo, solo llena su propia tarjeta (#134)
+    fun loadWeatherSuggestion() {
+        val adapter = weatherServiceAdapter ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            //sin internet no hay clima nuevo; la tarjeta simplemente no aparece
+            if (!isOnline()) return@launch
+            //sin permiso o con el gps apagado no hay coordenadas y no se pide el clima
+            val location = locationRepository?.getCurrentLocation() ?: return@launch
+            val latitude = location.latitude ?: return@launch
+            val longitude = location.longitude ?: return@launch
+            val weather = adapter.getCurrentWeather(latitude, longitude).getOrNull() ?: return@launch
+            val suggestion = WeatherRecommendationStrategy(weather).suggest(_uiState.value.tools)
+            _uiState.value = _uiState.value.copy(weatherSuggestion = suggestion)
+        }
     }
 
     fun checkTodayStatus() {
@@ -202,7 +225,9 @@ class HomeViewModel(
                     toolLatencyTracker = app.container.toolLatencyTracker,
                     toolInteractionRepository = app.container.toolInteractionRepository,
                     recommendationRepository = app.container.recommendationRepository,
-                    isOnline = app.container.networkConnectivityObserver::isConnected
+                    isOnline = app.container.networkConnectivityObserver::isConnected,
+                    weatherServiceAdapter = app.container.weatherServiceAdapter,
+                    locationRepository = app.container.locationRepository
                 )
             }
         }

@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.AcUnit
 import androidx.compose.material.icons.filled.AccessibilityNew
 import androidx.compose.material.icons.filled.Air
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -38,6 +39,8 @@ import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.Umbrella
+import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material.icons.filled.Whatshot
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -73,6 +76,7 @@ import com.moviles.ark.R
 import com.moviles.ark.data.repositories.ToolRepositoryImpl
 import com.moviles.ark.domain.models.Tool
 import com.moviles.ark.domain.models.ToolCategory
+import com.moviles.ark.domain.models.WeatherCondition
 import com.moviles.ark.ui.components.RecommendationCardComponent
 import com.moviles.ark.ui.theme.AppTheme
 import com.moviles.ark.ui.theme.BackgroundColor
@@ -236,6 +240,22 @@ fun HomeScreen(
                     RecommendationCardComponent(
                         tool = recommendedTool,
                         rationaleTag = "Suggested for today",
+                        onOpenTool = { toolId -> onToolClick(toolId) }
+                    )
+                }
+            }
+
+            //tarjeta del clima, aparte de la recomendacion principal (#134)
+            uiState.weatherSuggestion?.let { suggestion ->
+                item {
+                    RecommendationCardComponent(
+                        tool = suggestion.tool,
+                        rationaleTag = suggestion.reason,
+                        icon = when (suggestion.condition) {
+                            WeatherCondition.RAINY -> Icons.Default.Umbrella
+                            WeatherCondition.COLD -> Icons.Default.AcUnit
+                            WeatherCondition.SUNNY -> Icons.Default.WbSunny
+                        },
                         onOpenTool = { toolId -> onToolClick(toolId) }
                     )
                 }

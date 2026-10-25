@@ -2,6 +2,7 @@ package com.moviles.ark.ui.viewmodels
 
 import com.moviles.ark.domain.models.Tool
 import com.moviles.ark.domain.models.ToolCategory
+import com.moviles.ark.domain.models.WeatherSuggestion
 
 /**
  * State object representing the UI state of the HomeScreen.
@@ -14,5 +15,7 @@ data class HomeUiState(
     val surpriseTool: Tool? = null,
     val navigateToToolId: String? = null,
     val isCheckInCompleted: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    //tarjeta aparte segun el clima de afuera; null sin internet, sin ubicacion o si el clima no sugiere nada (#134)
+    val weatherSuggestion: WeatherSuggestion? = null
 )

@@ -52,6 +52,7 @@ interface AppContainer {
     val analyticsRepository: AnalyticsRepository
     val toolLatencyTracker: ToolLatencyTracker
     val recommendationRepository: com.moviles.ark.domain.repositories.RecommendationRepository
+    val weatherServiceAdapter: com.moviles.ark.domain.adapters.WeatherServiceAdapter
     val feedbackDao: FeedbackDao
     val breathingRepository: BreathingRepository
     val audioPlayerHelper: AudioPlayerHelper
@@ -90,6 +91,10 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     // ultima recomendacion del home en cacheDir/last_recommendation.json para usarla sin internet (#159)
     override val recommendationRepository: com.moviles.ark.domain.repositories.RecommendationRepository by lazy {
         com.moviles.ark.data.repositories.RecommendationRepositoryImpl(context.cacheDir)
+    }
+    // clima de afuera con open-meteo detras del adapter (#134)
+    override val weatherServiceAdapter: com.moviles.ark.domain.adapters.WeatherServiceAdapter by lazy {
+        com.moviles.ark.data.remote.apis.OpenMeteoAdapterImpl()
     }
     override val feedbackDao: FeedbackDao by lazy { database.feedbackDao() }
     // repositorio de la herramienta de respiracion con pistas de jamendo (#7) y sesiones guardadas en room (#82)
