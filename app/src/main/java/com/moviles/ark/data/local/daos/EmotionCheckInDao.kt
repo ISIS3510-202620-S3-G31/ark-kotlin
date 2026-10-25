@@ -77,13 +77,34 @@ interface EmotionCheckInDao {
         }
     }
 
-    //los que faltan por subir a firestore (#33)
-    @Query("SELECT * FROM mood_checkins WHERE isSynced = 0")
-    suspend fun getUnsyncedCheckInsRaw(): List<CheckInEntity>
+    //el ultimo check-in del usuario; el home lo lee de aqui para funcionar sin internet (#143)
+    @Query("SELECT * FROM mood_checkins WHERE userId = :userId ORDER BY timestamp DESC LIMIT 1")
+    suspend fun getLatestCheckInRaw(userId: String): CheckInEntity?
 
-    suspend fun getUnsyncedCheckIns(): List<CheckInEntity> {
+    suspend fun getLatestCheckIn(userId: String): CheckInEntity? {
         return try {
-            getUnsyncedCheckInsRaw()
+            getLatestCheckInRaw(userId)
+        } catch (e: Exception) {
+            CrashlyticsHelper.logNonFatal(
+                componentName = "EmotionCheckInDao",
+                action = "getLatestCheckIn",
+                throwable = e
+            )
+            null
+        }
+    }
+
+    //cuantos check-ins tiene el usuario desde una fecha; con 0 desde el inicio del dia todavia no ha hecho el de hoy (#143)
+    @Query("SELECT COUNT(*) FROM mood_checkins WHERE userId = :userId AND timestamp >= :fromMillis")
+    suspend fun countCheckInsSince(userId: String, fromMillis: Long): Int
+
+    //los que faltan por subir a firestore (#33); solo los del usuario con sesion, porque se suben a su carpeta (#143)
+    @Query("SELECT * FROM mood_checkins WHERE isSynced = 0 AND userId = :userId")
+    suspend fun getUnsyncedCheckInsRaw(userId: String): List<CheckInEntity>
+
+    suspend fun getUnsyncedCheckIns(userId: String): List<CheckInEntity> {
+        return try {
+            getUnsyncedCheckInsRaw(userId)
         } catch (e: Exception) {
             CrashlyticsHelper.logNonFatal(
                 componentName = "EmotionCheckInDao",

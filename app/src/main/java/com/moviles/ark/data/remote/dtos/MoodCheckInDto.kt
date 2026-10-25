@@ -78,6 +78,7 @@ fun MoodCheckInDto.toDomain(): CheckInModel {
 //de dto a fila de room (por ejemplo para bajar el historial al telefono); ya viene de firestore, asi que esta sincronizado
 fun MoodCheckInDto.toEntity(): CheckInEntity {
     return CheckInEntity(
+        userId = userId,
         moodName = moodName,
         emotions = emotions.map { it.name },
         intensity = emotions.firstOrNull()?.intensity ?: 3,

@@ -125,7 +125,7 @@ class MoodCheckInViewModel(
                     privateUiState.value = state.copy(isLoading = false, isSaved = true, errorMessage = null)
                     onSavedCallback()
                 } else {
-                    val errorMsg = result.exceptionOrNull()?.localizedMessage ?: "Could not sync check-in"
+                    val errorMsg = result.exceptionOrNull()?.localizedMessage ?: "Could not save check-in"
                     Log.e("MoodCheckIn", "Save error: $errorMsg")
                     privateUiState.value = state.copy(isLoading = false, errorMessage = errorMsg)
                 }

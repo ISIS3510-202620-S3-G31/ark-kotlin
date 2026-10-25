@@ -75,7 +75,10 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     // perfil guardado en room para verlo sin internet, con nombre y edad sincronizados con firestore (#119)
     override val userRepository: UserRepository by lazy { UserRepositoryImpl(context, auth, firestore, database.userDao()) }
     override val locationRepository: LocationRepository by lazy { LocationRepositoryImpl(Location(context)) }
-    override val moodRepository: MoodRepository by lazy { MoodRepositoryImpl(auth, firestore) }
+    // check-ins guardados en room al instante; el sync los sube a firestore cuando hay red (#143)
+    override val moodRepository: MoodRepository by lazy {
+        MoodRepositoryImpl(auth, firestore, database.emotionCheckInDao(), onCheckInSaved = { syncManager.requestSync() })
+    }
     // catalogo de herramientas en room como unica fuente de verdad, actualizado desde firestore (#132) y con copia en filesDir/tools.json (#145)
     override val toolRepository: com.moviles.ark.domain.repositories.ToolRepository by lazy {
         ToolRepositoryImpl(database.toolDao(), firestore, com.moviles.ark.data.local.ToolCatalogFileStore(context))
