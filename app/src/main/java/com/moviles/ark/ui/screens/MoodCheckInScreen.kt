@@ -20,8 +20,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.LocationOff
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -43,6 +48,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.ui.components.MoodSelectorComponent
 import com.moviles.ark.ui.theme.AppTheme
+import com.moviles.ark.ui.theme.FigtreeFontFamily
 import com.moviles.ark.ui.theme.PrimaryColor
 import com.moviles.ark.ui.theme.TextColor
 import com.moviles.ark.ui.viewmodels.MoodCheckInViewModel
@@ -64,6 +70,62 @@ fun MoodCheckInScreen(
 
     LaunchedEffect(Unit) {
         viewModel.loadCurrentLocation()
+    }
+
+    if (uiState.value.showLocationDisabledDialog) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissLocationWarningDialog() },
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(PrimaryColor.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.LocationOff,
+                        contentDescription = "Location off",
+                        tint = PrimaryColor,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            },
+            title = {
+                Text(
+                    text = "Location Unavailable",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontFamily = FigtreeFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    color = TextColor
+                )
+            },
+            text = {
+                Text(
+                    text = "Your GPS is turned off or permissions are disabled. Don't worry! Your check-in will be saved safely without regional data.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontFamily = FigtreeFontFamily,
+                    color = TextColor.copy(alpha = 0.75f),
+                    lineHeight = 20.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.dismissLocationWarningDialog() },
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryColor),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text(
+                        text = "Got it",
+                        fontFamily = FigtreeFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+            },
+            containerColor = Color.White,
+            shape = RoundedCornerShape(24.dp)
+        )
     }
 
     Surface(
@@ -188,7 +250,10 @@ fun MoodCheckInScreen(
             ) {
                 Text("📍", fontSize = 12.sp)
                 Spacer(modifier = Modifier.width(6.dp))
-                val locationText = uiState.value.cityName ?: if (uiState.value.latitude != null) "Location captured" else "Detecting location..."
+                val locationText = uiState.value.cityName
+                    ?: if (uiState.value.latitude != null) "Location captured"
+                    else if (uiState.value.isLocationChecked) "Location unavailable"
+                    else "Detecting location..."
                 Text(
                     text = locationText,
                     style = MaterialTheme.typography.bodySmall,

@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.HorizontalDivider
@@ -28,6 +29,7 @@ import com.moviles.ark.ui.theme.TextColor
 enum class BottomNavItem(val route: String, val label: String, val icon: ImageVector) {
     STATS("stats_screen", "Stats", Icons.Filled.BarChart),
     HOME("home_screen", "Home", Icons.Filled.Home),
+    TOOLS("tools_catalog_screen", "Tools", Icons.Filled.GridView),
     PROFILE("profile_screen", "Profile", Icons.Filled.Person);
 
     companion object {
