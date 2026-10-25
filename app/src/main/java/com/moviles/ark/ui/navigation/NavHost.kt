@@ -134,6 +134,17 @@ fun AppNavigation(
                         when (toolId) {
                             "photo_of_the_day" -> navController.navigate("photo_of_the_day_screen")
                             "custom_breathing" -> navController.navigate("custom_breathing_screen")
+                            "tools_catalog_screen" -> navController.navigate("tools_catalog_screen")
+                        }
+                    }
+                )
+            }
+            composable("tools_catalog_screen") {
+                ToolsCatalogRoute(
+                    onNavigateToTool = { toolId ->
+                        when (toolId) {
+                            "photo_of_the_day" -> navController.navigate("photo_of_the_day_screen")
+                            "custom_breathing" -> navController.navigate("custom_breathing_screen")
                         }
                     }
                 )
