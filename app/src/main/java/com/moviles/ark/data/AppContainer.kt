@@ -53,6 +53,7 @@ interface AppContainer {
     val toolLatencyTracker: ToolLatencyTracker
     val feedbackDao: FeedbackDao
     val breathingRepository: BreathingRepository
+    val screamTankRepository: com.moviles.ark.domain.repositories.ScreamTankRepository
     val audioPlayerHelper: AudioPlayerHelper
     val networkConnectivityObserver: NetworkConnectivityObserver
     val syncRepository: SyncRepository
@@ -70,17 +71,19 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     }
 
     override val auth: FirebaseAuth by lazy { Firebase.auth }
+    //adapter de firebase auth para que el repositorio de login no dependa de firebase (#136)
+    private val authServiceAdapter: com.moviles.ark.domain.adapters.AuthServiceAdapter by lazy { com.moviles.ark.data.remote.apis.FirebaseAuthAdapterImpl(auth) }
     override val firestore: FirebaseFirestore by lazy { Firebase.firestore }
-    override val authRepository: AuthRepository by lazy { AuthRepositoryImpl(auth, firestore) }
+    override val authRepository: AuthRepository by lazy { AuthRepositoryImpl(authServiceAdapter, firestore) }
     // perfil guardado en room para verlo sin internet, con nombre y edad sincronizados con firestore (#119)
     override val userRepository: UserRepository by lazy { UserRepositoryImpl(context, auth, firestore, database.userDao()) }
     override val locationRepository: LocationRepository by lazy { LocationRepositoryImpl(Location(context)) }
     override val moodRepository: MoodRepository by lazy { MoodRepositoryImpl(auth, firestore) }
-    // fake catalog until the Room implementation of #9 is ready; then only this line changes
-    override val toolRepository: com.moviles.ark.domain.repositories.ToolRepository by lazy { ToolRepositoryImpl() }
+    // catalogo de herramientas en room como unica fuente de verdad, actualizado desde firestore (#132)
+    override val toolRepository: com.moviles.ark.domain.repositories.ToolRepository by lazy { ToolRepositoryImpl(database.toolDao(), firestore) }
     // interacciones con herramientas guardadas en room; las usa la recomendacion por frecuencia del home (#96)
     override val toolInteractionRepository: ToolInteractionRepository by lazy { ToolInteractionRepositoryImpl(database.toolRecordDao()) }
-    override val statsRepository: StatsRepository by lazy { StatsRepositoryImpl(auth, firestore) }
+    override val statsRepository: StatsRepository by lazy { StatsRepositoryImpl(auth, firestore, database.emotionCheckInDao(), database.toolRecordDao()) }
     // real photo repository with Room persistence and internal app private storage (context.filesDir) (#26)
     override val photoRepository: PhotoEntryRepository by lazy {
         //cada usuario solo ve sus fotos y sus archivos van en filesDir/photos/{userId} (#133)
@@ -97,6 +100,14 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             toolRecordDao = database.toolRecordDao(),
             auth = auth,
             bundledAudioUri = "android.resource://${context.packageName}/${R.raw.breathing_ambient}"
+        )
+    }
+    // scream tank: volumen del microfono medido en memoria, sin guardar audio; la sesion va a room (#157)
+    override val screamTankRepository: com.moviles.ark.domain.repositories.ScreamTankRepository by lazy {
+        com.moviles.ark.data.repositories.ScreamTankRepositoryImpl(
+            microphoneLevelMeter = com.moviles.ark.data.local.sensors.MicrophoneLevelMeter(context),
+            toolRecordDao = database.toolRecordDao(),
+            auth = auth
         )
     }
     override val audioPlayerHelper: AudioPlayerHelper by lazy { AudioPlayerHelper(context) }
