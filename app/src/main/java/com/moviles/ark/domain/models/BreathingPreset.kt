@@ -3,8 +3,6 @@ package com.moviles.ark.domain.models
 /**
  * Medically verified guided breathing presets based on clinical respiratory patterns.
  */
-// como hago pa añadir esto ..... saaa
-
 enum class BreathingPreset(
     val title: String,
     val patternLabel: String,
@@ -62,7 +60,7 @@ enum class BreathingPreset(
         subtitle = "Instant Relief",
         clinicalBenefit = "Gentle rhythm without breath-holding that stimulates the vagus nerve to slow racing heartbeats safely and quickly."
     );
-// Añadir
+
     val formattedDescription: String
         get() = if (holdPostExhale > 0) {
             "Inhale ${inhale}s • Hold ${hold}s • Exhale ${exhale}s • Hold ${holdPostExhale}s"

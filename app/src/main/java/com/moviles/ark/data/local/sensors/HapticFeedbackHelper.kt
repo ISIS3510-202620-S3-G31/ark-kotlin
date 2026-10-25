@@ -38,7 +38,8 @@ class HapticFeedbackHelper(private val context: Context) {
                         // Pulso sutil y claro para iniciar la inhalacion
                         VibrationEffect.createOneShot(45L, 120)
                     }
-                    BreathingPhase.HOLD -> {
+                    BreathingPhase.HOLD,
+                    BreathingPhase.HOLD_POST_EXHALE -> {
                         // Toque suave y preciso para sostener
                         VibrationEffect.createOneShot(30L, 80)
                     }
@@ -62,5 +63,3 @@ class HapticFeedbackHelper(private val context: Context) {
         }
     }
 }
-
-// Añadir pero en este hay un error
