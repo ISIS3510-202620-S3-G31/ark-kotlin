@@ -19,7 +19,8 @@ data class PhotoEntryDto(
 )
 
 //de fila de room a dto, para subir las fotos guardadas sin conexion (#33)
-fun PhotoEntryEntity.toDto(userId: String): PhotoEntryDto {
+//el userId sale de la fila (#133): la foto siempre va a la carpeta de quien la tomo
+fun PhotoEntryEntity.toDto(): PhotoEntryDto {
     return PhotoEntryDto(
         userId = userId,
         caption = caption,
@@ -51,6 +52,7 @@ fun PhotoEntryDto.toDomain(): PhotoEntryModel {
 //de dto a fila de room; ya viene de firestore, asi que esta sincronizada
 fun PhotoEntryDto.toEntity(): PhotoEntryEntity {
     return PhotoEntryEntity(
+        userId = userId,
         localFilePath = localFilePath,
         caption = caption,
         takenAt = takenAt,

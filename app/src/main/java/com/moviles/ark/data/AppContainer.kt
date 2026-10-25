@@ -21,7 +21,7 @@ import com.moviles.ark.data.repositories.BreathingRepositoryImpl
 import com.moviles.ark.data.repositories.ToolRepositoryImpl
 import com.moviles.ark.data.repositories.LocationRepositoryImpl
 import com.moviles.ark.data.repositories.MoodRepositoryImpl
-import com.moviles.ark.data.repositories.PhotoRepositoryImpl
+import com.moviles.ark.data.repositories.PhotoEntryRepositoryImpl
 import com.moviles.ark.data.repositories.StatsRepositoryImpl
 import com.moviles.ark.data.repositories.SyncRepositoryImpl
 import com.moviles.ark.data.repositories.ToolInteractionRepositoryImpl
@@ -32,7 +32,7 @@ import com.moviles.ark.domain.repositories.AuthRepository
 import com.moviles.ark.domain.repositories.BreathingRepository
 import com.moviles.ark.domain.repositories.LocationRepository
 import com.moviles.ark.domain.repositories.MoodRepository
-import com.moviles.ark.domain.repositories.PhotoRepository
+import com.moviles.ark.domain.repositories.PhotoEntryRepository
 import com.moviles.ark.domain.repositories.StatsRepository
 import com.moviles.ark.domain.repositories.SyncRepository
 import com.moviles.ark.domain.repositories.ToolInteractionRepository
@@ -48,7 +48,7 @@ interface AppContainer {
     val toolRepository: com.moviles.ark.domain.repositories.ToolRepository
     val toolInteractionRepository: ToolInteractionRepository
     val statsRepository: StatsRepository
-    val photoRepository: PhotoRepository
+    val photoRepository: PhotoEntryRepository
     val analyticsRepository: AnalyticsRepository
     val toolLatencyTracker: ToolLatencyTracker
     val feedbackDao: FeedbackDao
@@ -82,7 +82,10 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val toolInteractionRepository: ToolInteractionRepository by lazy { ToolInteractionRepositoryImpl(database.toolRecordDao()) }
     override val statsRepository: StatsRepository by lazy { StatsRepositoryImpl(auth, firestore) }
     // real photo repository with Room persistence and internal app private storage (context.filesDir) (#26)
-    override val photoRepository: PhotoRepository by lazy { PhotoRepositoryImpl(context, database.photoEntryDao()) }
+    override val photoRepository: PhotoEntryRepository by lazy {
+        //cada usuario solo ve sus fotos y sus archivos van en filesDir/photos/{userId} (#133)
+        PhotoEntryRepositoryImpl(context, auth, database.photoEntryDao())
+    }
     override val analyticsRepository: AnalyticsRepository by lazy { AnalyticsRepositoryImpl(Firebase.analytics) }
     // one tracker for the whole app: the tap on a tool and its screen live in different places (#8)
     override val toolLatencyTracker: ToolLatencyTracker by lazy { ToolLatencyTracker(analyticsRepository) }
