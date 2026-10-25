@@ -1,131 +1,306 @@
 package com.moviles.ark.ui.screens
-import androidx.compose.runtime.Composable
-import com.moviles.ark.R
+
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.res.painterResource
-import androidx.compose.material3.TextField
-import androidx.compose.material3.Text
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import com.moviles.ark.ui.viewmodels.LoginUiState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.moviles.ark.ui.viewmodels.LoginViewModel
-import androidx.compose.ui.tooling.preview.Preview
+import com.moviles.ark.R
 import com.moviles.ark.ui.theme.AppTheme
+import com.moviles.ark.ui.theme.ErrorColor
+import com.moviles.ark.ui.theme.FigtreeFontFamily
+import com.moviles.ark.ui.theme.PrimaryColor
+import com.moviles.ark.ui.theme.SoreanFontFamily
+import com.moviles.ark.ui.theme.TextColor
+import com.moviles.ark.ui.viewmodels.LoginUiState
+import com.moviles.ark.ui.viewmodels.LoginViewModel
 
 @Composable
-fun LoginScreen(uiState: LoginUiState,
-                onEmailChange: (String) -> Unit, // En jetpack es necesario mandar las funciones que se usen por parametro
-                onPasswordChange: (String) -> Unit,
-                onLoginClick: () -> Unit,
-                onNavigateToRegister:() -> Unit // Esta es pura de UI porque
+fun LoginScreen(
+    uiState: LoginUiState,
+    onEmailChange: (String) -> Unit,
+    onPasswordChange: (String) -> Unit,
+    onLoginClick: () -> Unit,
+    onNavigateToRegister: () -> Unit
 ) {
-    val fieldColors = TextFieldDefaults.colors(focusedContainerColor = Color.White, unfocusedContainerColor = Color.White)
-    var confirmPasswordVisible by remember { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
+    var passwordVisible by remember { mutableStateOf(false) }
 
-    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        // Como va una cosa debajo de la otra lo que hago es usar Colum
+    // Fondo calido oficial (#FFF5E6) acorde al estilo de RegisterScreen y la identidad de Ark
+    val warmBackgroundColor = Color(0xFFFFF5E6)
 
+    // Colores limpios y consistentes para los campos de texto
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedContainerColor = Color.White,
+        unfocusedContainerColor = Color.White,
+        focusedBorderColor = PrimaryColor,
+        unfocusedBorderColor = TextColor.copy(alpha = 0.2f),
+        focusedLabelColor = PrimaryColor,
+        unfocusedLabelColor = TextColor.copy(alpha = 0.6f),
+        cursorColor = PrimaryColor
+    )
+
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = warmBackgroundColor
+    ) {
         Column(
-            modifier = Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp, vertical = 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
+            // Mascota oficial de Ark con tamaño proporcionado y espacio cómodo
             Image(
-                painter = painterResource(id = R.drawable.ic_mascot_log), // R es una clase que todo lo que yo guarde en res le va a asignar un id y lo va a guardar para que yo lo pueda usar despues
-                contentDescription = "Mascota de la aplicación" // esto pa ahcernos asecibles
+                painter = painterResource(id = R.drawable.ic_mascot_log),
+                contentDescription = "Ark Mascot",
+                modifier = Modifier.size(115.dp)
             )
+
             Spacer(modifier = Modifier.height(16.dp))
 
-            //titulo con la fuente Sorean (headlineLarge) y subtitulo
-            Text("Glad you're here", style = MaterialTheme.typography.headlineLarge, color = MaterialTheme.colorScheme.onBackground)
-            Text("Take a deep breath and enter your calm space.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f))
-            Spacer(modifier = Modifier.height(20.dp))
-
-            TextField(
-                value = uiState.email, // Texto actual -- si lo dejo como value="" nunca cambiara asi el usuario escriba
-                onValueChange = onEmailChange, // nuevoTexto es la variable donde nos entrega el texto actualizado cada vez que el usuario escribe algo
-                label = { Text("Email") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                singleLine = true,
-                colors = fieldColors, modifier = Modifier.fillMaxWidth()
+            // Titulo con la fuente Sorean (headlineLarge) y subtitulo en Figtree
+            Text(
+                text = "Glad you're here",
+                style = MaterialTheme.typography.headlineLarge,
+                fontFamily = SoreanFontFamily,
+                color = TextColor,
+                textAlign = TextAlign.Center
             )
-            Spacer(modifier = Modifier.height(12.dp))
 
-            TextField(
-                value = uiState.password,
-                onValueChange = onPasswordChange,
-                label = { Text("Password") },
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                trailingIcon = {
-                    TextButton(onClick = { confirmPasswordVisible = !confirmPasswordVisible }) {
-                        Text(if (confirmPasswordVisible) "Hide" else "Show", style = MaterialTheme.typography.labelSmall)
-                    }
-                },
-                singleLine = true,
-                colors = fieldColors, modifier = Modifier.fillMaxWidth()
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                text = "Take a deep breath and enter your calm space.",
+                style = MaterialTheme.typography.bodyLarge,
+                fontFamily = FigtreeFontFamily,
+                color = TextColor.copy(alpha = 0.7f),
+                textAlign = TextAlign.Center
             )
-            Spacer(modifier = Modifier.height(12.dp))
 
-            // mensaje de error si el login falla
-            if (uiState.errorMessage != null) {
-                Text(text = uiState.errorMessage, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyLarge)
-                Spacer(modifier = Modifier.height(8.dp))
-            }
+            Spacer(modifier = Modifier.height(24.dp))
 
-            Button(
-                onClick = onLoginClick,
-                enabled = !uiState.isLoading // Evita múltiples clics mientras carga
+            // Contenedor tipo tarjeta redondeada con elevacion sutil para el formulario
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                border = BorderStroke(1.dp, PrimaryColor.copy(alpha = 0.12f))
             ) {
-                if (uiState.isLoading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),// Usamos dp porque es más facil cuando dos telefonos tiene difernte resolucion hace que to do quede proporcioinal en dif pantallas
-                        color = MaterialTheme.colorScheme.onPrimary
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 24.dp)
+                ) {
+                    Text(
+                        text = "Sign In",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontFamily = FigtreeFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        color = TextColor
                     )
-                } else {
-                    Text("Login")
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Campo Email con icono representativo y teclado especifico
+                    OutlinedTextField(
+                        value = uiState.email,
+                        onValueChange = onEmailChange,
+                        label = { Text("Email Address", fontFamily = FigtreeFontFamily) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Email,
+                                contentDescription = null,
+                                tint = PrimaryColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                        singleLine = true,
+                        shape = RoundedCornerShape(14.dp),
+                        colors = fieldColors,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Campo Password con icono y alternador visual (Show / Hide)
+                    OutlinedTextField(
+                        value = uiState.password,
+                        onValueChange = onPasswordChange,
+                        label = { Text("Password", fontFamily = FigtreeFontFamily) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = null,
+                                tint = PrimaryColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        },
+                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        trailingIcon = {
+                            IconButton(onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                passwordVisible = !passwordVisible
+                            }) {
+                                Icon(
+                                    imageVector = if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    contentDescription = if (passwordVisible) "Hide password" else "Show password",
+                                    tint = TextColor.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        },
+                        singleLine = true,
+                        shape = RoundedCornerShape(14.dp),
+                        colors = fieldColors,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    // Mensaje de error si la autenticacion falla
+                    if (uiState.errorMessage != null) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = uiState.errorMessage,
+                            color = ErrorColor,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FigtreeFontFamily
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    // Boton principal de Login con color primario naranja, esquinas suaves y respuesta haptica
+                    Button(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onLoginClick()
+                        },
+                        enabled = !uiState.isLoading,
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = PrimaryColor,
+                            disabledContainerColor = PrimaryColor.copy(alpha = 0.5f)
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp)
+                    ) {
+                        if (uiState.isLoading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                color = Color.White,
+                                strokeWidth = 2.5.dp
+                            )
+                        } else {
+                            Text(
+                                text = "Log In",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontFamily = FigtreeFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                color = Color.White
+                            )
+                        }
+                    }
                 }
             }
-            Spacer(modifier = Modifier.height(12.dp))
-            TextButton(
-                onClick = onNavigateToRegister
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // Enlace de navegacion hacia registro
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
             ) {
-                Text("Don't have an account? Sign up")
+                Text(
+                    text = "Don't have an account?",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontFamily = FigtreeFontFamily,
+                    color = TextColor.copy(alpha = 0.75f)
+                )
+                TextButton(
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onNavigateToRegister()
+                    }
+                ) {
+                    Text(
+                        text = "Sign up",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontFamily = FigtreeFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        color = PrimaryColor
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-fun LoginRoute(viewModel: LoginViewModel = viewModel(factory = LoginViewModel.Factory),
-               onNavigateToRegister: () -> Unit,
-               onLoginSuccess: () -> Unit = {}) {
-    // Escuchamos el estado desde la UI
+fun LoginRoute(
+    viewModel: LoginViewModel = viewModel(factory = LoginViewModel.Factory),
+    onNavigateToRegister: () -> Unit,
+    onLoginSuccess: () -> Unit = {}
+) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    // Le entregamos el estado y las funciones a nuestra pantalla
     LoginScreen(
         uiState = uiState,
         onEmailChange = viewModel::onEmailChange,
@@ -135,24 +310,18 @@ fun LoginRoute(viewModel: LoginViewModel = viewModel(factory = LoginViewModel.Fa
     )
 }
 
-// ESTO ES PARA IR MIRANDO COMO ESTAN LAS COSAS VISUALMENTE Y ASDI PODER CORREREGIR SIN LANZAR EL EMULADOR Y TAMBIEN MIRAR LOS ESTADOS GRACUAS A PREVIEW
-
 @Preview(showBackground = true, name = "Pantalla de Login Normal")
 @Composable
 fun LoginScreenPreview() {
-    //  Importante: Envolvemos con el tema de tu App para ver los colores correctos
     AppTheme {
-        //  Creamos un estado de "mentira" para simular lo que pasaría en la app real
         val dummyUiState = LoginUiState(
             email = "usuario@ejemplo.com",
             password = "password123",
-            isLoading = false //  Empezamos simulando que NO está cargando
+            isLoading = false
         )
 
-        //  Llamamos a nuestra pantalla real pasándole los datos simulados
         LoginScreen(
             uiState = dummyUiState,
-            // Le pasamos funciones vacías '{}' porque en el preview no necesitamos que hagan nada
             onEmailChange = {},
             onPasswordChange = {},
             onLoginClick = {},
