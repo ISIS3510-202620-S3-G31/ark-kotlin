@@ -91,10 +91,7 @@ fun ToolsCatalogRoute(
     ToolsCatalogScreen(
         uiState = uiState,
         onCategorySelect = viewModel::onCategorySelect,
-        onToolClick = { toolId ->
-            viewModel.onToolClick(toolId)
-            onNavigateToTool(toolId)
-        }
+        onToolClick = viewModel::onToolClick
     )
 }
 
