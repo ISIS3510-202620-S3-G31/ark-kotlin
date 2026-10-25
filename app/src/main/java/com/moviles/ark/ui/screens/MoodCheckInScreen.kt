@@ -188,9 +188,9 @@ fun MoodCheckInScreen(
             ) {
                 Text("📍", fontSize = 12.sp)
                 Spacer(modifier = Modifier.width(6.dp))
-                val locationText = uiState.value.cityName ?: if (uiState.value.latitude != null) "Location captured" else "Detecting location..."
+                //"Location Disabled" sin permiso o con gps apagado; el check-in se guarda igual sin coordenadas (#144)
                 Text(
-                    text = locationText,
+                    text = uiState.value.locationLabel,
                     style = MaterialTheme.typography.bodySmall,
                     color = TextColor.copy(alpha = 0.75f),
                     fontSize = 11.5.sp
