@@ -9,6 +9,7 @@ import com.google.firebase.FirebaseNetworkException
 import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
 import com.google.firebase.auth.FirebaseAuthInvalidUserException
 import com.moviles.ark.ArkApplication
+import com.moviles.ark.domain.exceptions.NetworkUnavailableException
 import com.moviles.ark.domain.repositories.AuthRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,6 +31,10 @@ class LoginViewModel(private val authRepository: AuthRepository) : ViewModel() {
         _uiState.value = _uiState.value.copy(password = newPassword, errorMessage = null)
     }
 
+    fun dismissNoInternetDialog() {
+        _uiState.value = _uiState.value.copy(showNoInternetDialog = false)
+    }
+
     fun onLoginClick(onSuccess: () -> Unit) {
         val state = _uiState.value
         if (state.email.isBlank() || state.password.isBlank()) {
@@ -37,20 +42,33 @@ class LoginViewModel(private val authRepository: AuthRepository) : ViewModel() {
             return
         }
 
-        _uiState.value = state.copy(isLoading = true, errorMessage = null)
+        _uiState.value = state.copy(isLoading = true, errorMessage = null, showNoInternetDialog = false)
         viewModelScope.launch {
             val result = authRepository.login(state.email, state.password)
             _uiState.value = _uiState.value.copy(isLoading = false)
 
             result.onSuccess { onSuccess() }
             result.onFailure { error ->
-                // firebase no dice si fallo el correo o la clave, por eso es un solo mensaje
-                val message = when (error) {
-                    is FirebaseAuthInvalidCredentialsException, is FirebaseAuthInvalidUserException -> "Incorrect email or password"
-                    is FirebaseNetworkException -> "No internet connection, try again"
-                    else -> "Could not log in, try again"
+                val isNetworkError = error is NetworkUnavailableException ||
+                        error is FirebaseNetworkException ||
+                        (error.cause != null && (error.cause is NetworkUnavailableException || error.cause is FirebaseNetworkException))
+
+                if (isNetworkError) {
+                    val isAirplane = (error as? NetworkUnavailableException)?.isAirplaneMode == true ||
+                            (error.cause as? NetworkUnavailableException)?.isAirplaneMode == true
+                    _uiState.value = _uiState.value.copy(
+                        showNoInternetDialog = true,
+                        isAirplaneModeError = isAirplane,
+                        errorMessage = null
+                    )
+                } else {
+                    // firebase no dice si fallo el correo o la clave, por eso es un solo mensaje
+                    val message = when (error) {
+                        is FirebaseAuthInvalidCredentialsException, is FirebaseAuthInvalidUserException -> "Incorrect email or password"
+                        else -> "Could not log in, try again"
+                    }
+                    _uiState.value = _uiState.value.copy(errorMessage = message)
                 }
-                _uiState.value = _uiState.value.copy(errorMessage = message)
             }
         }
     }

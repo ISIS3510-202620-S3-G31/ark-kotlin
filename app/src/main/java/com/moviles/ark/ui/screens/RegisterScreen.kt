@@ -40,6 +40,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.R
 import com.moviles.ark.domain.models.UserModel
 import com.moviles.ark.domain.repositories.AuthRepository
+import com.moviles.ark.ui.components.AuthNetworkErrorDialog
 import com.moviles.ark.ui.theme.AppTheme
 import com.moviles.ark.ui.viewmodels.RegisterViewModel
 
@@ -54,6 +55,13 @@ fun RegisterScreen(viewModel: RegisterViewModel = viewModel(factory = RegisterVi
     //variables locales de la pantalla para controlar si se ve o no la clave al presionar el ojito
     var passwordVisible by remember { mutableStateOf(false) }
     var confirmPasswordVisible by remember { mutableStateOf(false) }
+
+    if (uiState.value.showNoInternetDialog) {
+        AuthNetworkErrorDialog(
+            isAirplaneMode = uiState.value.isAirplaneModeError,
+            onDismiss = viewModel::dismissNoInternetDialog
+        )
+    }
 
     //surface para pintar el color de fondo oficial del tema
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
