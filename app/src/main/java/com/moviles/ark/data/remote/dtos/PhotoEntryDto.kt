@@ -36,7 +36,8 @@ fun PhotoEntryModel.toDto(userId: String): PhotoEntryDto {
         userId = userId,
         caption = caption,
         takenAt = takenAt,
-        localFilePath = localFilePath
+        localFilePath = localFilePath,
+        remoteUrl = remoteUrl.orEmpty()
     )
 }
 
@@ -45,7 +46,8 @@ fun PhotoEntryDto.toDomain(): PhotoEntryModel {
     return PhotoEntryModel(
         localFilePath = localFilePath,
         caption = caption,
-        takenAt = takenAt
+        takenAt = takenAt,
+        remoteUrl = remoteUrl.ifEmpty { null }
     )
 }
 

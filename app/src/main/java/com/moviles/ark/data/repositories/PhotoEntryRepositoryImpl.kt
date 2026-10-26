@@ -40,7 +40,8 @@ class PhotoEntryRepositoryImpl(
                     id = entity.id,
                     localFilePath = entity.localFilePath,
                     caption = entity.caption,
-                    takenAt = entity.takenAt
+                    takenAt = entity.takenAt,
+                    remoteUrl = entity.remoteUrl
                 )
             }
         }
@@ -90,7 +91,8 @@ class PhotoEntryRepositoryImpl(
                 id = insertedId,
                 localFilePath = finalPath,
                 caption = caption,
-                takenAt = takenAt
+                takenAt = takenAt,
+                remoteUrl = null
             )
         }
     }

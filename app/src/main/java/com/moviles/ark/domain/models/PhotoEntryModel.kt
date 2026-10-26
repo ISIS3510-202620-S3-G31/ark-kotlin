@@ -8,7 +8,8 @@ data class PhotoEntryModel(
     //nota opcional que el usuario escribe sobre la foto
     val caption: String = "",
     //cuando se tomo, en milisegundos
-    val takenAt: Long
+    val takenAt: Long,
+    val remoteUrl: String? = null
 ) {
     //reglas de negocio
     fun isValidCaption(): Boolean {

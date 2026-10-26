@@ -10,6 +10,10 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import com.bumptech.glide.Glide
+import com.bumptech.glide.load.engine.DiskCacheStrategy
+import com.google.firebase.Firebase
+import com.google.firebase.storage.storage
 import com.moviles.ark.data.local.sensors.CameraHelper
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -43,11 +47,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-
-
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -86,14 +87,16 @@ import com.moviles.ark.ui.theme.TextColor
 import com.moviles.ark.ui.viewmodels.PhotoOfTheDayUiState
 import com.moviles.ark.ui.viewmodels.PhotoOfTheDayViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.io.FileInputStream
 import java.io.InputStream
 
 //solo se usan colores de la paleta (ms6); las tarjetas son el texto muy transparente sobre el fondo
 private val CardFill = TextColor.copy(alpha = 0.06f)
 
-//pantalla sin estado: solo dibuja lo que le llega en uiState y avisa los clics
+//pantalla sin estado: solo dibuja lo que le llega en uiState y avisa los clics (#152)
 @Composable
 fun PhotoOfTheDayScreen(
     uiState: PhotoOfTheDayUiState,
@@ -102,7 +105,8 @@ fun PhotoOfTheDayScreen(
     onPickPhotoClick: (() -> Unit)? = null,
     onCaptionChange: (String) -> Unit,
     onRetakeClick: () -> Unit,
-    onSaveClick: () -> Unit
+    onSaveClick: () -> Unit,
+    onDayClick: (PhotoDay) -> Unit = {}
 ) {
     Surface(modifier = Modifier.fillMaxSize(), color = BackgroundColor) {
         Column(
@@ -114,29 +118,50 @@ fun PhotoOfTheDayScreen(
         ) {
             Header(todayLabel = uiState.todayLabel, onBack = onBack)
             Spacer(modifier = Modifier.height(20.dp))
-            WeekStrip(week = uiState.week)
+            //tira horizontal de los dias de la semana terminando en hoy (#152)
+            WeekStrip(week = uiState.week, onDayClick = onDayClick)
             Spacer(modifier = Modifier.height(24.dp))
 
-            //el orden importa: primero lo que esta cargando, luego la foto de hoy, luego la pendiente
-            val todayPhoto = uiState.todayPhoto
-            val pendingPhotoUri = uiState.pendingPhotoUri
-            when {
-                uiState.isLoading -> Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            //determina si el dia seleccionado es hoy o un dia pasado (#152)
+            val isTodaySelected = uiState.selectedDay == null ||
+                uiState.selectedDay.dateMillis == uiState.week.lastOrNull()?.dateMillis ||
+                uiState.selectedDay.state == PhotoDayState.TODAY
+
+            if (uiState.isLoading) {
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = SecondaryColor)
                 }
-                todayPhoto != null -> SavedPhotoSection(photo = todayPhoto)
-                pendingPhotoUri != null -> PendingPhotoSection(
-                    uri = pendingPhotoUri,
-                    caption = uiState.caption,
-                    isSaving = uiState.isSaving,
-                    onCaptionChange = onCaptionChange,
-                    onRetakeClick = onRetakeClick,
-                    onSaveClick = onSaveClick
-                )
-                else -> EmptyPhotoSection(
-                    onTakePhotoClick = onTakePhotoClick,
-                    onPickPhotoClick = onPickPhotoClick
-                )
+            } else if (isTodaySelected) {
+                //seccion de la foto de hoy (guardada, pendiente o boton para tomarla)
+                val todayPhoto = uiState.todayPhoto
+                val pendingPhotoUri = uiState.pendingPhotoUri
+                when {
+                    todayPhoto != null -> SavedPhotoSection(photo = todayPhoto, isToday = true)
+                    pendingPhotoUri != null -> PendingPhotoSection(
+                        uri = pendingPhotoUri,
+                        caption = uiState.caption,
+                        isSaving = uiState.isSaving,
+                        onCaptionChange = onCaptionChange,
+                        onRetakeClick = onRetakeClick,
+                        onSaveClick = onSaveClick
+                    )
+                    else -> EmptyPhotoSection(
+                        onTakePhotoClick = onTakePhotoClick,
+                        onPickPhotoClick = onPickPhotoClick
+                    )
+                }
+            } else {
+                //se selecciono un dia anterior en la tira (#152): se muestra en el mismo sitio
+                val pastPhoto = uiState.selectedDay?.photo
+                if (pastPhoto != null) {
+                    SavedPhotoSection(
+                        photo = pastPhoto,
+                        isToday = false,
+                        dayName = uiState.selectedDay.name
+                    )
+                } else {
+                    PastEmptyPhotoSection(dayName = uiState.selectedDay?.name ?: "this day")
+                }
             }
 
             if (uiState.errorMessage != null) {
@@ -169,50 +194,65 @@ private fun Header(todayLabel: String, onBack: () -> Unit) {
     }
 }
 
-//tira de lunes a domingo con el estado de cada dia
+//tira horizontal de los dias previos terminando en hoy como ultimo circulo (#152)
 @Composable
-private fun WeekStrip(week: List<PhotoDay>) {
+private fun WeekStrip(week: List<PhotoDay>, onDayClick: (PhotoDay) -> Unit) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        week.forEach { day -> DayDot(day) }
+        week.forEach { day -> DayDot(day = day, onClick = { onDayClick(day) }) }
     }
 }
 
 @Composable
-private fun DayDot(day: PhotoDay) {
+private fun DayDot(day: PhotoDay, onClick: () -> Unit) {
     val stateText = when (day.state) {
         PhotoDayState.TAKEN -> "photo taken"
         PhotoDayState.TODAY -> "today"
         PhotoDayState.MISSED -> "no photo"
         PhotoDayState.UPCOMING -> "not yet"
     }
+
+    //resaltar el dia actualmente seleccionado (#152)
+    val selectionModifier = if (day.isSelected) {
+        Modifier.border(2.dp, PrimaryColor, CircleShape).padding(2.dp)
+    } else {
+        Modifier
+    }
+
     Column(
-        //el lector de pantalla lee "Monday, photo taken" en vez de la letra sola
-        modifier = Modifier.clearAndSetSemantics { contentDescription = "${day.name}, $stateText" },
+        modifier = Modifier
+            .clickable(role = Role.Button, onClickLabel = "Select ${day.name}") { onClick() }
+            .clearAndSetSemantics {
+                contentDescription = "${day.name}, $stateText${if (day.isSelected) ", selected" else ""}"
+            },
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        when (day.state) {
-            //success: la paleta lo reserva para tareas completadas
-            PhotoDayState.TAKEN -> Box(
-                modifier = Modifier.size(36.dp).background(SuccessColor, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(Icons.Filled.Check, contentDescription = null, tint = TextColor, modifier = Modifier.size(16.dp))
+        Box(modifier = selectionModifier) {
+            when (day.state) {
+                PhotoDayState.TAKEN -> Box(
+                    modifier = Modifier.size(36.dp).background(SuccessColor, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Filled.Check, contentDescription = null, tint = TextColor, modifier = Modifier.size(16.dp))
+                }
+                PhotoDayState.TODAY -> Box(
+                    modifier = Modifier.size(36.dp).border(2.dp, PrimaryColor, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(modifier = Modifier.size(10.dp).background(PrimaryColor, CircleShape))
+                }
+                PhotoDayState.MISSED -> Box(
+                    modifier = Modifier.size(36.dp).background(TextColor.copy(alpha = 0.1f), CircleShape)
+                )
+                PhotoDayState.UPCOMING -> Box(
+                    modifier = Modifier.size(36.dp).border(1.dp, TextColor.copy(alpha = 0.2f), CircleShape)
+                )
             }
-            //primary: lo importante de hoy
-            PhotoDayState.TODAY -> Box(
-                modifier = Modifier.size(36.dp).border(2.dp, PrimaryColor, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Box(modifier = Modifier.size(10.dp).background(PrimaryColor, CircleShape))
-            }
-            PhotoDayState.MISSED -> Box(modifier = Modifier.size(36.dp).background(TextColor.copy(alpha = 0.1f), CircleShape))
-            PhotoDayState.UPCOMING -> Box(modifier = Modifier.size(36.dp).border(1.dp, TextColor.copy(alpha = 0.2f), CircleShape))
         }
         Spacer(modifier = Modifier.height(4.dp))
         Text(
             day.shortLabel,
             style = MaterialTheme.typography.labelLarge,
-            color = if (day.state == PhotoDayState.TODAY) TextColor else TextColor.copy(alpha = 0.7f)
+            color = if (day.isSelected || day.state == PhotoDayState.TODAY) TextColor else TextColor.copy(alpha = 0.7f)
         )
     }
 }
@@ -278,6 +318,31 @@ private fun EmptyPhotoSection(
     }
 }
 
+//visor cuando se selecciona un dia pasado que no tiene foto guardada (#152)
+@Composable
+private fun PastEmptyPhotoSection(dayName: String) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(3f / 4f)
+            .background(CardFill, RoundedCornerShape(24.dp))
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(Icons.Filled.PhotoCamera, contentDescription = null, tint = TextColor.copy(alpha = 0.3f), modifier = Modifier.size(48.dp))
+        Spacer(modifier = Modifier.height(12.dp))
+        Text("No photo recorded", style = MaterialTheme.typography.headlineSmall, color = TextColor)
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            "No photo was saved for $dayName.",
+            style = MaterialTheme.typography.bodyLarge,
+            color = TextColor.copy(alpha = 0.7f),
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
 //foto recien tomada: vista previa, guardar o repetir sin caption (#146)
 @Composable
 private fun PendingPhotoSection(
@@ -317,10 +382,15 @@ private fun PendingPhotoSection(
     }
 }
 
-//ya hay foto hoy: se muestra con su nota (una foto por dia)
+//seccion de foto guardada: tanto para hoy como para dias pasados en el mismo visor (#152)
 @Composable
-private fun SavedPhotoSection(photo: PhotoEntryModel) {
-    PhotoThumbnail(path = photo.localFilePath, modifier = Modifier.fillMaxWidth().aspectRatio(3f / 4f))
+private fun SavedPhotoSection(
+    photo: PhotoEntryModel,
+    isToday: Boolean = true,
+    dayName: String = "today"
+) {
+    val photoSource = photo.remoteUrl ?: photo.localFilePath
+    PhotoThumbnail(path = photoSource, modifier = Modifier.fillMaxWidth().aspectRatio(3f / 4f))
     Spacer(modifier = Modifier.height(16.dp))
     Row(
         modifier = Modifier
@@ -330,23 +400,35 @@ private fun SavedPhotoSection(photo: PhotoEntryModel) {
     ) {
         Icon(Icons.Filled.Check, contentDescription = null, tint = TextColor, modifier = Modifier.size(18.dp))
         Spacer(modifier = Modifier.width(6.dp))
-        Text("Saved for today", style = MaterialTheme.typography.labelLarge, color = TextColor)
+        Text(
+            if (isToday) "Saved for today" else "Photo from $dayName",
+            style = MaterialTheme.typography.labelLarge,
+            color = TextColor
+        )
     }
     if (photo.caption.isNotBlank()) {
         Spacer(modifier = Modifier.height(12.dp))
         Text(photo.caption, style = MaterialTheme.typography.bodyLarge, color = TextColor)
     }
     Spacer(modifier = Modifier.height(8.dp))
-    Text("Come back tomorrow for a new moment.", style = MaterialTheme.typography.bodyLarge, color = TextColor.copy(alpha = 0.7f))
+    Text(
+        if (isToday) "Come back tomorrow for a new moment." else "Memory from previous days of the week.",
+        style = MaterialTheme.typography.bodyLarge,
+        color = TextColor.copy(alpha = 0.7f)
+    )
 }
 
-//miniatura de la foto: se lee en segundo plano y reducida, para no trabar la pantalla ni gastar memoria
+//miniatura de la foto: local directamente o descargada desde Firebase Storage con Glide (#152)
+//Glide cachea en context.cacheDir con un limite estricto de 50 MB, funcionando offline y sin duplicar en galeria
 @Composable
 private fun PhotoThumbnail(path: String, modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    //null mientras carga; despues trae la imagen o el error
     val result by produceState<Result<ImageBitmap>?>(initialValue = null, path) {
-        value = withContext(Dispatchers.IO) { runCatching { decodeThumbnail(context, path) } }
+        value = withContext(Dispatchers.IO) {
+            runCatching {
+                loadPhotoBitmap(context, path)
+            }
+        }
     }
     Box(
         modifier = modifier.clip(RoundedCornerShape(24.dp)).background(CardFill),
@@ -354,11 +436,54 @@ private fun PhotoThumbnail(path: String, modifier: Modifier = Modifier) {
     ) {
         val bitmap = result?.getOrNull()
         when {
-            bitmap != null -> Image(bitmap, contentDescription = "Photo of the day", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            bitmap != null -> Image(
+                bitmap,
+                contentDescription = "Photo of the day",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
             result == null -> CircularProgressIndicator(color = SecondaryColor)
-            else -> Icon(Icons.Filled.BrokenImage, contentDescription = "The photo could not be opened", tint = TextColor.copy(alpha = 0.5f), modifier = Modifier.size(48.dp))
+            else -> Icon(
+                Icons.Filled.BrokenImage,
+                contentDescription = "The photo could not be opened",
+                tint = TextColor.copy(alpha = 0.5f),
+                modifier = Modifier.size(48.dp)
+            )
         }
     }
+}
+
+//carga la imagen usando almacenamiento local si existe o Glide desde Firebase Storage (#152)
+private suspend fun loadPhotoBitmap(context: Context, path: String): ImageBitmap {
+    val localFile = File(path)
+    if (localFile.exists()) {
+        return decodeThumbnail(context, path)
+    }
+
+    if (path.startsWith("content://") || path.startsWith("file://")) {
+        return decodeThumbnail(context, path)
+    }
+
+    //resolver URL de Firebase Storage si no es una URL http directa
+    val resolvedUrl = if (path.startsWith("http://") || path.startsWith("https://")) {
+        path
+    } else {
+        try {
+            Firebase.storage.reference.child(path).downloadUrl.await().toString()
+        } catch (e: Exception) {
+            path
+        }
+    }
+
+    //descarga y cacheo estricto de 50 MB en context.cacheDir via Glide
+    val bitmap = Glide.with(context)
+        .asBitmap()
+        .load(resolvedUrl)
+        .diskCacheStrategy(DiskCacheStrategy.ALL)
+        .submit()
+        .get()
+
+    return bitmap.asImageBitmap()
 }
 
 //abre la foto desde una direccion content:// o file:// (camara) o desde una ruta de archivo (#26)
@@ -482,7 +607,8 @@ fun PhotoOfTheDayRoute(
         onPickPhotoClick = onPickPhoto,
         onCaptionChange = viewModel::onCaptionChange,
         onRetakeClick = viewModel::onRetakeClick,
-        onSaveClick = viewModel::onSaveClick
+        onSaveClick = viewModel::onSaveClick,
+        onDayClick = viewModel::onDayClick
     )
 }
 
@@ -491,9 +617,9 @@ private val previewWeek = listOf(
     PhotoDay("T", "Tuesday", PhotoDayState.MISSED),
     PhotoDay("W", "Wednesday", PhotoDayState.TAKEN),
     PhotoDay("T", "Thursday", PhotoDayState.TAKEN),
-    PhotoDay("F", "Friday", PhotoDayState.TODAY),
-    PhotoDay("S", "Saturday", PhotoDayState.UPCOMING),
-    PhotoDay("S", "Sunday", PhotoDayState.UPCOMING)
+    PhotoDay("F", "Friday", PhotoDayState.MISSED),
+    PhotoDay("S", "Saturday", PhotoDayState.MISSED),
+    PhotoDay("S", "Sunday", PhotoDayState.TODAY, isSelected = true)
 )
 
 @Preview(showBackground = true, name = "Photo of the day - empty")
@@ -502,7 +628,7 @@ fun PhotoOfTheDayEmptyPreview() {
     AppTheme {
         PhotoOfTheDayScreen(
             uiState = PhotoOfTheDayUiState(todayLabel = "Friday, October 2", week = previewWeek, isLoading = false),
-            onBack = {}, onTakePhotoClick = {}, onCaptionChange = {}, onRetakeClick = {}, onSaveClick = {}
+            onBack = {}, onTakePhotoClick = {}, onCaptionChange = {}, onRetakeClick = {}, onSaveClick = {}, onDayClick = {}
         )
     }
 }
@@ -516,7 +642,7 @@ fun PhotoOfTheDayPendingPreview() {
                 todayLabel = "Friday, October 2", week = previewWeek, isLoading = false,
                 pendingPhotoUri = "content://preview/photo.jpg", caption = "Sunset from the library"
             ),
-            onBack = {}, onTakePhotoClick = {}, onCaptionChange = {}, onRetakeClick = {}, onSaveClick = {}
+            onBack = {}, onTakePhotoClick = {}, onCaptionChange = {}, onRetakeClick = {}, onSaveClick = {}, onDayClick = {}
         )
     }
 }

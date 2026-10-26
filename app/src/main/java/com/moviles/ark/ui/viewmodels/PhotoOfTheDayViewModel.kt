@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
+import com.moviles.ark.domain.models.PhotoDay
+import com.moviles.ark.domain.models.PhotoDayState
 import com.moviles.ark.domain.models.PhotoEntryModel
 import com.moviles.ark.domain.models.PhotoWeek
 import com.moviles.ark.domain.models.ToolLatencyTracker
@@ -40,7 +42,7 @@ class PhotoOfTheDayViewModel(
         observeWeek()
     }
 
-    //escucha las fotos de la semana; cada vez que se guarda una, la tira y la foto de hoy se actualizan solas
+    //escucha las fotos de la semana; cada vez que se guarda una, la tira y la foto de hoy se actualizan solas (#152)
     private fun observeWeek() {
         val starts = PhotoWeek.dayStarts(now(), zone)
         viewModelScope.launch {
@@ -50,15 +52,41 @@ class PhotoOfTheDayViewModel(
                 }
                 .collect { photos ->
                     val time = now()
+                    val selectedMillis = _uiState.value.selectedDay?.dateMillis
+                    val weekDays = PhotoWeek.build(photos, time, zone, selectedDateMillis = selectedMillis)
+                    val today = PhotoWeek.todayPhoto(photos, time, zone)
+                    val activeSelectedDay = weekDays.firstOrNull { it.isSelected } ?: weekDays.lastOrNull()
+                    val isTodaySelected = activeSelectedDay?.dateMillis == weekDays.lastOrNull()?.dateMillis
+                    val displayed = if (isTodaySelected) today else activeSelectedDay?.photo
+
                     _uiState.update {
                         it.copy(
                             todayLabel = formatToday(time),
-                            week = PhotoWeek.build(photos, time, zone),
-                            todayPhoto = PhotoWeek.todayPhoto(photos, time, zone),
+                            week = weekDays,
+                            todayPhoto = today,
+                            selectedDay = activeSelectedDay,
+                            displayedPhoto = displayed,
                             isLoading = false
                         )
                     }
                 }
+        }
+    }
+
+    //al hacer clic en alguno de los circulos de la tira se muestra la foto de dicho dia (#152)
+    fun onDayClick(day: PhotoDay) {
+        val currentWeek = _uiState.value.week
+        val isToday = day.dateMillis == currentWeek.lastOrNull()?.dateMillis || day.state == PhotoDayState.TODAY
+        val updatedWeek = currentWeek.map {
+            it.copy(isSelected = (it.dateMillis == day.dateMillis))
+        }
+        val displayed = if (isToday) _uiState.value.todayPhoto else day.photo
+        _uiState.update {
+            it.copy(
+                week = updatedWeek,
+                selectedDay = day.copy(isSelected = true),
+                displayedPhoto = displayed
+            )
         }
     }
 
@@ -72,9 +100,17 @@ class PhotoOfTheDayViewModel(
         _uiState.update { it.copy(pendingPhotoUri = uri, caption = "", isSaving = true, errorMessage = null) }
         viewModelScope.launch {
             val result = photoRepository.savePhoto(uri, "", now())
-            result.onSuccess {
+            result.onSuccess { savedPhoto ->
                 //la foto nueva llega sola por observeWeek; aqui solo se limpia lo pendiente y avisa que se guardo
-                _uiState.update { it.copy(isSaving = false, pendingPhotoUri = null, caption = "", isPhotoSaved = true) }
+                _uiState.update {
+                    it.copy(
+                        isSaving = false,
+                        pendingPhotoUri = null,
+                        caption = "",
+                        isPhotoSaved = true,
+                        displayedPhoto = savedPhoto
+                    )
+                }
             }
             result.onFailure {
                 _uiState.update { it.copy(isSaving = false, errorMessage = "Could not save your photo, try again") }
@@ -102,9 +138,17 @@ class PhotoOfTheDayViewModel(
         _uiState.update { it.copy(isSaving = true, errorMessage = null) }
         viewModelScope.launch {
             val result = photoRepository.savePhoto(uri, "", now())
-            result.onSuccess {
+            result.onSuccess { savedPhoto ->
                 //la foto nueva llega sola por observeWeek; aqui solo se limpia lo pendiente y avisa que se guardo
-                _uiState.update { it.copy(isSaving = false, pendingPhotoUri = null, caption = "", isPhotoSaved = true) }
+                _uiState.update {
+                    it.copy(
+                        isSaving = false,
+                        pendingPhotoUri = null,
+                        caption = "",
+                        isPhotoSaved = true,
+                        displayedPhoto = savedPhoto
+                    )
+                }
             }
             result.onFailure {
                 _uiState.update { it.copy(isSaving = false, errorMessage = "Could not save your photo, try again") }
