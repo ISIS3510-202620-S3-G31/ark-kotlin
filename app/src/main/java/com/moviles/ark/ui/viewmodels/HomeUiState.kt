@@ -1,6 +1,7 @@
 package com.moviles.ark.ui.viewmodels
 
 import com.moviles.ark.data.local.AvatarPreferences
+import com.moviles.ark.domain.models.CheckInModel
 import com.moviles.ark.domain.models.Tool
 import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.domain.models.WeatherSuggestion
@@ -16,6 +17,8 @@ data class HomeUiState(
     val surpriseTool: Tool? = null,
     val navigateToToolId: String? = null,
     val isCheckInCompleted: Boolean = false,
+    //ultimo check-in registrado hoy para la vista de revision no editable
+    val todayCheckIn: CheckInModel? = null,
     val errorMessage: String? = null,
     //tarjeta aparte segun el clima de afuera; null sin internet, sin ubicacion o si el clima no sugiere nada (#134)
     val weatherSuggestion: WeatherSuggestion? = null,

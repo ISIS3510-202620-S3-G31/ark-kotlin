@@ -28,6 +28,13 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.AcUnit
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.FavoriteBorder
+import java.util.Locale
+import java.util.Date
+import java.text.SimpleDateFormat
+import com.moviles.ark.ui.components.getEmotionEmoji
+import com.moviles.ark.ui.components.getEmotionColor
+import com.moviles.ark.domain.models.CheckInModel
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Umbrella
 import androidx.compose.material.icons.filled.WbSunny
@@ -124,6 +131,7 @@ fun HomeScreen(
 ) {
     val context = LocalContext.current
     var showCheckInPopup by remember { mutableStateOf(false) }
+    var showReviewPopup by remember { mutableStateOf(false) }
     var hasAutoPrompted by remember { mutableStateOf(false) }
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
@@ -192,9 +200,15 @@ fun HomeScreen(
                     Surface(
                         modifier = Modifier
                             .clip(RoundedCornerShape(20.dp))
-                            .clickable { showCheckInPopup = true },
+                            .clickable {
+                                if (uiState.isCheckInCompleted) {
+                                    showReviewPopup = true
+                                } else {
+                                    showCheckInPopup = true
+                                }
+                            },
                         color = if (!uiState.isCheckInCompleted) PrimaryColor.copy(alpha = 0.15f) else Color(0xFFEFE0C2),
-                        border = BorderStroke(1.dp, if (!uiState.isCheckInCompleted) PrimaryColor.copy(alpha = 0.4f) else Color.Transparent),
+                        border = BorderStroke(1.dp, if (!uiState.isCheckInCompleted) PrimaryColor.copy(alpha = 0.4f) else TextColor.copy(alpha = 0.12f)),
                         shape = RoundedCornerShape(20.dp)
                     ) {
                         Row(
@@ -203,13 +217,13 @@ fun HomeScreen(
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.FavoriteBorder,
-                                contentDescription = "Daily Check-in",
-                                tint = if (!uiState.isCheckInCompleted) PrimaryColor else TextColor.copy(alpha = 0.6f),
+                                imageVector = if (!uiState.isCheckInCompleted) Icons.Default.FavoriteBorder else Icons.Default.Lock,
+                                contentDescription = if (!uiState.isCheckInCompleted) "Daily Check-in" else "Checked-in Today",
+                                tint = if (!uiState.isCheckInCompleted) PrimaryColor else TextColor.copy(alpha = 0.65f),
                                 modifier = Modifier.size(16.dp)
                             )
                             Text(
-                                text = if (!uiState.isCheckInCompleted) "Daily Check-in" else "Checked-in",
+                                text = if (!uiState.isCheckInCompleted) "Daily Check-in" else "Checked-in Today",
                                 style = MaterialTheme.typography.labelMedium,
                                 fontFamily = FigtreeFontFamily,
                                 fontWeight = FontWeight.Bold,
@@ -336,8 +350,12 @@ fun HomeScreen(
     }
 
     if (showCheckInPopup) {
+        val checkInViewModel: MoodCheckInViewModel = viewModel(factory = MoodCheckInViewModel.Factory)
         Dialog(
-            onDismissRequest = { showCheckInPopup = false },
+            onDismissRequest = {
+                checkInViewModel.resetDraft()
+                showCheckInPopup = false
+            },
             properties = DialogProperties(usePlatformDefaultWidth = false)
         ) {
             Box(
@@ -349,8 +367,11 @@ fun HomeScreen(
                     .background(MaterialTheme.colorScheme.background)
             ) {
                 MoodCheckInScreen(
-                    viewModel = viewModel(factory = MoodCheckInViewModel.Factory),
-                    onNavigateBack = { showCheckInPopup = false },
+                    viewModel = checkInViewModel,
+                    onNavigateBack = {
+                        checkInViewModel.resetDraft()
+                        showCheckInPopup = false
+                    },
                     onCheckInSaved = {
                         showCheckInPopup = false
                         onCheckInSaved()
@@ -358,6 +379,13 @@ fun HomeScreen(
                 )
             }
         }
+    }
+
+    if (showReviewPopup) {
+        DailyCheckInReviewDialog(
+            checkIn = uiState.todayCheckIn,
+            onDismiss = { showReviewPopup = false }
+        )
     }
 }
 
@@ -768,6 +796,256 @@ private fun SurpriseResultBanner(
                 shape = RoundedCornerShape(14.dp),
             ) {
                 Text("Open", color = TextColor, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+//dialogo no editable para revisar el check-in completado del dia sin permitir duplicados
+@Composable
+private fun DailyCheckInReviewDialog(
+    checkIn: CheckInModel?,
+    onDismiss: () -> Unit
+) {
+    val todayFormatted = remember(checkIn?.timestamp) {
+        val date = if (checkIn != null) Date(checkIn.timestamp) else Date()
+        val formatter = SimpleDateFormat("EEEE, MMMM d", Locale.ENGLISH)
+        formatter.format(date)
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(24.dp)),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = BackgroundColor),
+                border = BorderStroke(1.dp, TextColor.copy(alpha = 0.1f))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(22.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color(0xFFEFE0C2),
+                            border = BorderStroke(1.dp, TextColor.copy(alpha = 0.12f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Lock,
+                                    contentDescription = "Locked",
+                                    tint = TextColor.copy(alpha = 0.7f),
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Text(
+                                    text = "Checked-in Today",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontFamily = FigtreeFontFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextColor.copy(alpha = 0.8f)
+                                )
+                            }
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.7f))
+                                .clickable(onClick = onDismiss),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "✕",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextColor.copy(alpha = 0.75f)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Text(
+                        text = "Your Daily Check-In",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = TextColor
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Text(
+                        text = todayFormatted,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = PrimaryColor,
+                        fontWeight = FontWeight.SemiBold
+                    )
+
+                    Spacer(modifier = Modifier.height(18.dp))
+
+                    val emotions = checkIn?.mood?.getEmotions().orEmpty()
+                    if (emotions.isNotEmpty()) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        ) {
+                            emotions.forEach { emotion ->
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = getEmotionColor(emotion).copy(alpha = 0.18f),
+                                    border = BorderStroke(1.dp, getEmotionColor(emotion).copy(alpha = 0.35f))
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(
+                                            text = getEmotionEmoji(emotion),
+                                            fontSize = 16.sp
+                                        )
+                                        Text(
+                                            text = emotion.name.lowercase().replaceFirstChar { it.uppercase() },
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = TextColor
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        val intensity = checkIn?.mood?.getIntensity()?.toInt() ?: 3
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = "Intensity:",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                color = TextColor.copy(alpha = 0.65f)
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                for (i in 1..5) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(
+                                                if (i <= intensity) PrimaryColor
+                                                else TextColor.copy(alpha = 0.15f)
+                                            )
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "$intensity/5",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold,
+                                color = TextColor
+                            )
+                        }
+                    } else {
+                        Text(
+                            text = "Daily check-in completed",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextColor.copy(alpha = 0.7f)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color.White.copy(alpha = 0.7f))
+                            .border(1.dp, Color(0xFFEADBCE), RoundedCornerShape(16.dp))
+                            .padding(14.dp)
+                    ) {
+                        Text(
+                            text = "Note",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = TextColor.copy(alpha = 0.6f)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = if (!checkIn?.note.isNullOrBlank()) checkIn.note else "No note added for today.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (!checkIn?.note.isNullOrBlank()) TextColor else TextColor.copy(alpha = 0.45f)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color.White.copy(alpha = 0.35f))
+                            .padding(horizontal = 12.dp, vertical = 5.dp)
+                    ) {
+                        Text("📍", fontSize = 12.sp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        val locationText = if (checkIn?.latitude != null && checkIn.longitude != null) {
+                            String.format(Locale.US, "%.4f, %.4f", checkIn.latitude, checkIn.longitude)
+                        } else {
+                            "Location unavailable"
+                        }
+                        Text(
+                            text = locationText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextColor.copy(alpha = 0.75f),
+                            fontSize = 11.5.sp
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    Button(
+                        onClick = onDismiss,
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryColor),
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                    ) {
+                        Text(
+                            text = "Close",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = Color.White
+                        )
+                    }
+                }
             }
         }
     }

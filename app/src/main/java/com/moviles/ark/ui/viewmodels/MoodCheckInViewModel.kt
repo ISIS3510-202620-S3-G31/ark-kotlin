@@ -31,9 +31,36 @@ class MoodCheckInViewModel(
 
     init {
         loadCurrentLocation()
+        checkTodayCheckIn()
     }
 
     private var locationJob: Job? = null
+
+    //verifica si el usuario ya registro su check-in en el dia actual para bloquear nuevas creaciones
+    fun checkTodayCheckIn() {
+        val repository = moodRepository ?: return
+        viewModelScope.launch {
+            val hasChecked = repository.hasCheckedInToday().getOrDefault(false)
+            if (hasChecked) {
+                val latest = repository.getLatestCheckIn().getOrNull()
+                privateUiState.value = privateUiState.value.copy(
+                    isAlreadyCheckedInToday = true,
+                    existingCheckIn = latest
+                )
+            }
+        }
+    }
+
+    //limpia el borrador en memoria al cerrar o descartar el dialogo sin mutar contadores ni base de datos
+    fun resetDraft() {
+        val wasChecked = privateUiState.value.isAlreadyCheckedInToday
+        val existing = privateUiState.value.existingCheckIn
+        privateUiState.value = MoodCheckInUiState(
+            isAlreadyCheckedInToday = wasChecked,
+            existingCheckIn = existing
+        )
+        loadCurrentLocation()
+    }
 
     //init y la pantalla lo llaman al abrir; si ya se esta buscando no se repite
     fun loadCurrentLocation() {
@@ -127,6 +154,15 @@ class MoodCheckInViewModel(
 
     fun saveCheckIn(onSavedCallback: () -> Unit = {}): Boolean {
         val state = privateUiState.value
+        //si ya se registro hoy, se bloquea la creacion de un nuevo check-in
+        if (state.isAlreadyCheckedInToday) {
+            privateUiState.value = state.copy(errorMessage = "You have already completed your daily check-in today")
+            return false
+        }
+        //evita envios multiples simultaneos
+        if (state.isLoading || state.isSaved) {
+            return false
+        }
         if (state.selectedEmotions.isEmpty()) {
             privateUiState.value = state.copy(errorMessage = "Please select at least one emotion")
             return false
@@ -152,12 +188,20 @@ class MoodCheckInViewModel(
         }
         Log.d("MoodCheckIn", "CheckIn saved locally: mood=${checkIn.mood.getName()}, lat=${checkIn.latitude}, lon=${checkIn.longitude}")
 
-        if (moodRepository != null) {
+        val repository = moodRepository
+        if (repository != null) {
             privateUiState.value = state.copy(isLoading = true)
             viewModelScope.launch {
-                val result = moodRepository.saveCheckIn(checkIn)
+                val result = repository.saveCheckIn(checkIn)
                 if (result.isSuccess) {
-                    privateUiState.value = state.copy(isLoading = false, isSaved = true, errorMessage = null)
+                    privateUiState.value = state.copy(
+                        isLoading = false,
+                        isSaved = true,
+                        isAlreadyCheckedInToday = true,
+                        existingCheckIn = checkIn,
+                        errorMessage = null
+                    )
+                    //el contador de estadisticas solo se actualiza tras la insercion exitosa en base de datos
                     onSavedCallback()
                 } else {
                     val errorMsg = result.exceptionOrNull()?.localizedMessage ?: "Could not save check-in"
@@ -166,8 +210,9 @@ class MoodCheckInViewModel(
                 }
             }
         } else {
-            privateUiState.value = state.copy(isLoading = false, isSaved = true, errorMessage = null)
-            onSavedCallback()
+            //sin repositorio local no se puede insertar en room; nunca se incrementa contador prematuramente
+            privateUiState.value = state.copy(isLoading = false, errorMessage = "Check-in storage is unavailable")
+            return false
         }
         return true
     }
