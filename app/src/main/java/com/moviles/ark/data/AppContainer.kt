@@ -108,7 +108,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     }
     // clima de afuera con open-meteo detras del adapter
     override val weatherServiceAdapter: com.moviles.ark.domain.adapters.WeatherServiceAdapter by lazy {
-        com.moviles.ark.data.remote.apis.OpenMeteoAdapterImpl()
+        com.moviles.ark.data.remote.apis.OpenMeteoAdapterImpl(context.cacheDir)
     }
     // adapter de musica ambiental para desacoplar el consumo de jamendo y cachear audios en disco
     override val musicServiceAdapter: com.moviles.ark.domain.adapters.MusicServiceAdapter by lazy {

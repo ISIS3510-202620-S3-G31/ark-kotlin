@@ -85,19 +85,30 @@ class HomeViewModel(
         observeAvatar()
     }
 
-    //el clima va aparte del resolver de estrategias: no cambia el orden del catalogo, solo llena su propia tarjeta (#134)
+    //el clima valida cache en disco (TTL=1 hora) y sirve offline; si expiro o no hay cache muestra tarjeta neutral (#134, #153)
     fun loadWeatherSuggestion() {
         val adapter = weatherServiceAdapter ?: return
         viewModelScope.launch(Dispatchers.IO) {
-            //sin internet no hay clima nuevo; la tarjeta simplemente no aparece
-            if (!isOnline()) return@launch
-            //sin permiso o con el gps apagado no hay coordenadas y no se pide el clima
-            val location = locationRepository?.getCurrentLocation() ?: return@launch
-            val latitude = location.latitude ?: return@launch
-            val longitude = location.longitude ?: return@launch
-            val weather = adapter.getCurrentWeather(latitude, longitude).getOrNull() ?: return@launch
-            val suggestion = WeatherSuggestionEngine(weather).suggest(_uiState.value.tools)
-            _uiState.value = _uiState.value.copy(weatherSuggestion = suggestion)
+            val location = locationRepository?.getCurrentLocation()
+            val latitude = location?.latitude
+            val longitude = location?.longitude
+
+            val weather = if (latitude != null && longitude != null) {
+                adapter.getCurrentWeather(latitude, longitude).getOrNull()
+            } else {
+                (adapter as? com.moviles.ark.data.remote.apis.OpenMeteoAdapterImpl)?.getCachedWeatherIfValid()
+            }
+
+            val currentTools = _uiState.value.tools.ifEmpty { ToolRepositoryImpl.sampleTools }
+            val suggestion = if (weather != null) {
+                WeatherSuggestionEngine(weather).suggest(currentTools)
+                    ?: WeatherSuggestionEngine.defaultNeutralSuggestion(currentTools)
+            } else {
+                // Si expiro o esta offline sin cache, mostrar tarjeta neutral por defecto (#153)
+                WeatherSuggestionEngine.defaultNeutralSuggestion(currentTools)
+            }
+
+            _uiState.update { it.copy(weatherSuggestion = suggestion) }
         }
     }
 
