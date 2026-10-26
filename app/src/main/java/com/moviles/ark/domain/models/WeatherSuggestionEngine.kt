@@ -1,22 +1,11 @@
-package com.moviles.ark.domain.strategies
+package com.moviles.ark.domain.models
 
-import com.moviles.ark.domain.models.Tool
-import com.moviles.ark.domain.models.WeatherCondition
-import com.moviles.ark.domain.models.WeatherModel
-import com.moviles.ark.domain.models.WeatherSuggestion
-
-//estrategia segun el clima de afuera (#134); va aparte del resolver (mood, frecuencia, default)
-//porque no compite con la recomendacion principal: el home la muestra en su propia tarjeta
+//sugerencia segun el clima de afuera (#134); es una funcionalidad aparte de las estrategias de recomendacion
+//(mood, frecuencia, default): no cambia el orden del catalogo, solo llena la tarjeta del clima del home
 //frio o lluvia -> respiracion para calmarse adentro; despejado y de dia -> foto del dia
-class WeatherRecommendationStrategy(
+class WeatherSuggestionEngine(
     private val weather: WeatherModel
-) : RecommendationStrategy {
-
-    override fun recommend(tools: List<Tool>, context: RecommendationContext): List<Tool> {
-        val targetId = condition()?.let(::toolFor) ?: return tools
-        val (target, others) = tools.partition { it.id == targetId }
-        return target + others
-    }
+) {
 
     //null si el clima no dice nada especial (nublado y templado) o si la herramienta no esta en el catalogo
     fun suggest(tools: List<Tool>): WeatherSuggestion? {

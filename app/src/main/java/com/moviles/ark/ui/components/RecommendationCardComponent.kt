@@ -28,7 +28,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -47,8 +46,6 @@ fun RecommendationCardComponent(
     tool: Tool,
     rationaleTag: String = "Suggested for today",
     modifier: Modifier = Modifier,
-    //icono del halo; la tarjeta del clima (#134) usa el suyo
-    icon: ImageVector = Icons.Default.AutoAwesome,
     onOpenTool: (String) -> Unit = {}
 ) {
     Card(
@@ -80,7 +77,7 @@ fun RecommendationCardComponent(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = icon,
+                        imageVector = Icons.Default.AutoAwesome,
                         contentDescription = null,
                         tint = PrimaryColor,
                         modifier = Modifier.size(22.dp)

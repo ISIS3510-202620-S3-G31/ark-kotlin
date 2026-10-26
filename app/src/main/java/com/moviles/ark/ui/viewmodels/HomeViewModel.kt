@@ -15,13 +15,13 @@ import com.moviles.ark.domain.models.RecommendationDecision
 import com.moviles.ark.domain.models.Tool
 import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.domain.models.ToolLatencyTracker
+import com.moviles.ark.domain.models.WeatherSuggestionEngine
 import com.moviles.ark.domain.repositories.LocationRepository
 import com.moviles.ark.domain.repositories.MoodRepository
 import com.moviles.ark.domain.repositories.RecommendationRepository
 import com.moviles.ark.domain.repositories.ToolInteractionRepository
 import com.moviles.ark.domain.strategies.DefaultRecommendationStrategy
 import com.moviles.ark.domain.strategies.RecommendationStrategy
-import com.moviles.ark.domain.strategies.WeatherRecommendationStrategy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -77,7 +77,7 @@ class HomeViewModel(
         loadWeatherSuggestion()
     }
 
-    //la estrategia del clima va fuera del resolver: no cambia el orden del catalogo, solo llena su propia tarjeta (#134)
+    //el clima va aparte del resolver de estrategias: no cambia el orden del catalogo, solo llena su propia tarjeta (#134)
     fun loadWeatherSuggestion() {
         val adapter = weatherServiceAdapter ?: return
         viewModelScope.launch(Dispatchers.IO) {
@@ -88,7 +88,7 @@ class HomeViewModel(
             val latitude = location.latitude ?: return@launch
             val longitude = location.longitude ?: return@launch
             val weather = adapter.getCurrentWeather(latitude, longitude).getOrNull() ?: return@launch
-            val suggestion = WeatherRecommendationStrategy(weather).suggest(_uiState.value.tools)
+            val suggestion = WeatherSuggestionEngine(weather).suggest(_uiState.value.tools)
             _uiState.value = _uiState.value.copy(weatherSuggestion = suggestion)
         }
     }
