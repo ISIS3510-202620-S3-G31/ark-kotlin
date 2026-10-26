@@ -19,7 +19,8 @@ enum class PhotoDayState {
 data class PhotoDay(
     val shortLabel: String,
     val name: String,
-    val state: PhotoDayState
+    val state: PhotoDayState,
+    val dayIndex: Int = 0
 )
 
 //reglas de la semana de fotos: la semana va de lunes a domingo en la hora local
@@ -61,7 +62,7 @@ object PhotoWeek {
                 until <= now -> PhotoDayState.MISSED
                 else -> PhotoDayState.UPCOMING
             }
-            PhotoDay(SHORT_LABELS[index], NAMES[index], state)
+            PhotoDay(SHORT_LABELS[index], NAMES[index], state, index)
         }
     }
 
@@ -71,6 +72,15 @@ object PhotoWeek {
         val today = (0 until 7).first { now >= starts[it] && now < starts[it + 1] }
         return photos
             .filter { it.takenAt >= starts[today] && it.takenAt < starts[today + 1] }
+            .maxByOrNull { it.takenAt }
+    }
+
+    //busca la foto correspondiente a un dia especifico de la semana
+    fun photoForDay(photos: List<PhotoEntryModel>, dayIndex: Int, now: Long, zone: TimeZone): PhotoEntryModel? {
+        val starts = dayStarts(now, zone)
+        if (dayIndex !in 0 until 7) return null
+        return photos
+            .filter { it.takenAt >= starts[dayIndex] && it.takenAt < starts[dayIndex + 1] }
             .maxByOrNull { it.takenAt }
     }
 }
