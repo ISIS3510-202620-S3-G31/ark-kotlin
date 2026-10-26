@@ -84,7 +84,7 @@ class PhotoEntryRepositoryImpl(
             val insertedId = photoEntryDao.insertPhoto(entity)
 
             // Copia una exportacion a la galeria publica usando Android MediaStore API en Dispatchers.IO (#146)
-            exportToPublicGallery(File(finalPath), takenAt)
+            exportToPublicGallery(File(finalPath), takenAt, userId)
 
             PhotoEntryModel(
                 id = insertedId,
@@ -106,6 +106,10 @@ class PhotoEntryRepositoryImpl(
                 if (localFile.exists()) {
                     localFile.delete()
                 }
+                //si es uri de mediastore externa, la elimina con el content resolver
+                if (entity.localFilePath.startsWith("content://")) {
+                    runCatching { context.contentResolver.delete(Uri.parse(entity.localFilePath), null, null) }
+                }
                 //elimina el registro en room
                 photoEntryDao.deletePhoto(photoId, userId)
             }
@@ -121,17 +125,18 @@ class PhotoEntryRepositoryImpl(
     }
 
     //exporta una copia a la galeria publica del sistema usando MediaStore API (#146)
-    private suspend fun exportToPublicGallery(photoFile: File, takenAt: Long): Uri? = withContext(Dispatchers.IO) {
+    private suspend fun exportToPublicGallery(photoFile: File, takenAt: Long, userId: String): Uri? = withContext(Dispatchers.IO) {
         runCatching {
             val displayName = "Ark_Photo_${takenAt}.jpg"
             val mimeType = "image/jpeg"
+            val userFolder = "Ark/User_${userId.take(8)}"
             val contentValues = ContentValues().apply {
                 put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
                 put(MediaStore.Images.Media.MIME_TYPE, mimeType)
                 put(MediaStore.Images.Media.DATE_ADDED, takenAt / 1000)
                 put(MediaStore.Images.Media.DATE_TAKEN, takenAt)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/Ark")
+                    put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/" + userFolder)
                     put(MediaStore.Images.Media.IS_PENDING, 1)
                 }
             }

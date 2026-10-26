@@ -3,10 +3,6 @@ package com.moviles.ark.ui.screens
 import com.bumptech.glide.Glide
 import android.Manifest
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.Matrix
-import android.media.ExifInterface
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -87,8 +83,7 @@ import com.moviles.ark.ui.viewmodels.PhotoOfTheDayUiState
 import com.moviles.ark.ui.viewmodels.PhotoOfTheDayViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.FileInputStream
-import java.io.InputStream
+import java.io.File
 
 private val CardFill = TextColor.copy(alpha = 0.06f)
 
@@ -458,39 +453,19 @@ private fun PhotoThumbnail(path: String, modifier: Modifier = Modifier) {
     }
 }
 
-private fun openPhoto(context: Context, path: String): InputStream {
-    return if (path.startsWith("content://") || path.startsWith("file://")) {
-        context.contentResolver.openInputStream(Uri.parse(path)) ?: error("Cannot open $path")
-    } else {
-        FileInputStream(path)
-    }
-}
-
 private fun decodeThumbnail(context: Context, path: String): ImageBitmap {
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    openPhoto(context, path).use { BitmapFactory.decodeStream(it, null, bounds) }
-    var sample = 1
-    while (bounds.outWidth / (sample * 2) >= MAX_THUMBNAIL_SIZE || bounds.outHeight / (sample * 2) >= MAX_THUMBNAIL_SIZE) {
-        sample *= 2
-    }
-    val options = BitmapFactory.Options().apply { inSampleSize = sample }
-    val bitmap = openPhoto(context, path).use { BitmapFactory.decodeStream(it, null, options) }
-        ?: error("Not an image: $path")
-
-    val rotation = openPhoto(context, path).use { stream ->
-        when (ExifInterface(stream).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
-            ExifInterface.ORIENTATION_ROTATE_90 -> 90f
-            ExifInterface.ORIENTATION_ROTATE_180 -> 180f
-            ExifInterface.ORIENTATION_ROTATE_270 -> 270f
-            else -> 0f
-        }
-    }
-    val upright = if (rotation == 0f) {
-        bitmap
+    val model: Any = if (path.startsWith("content://") || path.startsWith("file://")) {
+        Uri.parse(path)
     } else {
-        Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, Matrix().apply { postRotate(rotation) }, true)
+        File(path)
     }
-    return upright.asImageBitmap()
+    val bitmap = Glide.with(context)
+        .asBitmap()
+        .load(model)
+        .override(MAX_THUMBNAIL_SIZE)
+        .submit()
+        .get() ?: error("Failed to decode image with Glide: $path")
+    return bitmap.asImageBitmap()
 }
 
 private const val MAX_THUMBNAIL_SIZE = 1080
