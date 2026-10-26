@@ -3,6 +3,8 @@ package com.moviles.ark.data.repositories
 import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Source
+import com.moviles.ark.data.local.StatsDiskCache
 import com.moviles.ark.data.local.daos.EmotionCheckInDao
 import com.moviles.ark.data.local.daos.ToolRecordDao
 import com.moviles.ark.data.local.entities.toDomain
@@ -28,8 +30,15 @@ class StatsRepositoryImpl(
     //los daos de room se quedan en el repositorio: el viewmodel nunca toca la base directo (#135)
     private val emotionCheckInDao: EmotionCheckInDao,
     private val toolRecordDao: ToolRecordDao,
+    //cache en disco de las stats que llegaron de firestore (#147)
+    private val statsDiskCache: StatsDiskCache? = null,
     private val statsCalculator: StatsCalculator = StatsCalculator()
 ) : StatsRepository {
+
+    override suspend fun getCachedStats(): StatsModel? {
+        val currentUserId = auth.currentUser?.uid ?: "anonymous"
+        return statsDiskCache?.read(currentUserId)
+    }
 
     //lee check-ins e interacciones de room en IO y calcula en Default; si la base esta vacia devuelve stats en cero (#135)
     override suspend fun getLocalStats(): Result<StatsModel> = runCatching {
@@ -45,8 +54,11 @@ class StatsRepositoryImpl(
         }
     }
 
+    //pide a firestore en IO (Source.SERVER: sin red falla en vez de devolver datos viejos) y actualiza el cache (#147)
+    override suspend fun getUserStats(): Result<StatsModel> = withContext(Dispatchers.IO) { fetchAndCacheStats() }
+
     @Suppress("UNCHECKED_CAST")
-    override suspend fun getUserStats(): Result<StatsModel> = runCatching {
+    private suspend fun fetchAndCacheStats(): Result<StatsModel> = runCatching {
         val currentUserId = auth.currentUser?.uid ?: "anonymous"
         val todayKey = SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date())
 
@@ -54,7 +66,7 @@ class StatsRepositoryImpl(
         val checkInsSnapshot = firestore.collection("users")
             .document(currentUserId)
             .collection("mood_checkins")
-            .get()
+            .get(Source.SERVER)
             .await()
         val checkInDocs = checkInsSnapshot.documents
         val totalCheckIns = checkInDocs.size
@@ -63,7 +75,7 @@ class StatsRepositoryImpl(
         val toolsSnapshot = firestore.collection("users")
             .document(currentUserId)
             .collection("tool_interactions")
-            .get()
+            .get(Source.SERVER)
             .await()
         val toolDocs = toolsSnapshot.documents
         val totalToolEntries = toolDocs.size
@@ -142,6 +154,9 @@ class StatsRepositoryImpl(
             interactions = toolInteractions,
             toolPercentages = toolPercentages
         )
+
+        //guarda el resumen en el disco del telefono para pintarlo al instante la proxima vez (#147)
+        statsDiskCache?.write(currentUserId, computedStats)
 
         //guarda el resumen de estadisticas e insights historicos en firestore
         saveUserStatsInternal(currentUserId, computedStats, totalToolEntries, todayKey)

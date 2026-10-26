@@ -1,0 +1,74 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="96dp"
+    android:height="96dp"
+    android:viewportWidth="96"
+    android:viewportHeight="96">
+    <!-- Background Circle -->
+    <path
+        android:fillColor="#EB5249"
+        android:pathData="M48,4 A44,44 0 1,1 47.99,4 Z" />
+
+    <!-- Cat Outer Ears -->
+    <path
+        android:fillColor="#FFEBD1"
+        android:pathData="M24,42 L28,21 L44,32 Z" />
+    <path
+        android:fillColor="#FFEBD1"
+        android:pathData="M72,42 L68,21 L52,32 Z" />
+
+    <!-- Inner Pink Ears -->
+    <path
+        android:fillColor="#FFA8A0"
+        android:pathData="M27,38 L30,26 L39,32 Z" />
+    <path
+        android:fillColor="#FFA8A0"
+        android:pathData="M69,38 L66,26 L57,32 Z" />
+
+    <!-- Cat Face Main -->
+    <path
+        android:fillColor="#FFF5E6"
+        android:pathData="M48,27 C31,27 22,39 22,54 C22,69 33,78 48,78 C63,78 74,69 74,54 C74,39 65,27 48,27 Z" />
+
+    <!-- Playful Eyes -->
+    <path
+        android:strokeColor="#221100"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M33,48 C35,44 39,44 41,48" />
+    <path
+        android:strokeColor="#221100"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M55,48 C57,44 61,44 63,48" />
+
+    <!-- Pink Nose -->
+    <path
+        android:fillColor="#EB5249"
+        android:pathData="M48,53 L45,57 L51,57 Z" />
+
+    <!-- Cat Mouth (:3) -->
+    <path
+        android:strokeColor="#221100"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M48,57 L48,59 M43,59 C45,62 48,61 48,59 C48,61 51,62 53,59" />
+
+    <!-- Whiskers -->
+    <path
+        android:strokeColor="#D4BA99"
+        android:strokeWidth="1.6"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M18,52 L28,54 M17,59 L28,58 M78,52 L68,54 M79,59 L68,58" />
+
+    <!-- Rosy Cheeks -->
+    <path
+        android:fillColor="#FFA8A0"
+        android:pathData="M29,56 A3.5,3.5 0 1,1 28.99,56 Z" />
+    <path
+        android:fillColor="#FFA8A0"
+        android:pathData="M67,56 A3.5,3.5 0 1,1 66.99,56 Z" />
+</vector>

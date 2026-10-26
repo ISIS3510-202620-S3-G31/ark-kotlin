@@ -9,7 +9,7 @@ import com.moviles.ark.ArkApplication
 import com.moviles.ark.domain.models.PhotoEntryModel
 import com.moviles.ark.domain.models.PhotoWeek
 import com.moviles.ark.domain.models.ToolLatencyTracker
-import com.moviles.ark.domain.repositories.PhotoRepository
+import com.moviles.ark.domain.repositories.PhotoEntryRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,7 +23,7 @@ import java.util.TimeZone
 
 //now y zone se pueden cambiar para fijar "hoy"; en la app son la hora y la zona del telefono
 class PhotoOfTheDayViewModel(
-    private val photoRepository: PhotoRepository,
+    private val photoRepository: PhotoEntryRepository,
     private val zone: TimeZone = TimeZone.getDefault(),
     private val now: () -> Long = { System.currentTimeMillis() },
     //mide cuanto tardo en abrirse la herramienta (#8); null en previews

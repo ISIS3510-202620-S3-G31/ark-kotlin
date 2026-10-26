@@ -1,5 +1,6 @@
 package com.moviles.ark.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -32,8 +33,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -49,6 +54,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -75,26 +81,39 @@ fun StatsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
+    val context = LocalContext.current
+
     //recarga automaticamente al entrar a la pantalla para mostrar check-ins recientes
     LaunchedEffect(Unit) {
         viewModel.loadStats()
+    }
+
+    //aviso corto cuando el refresco no pudo traer datos nuevos (#147)
+    LaunchedEffect(uiState.noticeMessage) {
+        uiState.noticeMessage?.let { message ->
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+            viewModel.onNoticeShown()
+        }
     }
 
     StatsScreenContent(
         stats = uiState.stats,
         isLoading = uiState.isLoading,
         errorMessage = uiState.errorMessage,
+        isRefreshing = uiState.isRefreshing,
         onRefresh = { viewModel.refresh() },
         onNavigateToToolsCatalog = onNavigateToToolsCatalog
     )
 }
 
 //vista desacoplada sin viewmodel para permitir renderizado fluido en preview
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StatsScreenContent(
     stats: StatsModel?,
     isLoading: Boolean,
     errorMessage: String? = null,
+    isRefreshing: Boolean = false,
     onRefresh: () -> Unit = {},
     onNavigateToToolsCatalog: (ToolCategory?) -> Unit = {}
 ) {
@@ -140,22 +159,56 @@ fun StatsScreenContent(
                 }
             }
 
-            if (isLoading) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator(color = PrimaryColor)
+            //deslizar hacia abajo pide datos nuevos a firestore (#147)
+            val pullState = rememberPullToRefreshState()
+            PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh = onRefresh,
+                modifier = Modifier.fillMaxSize(),
+                state = pullState,
+                indicator = {
+                    PullToRefreshDefaults.Indicator(
+                        state = pullState,
+                        isRefreshing = isRefreshing,
+                        modifier = Modifier.align(Alignment.TopCenter),
+                        color = PrimaryColor,
+                        containerColor = BackgroundColor
+                    )
                 }
-            } else if (errorMessage != null && stats == null) {
-                StatsErrorView(
-                    message = errorMessage,
-                    onRetry = onRefresh
-                )
-            } else if (stats == null || (stats.totalCheckIns == 0 && stats.toolUsagePercentages.isEmpty())) {
-                StatsEmptyView()
-            } else {
-                StatsMainView(stats = stats, onNavigateToToolsCatalog = onNavigateToToolsCatalog)
+            ) {
+                if (isLoading) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(color = PrimaryColor)
+                    }
+                } else if (errorMessage != null && stats == null) {
+                    PullableContent {
+                        StatsErrorView(
+                            message = errorMessage,
+                            onRetry = onRefresh
+                        )
+                    }
+                } else if (stats == null || (stats.totalCheckIns == 0 && stats.toolUsagePercentages.isEmpty())) {
+                    PullableContent {
+                        StatsEmptyView()
+                    }
+                } else {
+                    StatsMainView(stats = stats, onNavigateToToolsCatalog = onNavigateToToolsCatalog)
+                }
+            }
+        }
+    }
+}
+
+//las vistas fijas van en una lista de un solo item para que el gesto de pull-to-refresh tambien funcione en ellas (#147)
+@Composable
+private fun PullableContent(content: @Composable () -> Unit) {
+    LazyColumn(modifier = Modifier.fillMaxSize()) {
+        item {
+            Box(modifier = Modifier.fillParentMaxSize()) {
+                content()
             }
         }
     }
