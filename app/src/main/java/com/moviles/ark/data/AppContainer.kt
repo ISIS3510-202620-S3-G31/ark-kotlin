@@ -12,6 +12,7 @@ import com.moviles.ark.R
 import com.moviles.ark.data.local.ArkDatabase
 import com.moviles.ark.data.local.daos.FeedbackDao
 import com.moviles.ark.data.local.sensors.AudioPlayerHelper
+import com.moviles.ark.data.local.sensors.EnvironmentalSensorManager
 import com.moviles.ark.data.local.sensors.Location
 import com.moviles.ark.data.local.sensors.NetworkConnectivityObserver
 import com.moviles.ark.data.local.sensors.SyncManager
@@ -58,6 +59,7 @@ interface AppContainer {
     val networkConnectivityObserver: NetworkConnectivityObserver
     val syncRepository: SyncRepository
     val syncManager: SyncManager
+    val environmentalSensorManager: EnvironmentalSensorManager
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -132,4 +134,6 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val syncManager: SyncManager by lazy {
         SyncManager(networkConnectivityObserver, syncRepository)
     }
+    // sensor de luz + hora del dia para recomendaciones segun el entorno (#165); uno para toda la app
+    override val environmentalSensorManager: EnvironmentalSensorManager by lazy { EnvironmentalSensorManager(context) }
 }
