@@ -25,9 +25,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.AcUnit
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Umbrella
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -66,6 +68,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.border
 import com.moviles.ark.domain.models.Tool
 import com.moviles.ark.domain.models.ToolCategory
+import com.moviles.ark.domain.models.WeatherCondition
+import com.moviles.ark.domain.models.WeatherSuggestion
 import com.moviles.ark.ui.components.RecommendationCardComponent
 import com.moviles.ark.ui.theme.AccentColor
 import com.moviles.ark.ui.theme.AppTheme
@@ -312,10 +316,13 @@ fun HomeScreen(
                 }
             }
 
-            //3. recomendacion basada en el clima (Weather suggestion - boton/tarjeta placeholder)
+            //3. recomendacion basada en el clima (#134): con sugerencia la tarjeta muestra la herramienta y el motivo
+            //y Explore la abre; sin internet, sin ubicacion o con clima neutro queda la tarjeta general
             item {
                 WeatherRecommendationCard(
-                    onClick = { onNavigateToTool("tools_catalog_screen") }
+                    suggestion = uiState.weatherSuggestion,
+                    onClick = { onNavigateToTool("tools_catalog_screen") },
+                    onOpenTool = { toolId -> onToolClick(toolId) }
                 )
             }
 
@@ -452,14 +459,18 @@ private fun DailyCheckInCard(
 
 @Composable
 private fun WeatherRecommendationCard(
+    suggestion: WeatherSuggestion?,
     onClick: () -> Unit,
+    onOpenTool: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    //con sugerencia del clima la tarjeta abre esa herramienta; sin ella sigue llevando al catalogo
+    val onCardClick = { if (suggestion != null) onOpenTool(suggestion.tool.id) else onClick() }
     Card(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
-            .clickable { onClick() },
+            .clickable { onCardClick() },
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = Color(0xFFF3E4CF)),
         border = BorderStroke(1.2.dp, AccentColor.copy(alpha = 0.35f))
@@ -483,7 +494,11 @@ private fun WeatherRecommendationCard(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.WbSunny,
+                        imageVector = when (suggestion?.condition) {
+                            WeatherCondition.RAINY -> Icons.Default.Umbrella
+                            WeatherCondition.COLD -> Icons.Default.AcUnit
+                            else -> Icons.Default.WbSunny
+                        },
                         contentDescription = "Weather suggestion",
                         tint = AccentColor,
                         modifier = Modifier.size(22.dp)
@@ -503,6 +518,7 @@ private fun WeatherRecommendationCard(
                             fontSize = 11.sp,
                             letterSpacing = 0.5.sp
                         )
+                        if (suggestion == null) {
                         Spacer(modifier = Modifier.width(6.dp))
                         Surface(
                             shape = RoundedCornerShape(8.dp),
@@ -518,12 +534,13 @@ private fun WeatherRecommendationCard(
                                 modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
                             )
                         }
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(2.dp))
 
                     Text(
-                        text = "Weather-based Activity",
+                        text = suggestion?.tool?.name ?: "Weather-based Activity",
                         style = MaterialTheme.typography.titleMedium,
                         fontFamily = FigtreeFontFamily,
                         fontWeight = FontWeight.Bold,
@@ -532,7 +549,7 @@ private fun WeatherRecommendationCard(
                     )
 
                     Text(
-                        text = "Tune your practice to today's climate and sunlight.",
+                        text = suggestion?.reason ?: "Tune your practice to today's climate and sunlight.",
                         style = MaterialTheme.typography.bodyLarge,
                         fontFamily = FigtreeFontFamily,
                         color = TextColor.copy(alpha = 0.75f),
@@ -548,7 +565,7 @@ private fun WeatherRecommendationCard(
             Surface(
                 modifier = Modifier
                     .clip(RoundedCornerShape(12.dp))
-                    .clickable { onClick() },
+                    .clickable { onCardClick() },
                 color = AccentColor.copy(alpha = 0.18f),
                 shape = RoundedCornerShape(12.dp)
             ) {

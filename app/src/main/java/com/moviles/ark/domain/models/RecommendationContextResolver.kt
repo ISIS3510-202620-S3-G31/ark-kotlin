@@ -59,6 +59,10 @@ class RecommendationContextResolver(
     }
 
 
+    //plan b cuando no se pudieron leer los datos del usuario: orden por defecto del catalogo (#159)
+    fun fallback(): RecommendationDecision =
+        RecommendationDecision(DefaultRecommendationStrategy(), RecommendationContext(), RecommendationReason.DEFAULT)
+
     //numero del dia en la hora local; se suma el desfase de la zona para que el dia cambie a medianoche de colombia
     private fun dayOf(millis: Long): Long = (millis + zone.getOffset(millis)) / DAY_MILLIS
 
