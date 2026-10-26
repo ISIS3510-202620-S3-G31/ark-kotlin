@@ -1,6 +1,18 @@
 package com.moviles.ark.ui.screens
 
 import android.graphics.BitmapFactory
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.ui.res.painterResource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
+import com.moviles.ark.data.local.AvatarPreferences
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -83,6 +95,7 @@ fun ProfileScreen(
     onSignOutClick: () -> Unit,
     onRetryClick: () -> Unit,
     onAvatarClick: () -> Unit = {},
+    onAvatarSelect: (String) -> Unit = {},
     onEditProfileClick: () -> Unit = {},
     onEditNameChange: (String) -> Unit = {},
     onEditAgeChange: (String) -> Unit = {},
@@ -108,7 +121,7 @@ fun ProfileScreen(
                 TextButton(onClick = onRetryClick) { Text("Try again", style = MaterialTheme.typography.labelLarge, color = TextColor) }
             } else {
                 //avatar: la foto que eligio el usuario o sus iniciales; al tocarlo se elige otra foto (#119)
-                Avatar(path = uiState.avatarPath, initials = uiState.initials, onClick = onAvatarClick)
+                Avatar(path = uiState.avatarPath, initials = uiState.initials, avatarId = uiState.selectedAvatarId, onClick = onAvatarClick)
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(uiState.name, style = MaterialTheme.typography.headlineMedium, color = TextColor, textAlign = TextAlign.Center)
                 Text(uiState.email, style = MaterialTheme.typography.bodyLarge, color = TextColor.copy(alpha = 0.7f))
@@ -128,6 +141,14 @@ fun ProfileScreen(
                 uiState.message?.let { message ->
                     Text(message, style = MaterialTheme.typography.bodyLarge, color = SecondaryColor, textAlign = TextAlign.Center)
                 }
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Carrusel de seleccion de avatares estilo Netflix
+                AvatarSelectionCarousel(
+                    selectedAvatarId = uiState.selectedAvatarId,
+                    onAvatarSelect = onAvatarSelect
+                )
+
                 Spacer(modifier = Modifier.height(20.dp))
 
                 //dos datos lado a lado: racha y dias usando la app
@@ -187,17 +208,31 @@ fun ProfileScreen(
 
 //circulo secondary como el boton de perfil del home; la camarita avisa que se puede cambiar la foto
 @Composable
-private fun Avatar(path: String?, initials: String, onClick: () -> Unit) {
+private fun Avatar(
+    path: String?,
+    initials: String,
+    avatarId: String,
+    onClick: () -> Unit
+) {
     val avatar = rememberAvatar(path)
     Box(modifier = Modifier.size(96.dp).clickable(onClick = onClick)) {
         Box(
-            modifier = Modifier.size(88.dp).align(Alignment.Center).clip(CircleShape).background(SecondaryColor, CircleShape),
+            modifier = Modifier
+                .size(88.dp)
+                .align(Alignment.Center)
+                .clip(CircleShape)
+                .background(SecondaryColor, CircleShape),
             contentAlignment = Alignment.Center
         ) {
             if (avatar != null) {
                 Image(bitmap = avatar, contentDescription = "Profile photo", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
             } else {
-                Text(initials, style = MaterialTheme.typography.headlineMedium, color = TextColor)
+                Image(
+                    painter = painterResource(AvatarPreferences.getDrawableRes(avatarId)),
+                    contentDescription = "Profile avatar",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
             }
         }
         Box(
@@ -209,6 +244,119 @@ private fun Avatar(path: String?, initials: String, onClick: () -> Unit) {
             contentAlignment = Alignment.Center
         ) {
             Icon(Icons.Filled.PhotoCamera, contentDescription = "Change profile photo", tint = TextColor, modifier = Modifier.size(16.dp))
+        }
+    }
+}
+
+// Carrusel horizontal estilo Netflix con borde resaltado y badge de seleccion
+@Composable
+private fun AvatarSelectionCarousel(
+    selectedAvatarId: String,
+    onAvatarSelect: (String) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(CardFill)
+            .padding(horizontal = 14.dp, vertical = 14.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Choose your avatar",
+                style = MaterialTheme.typography.titleMedium,
+                fontFamily = FigtreeFontFamily,
+                fontWeight = FontWeight.Bold,
+                color = TextColor
+            )
+            Text(
+                text = "Netflix style",
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = FigtreeFontFamily,
+                fontWeight = FontWeight.SemiBold,
+                color = PrimaryColor
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        LazyRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            contentPadding = PaddingValues(horizontal = 2.dp, vertical = 4.dp)
+        ) {
+            items(AvatarPreferences.PRESET_AVATARS) { preset ->
+                val isSelected = preset.id == selectedAvatarId
+                val scale by animateFloatAsState(
+                    targetValue = if (isSelected) 1.08f else 1.0f,
+                    label = "avatar_preset_scale"
+                )
+
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .scale(scale)
+                        .clickable { onAvatarSelect(preset.id) }
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(66.dp)
+                            .shadow(
+                                elevation = if (isSelected) 6.dp else 1.dp,
+                                shape = CircleShape
+                            )
+                            .clip(CircleShape)
+                            .background(if (isSelected) PrimaryColor.copy(alpha = 0.15f) else Color.White)
+                            .border(
+                                width = if (isSelected) 3.dp else 1.5.dp,
+                                color = if (isSelected) PrimaryColor else TextColor.copy(alpha = 0.2f),
+                                shape = CircleShape
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Image(
+                            painter = painterResource(preset.drawableRes),
+                            contentDescription = preset.name,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+
+                        // Badge con checkmark estilo Netflix cuando esta activo
+                        if (isSelected) {
+                            Box(
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .align(Alignment.BottomEnd)
+                                    .clip(CircleShape)
+                                    .background(PrimaryColor)
+                                    .border(1.5.dp, Color.White, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Selected",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Text(
+                        text = preset.name,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FigtreeFontFamily,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                        color = if (isSelected) PrimaryColor else TextColor.copy(alpha = 0.75f)
+                    )
+                }
+            }
         }
     }
 }
@@ -353,6 +501,7 @@ fun ProfileRoute(
         onSignOutClick = viewModel::onSignOutClick,
         onRetryClick = viewModel::loadProfile,
         onAvatarClick = { avatarPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+        onAvatarSelect = viewModel::onAvatarSelected,
         onEditProfileClick = viewModel::onEditProfileClick,
         onEditNameChange = viewModel::onEditNameChange,
         onEditAgeChange = viewModel::onEditAgeChange,

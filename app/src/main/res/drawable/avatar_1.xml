@@ -1,0 +1,63 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="96dp"
+    android:height="96dp"
+    android:viewportWidth="96"
+    android:viewportHeight="96">
+    <!-- Background Circle -->
+    <path
+        android:fillColor="#F8840E"
+        android:pathData="M48,4 A44,44 0 1,1 47.99,4 Z" />
+
+    <!-- Left Ear -->
+    <path
+        android:fillColor="#D86500"
+        android:pathData="M24,42 L31,18 L44,30 Z" />
+    <path
+        android:fillColor="#FFF5E6"
+        android:pathData="M27,38 L32,23 L40,31 Z" />
+
+    <!-- Right Ear -->
+    <path
+        android:fillColor="#D86500"
+        android:pathData="M72,42 L65,18 L52,30 Z" />
+    <path
+        android:fillColor="#FFF5E6"
+        android:pathData="M69,38 L64,23 L56,31 Z" />
+
+    <!-- Fox Face Main -->
+    <path
+        android:fillColor="#FFA53B"
+        android:pathData="M48,26 C33,26 24,37 24,52 C24,67 35,78 48,78 C61,78 72,67 72,52 C72,37 63,26 48,26 Z" />
+
+    <!-- White Cheeks & Muzzle -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M48,54 C39,54 28,58 24,66 C29,74 38,78 48,78 C58,78 67,74 72,66 C68,58 57,54 48,54 Z" />
+
+    <!-- Nose -->
+    <path
+        android:fillColor="#221100"
+        android:pathData="M48,57 C45.5,57 45.2,61.5 48,63 C50.8,61.5 50.5,57 48,57 Z" />
+
+    <!-- Eyes (Friendly curved closed eyes) -->
+    <path
+        android:strokeColor="#221100"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M34,48 C36,44 40,44 42,48" />
+    <path
+        android:strokeColor="#221100"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M54,48 C56,44 60,44 62,48" />
+
+    <!-- Rosy Cheeks -->
+    <path
+        android:fillColor="#FFA099"
+        android:pathData="M29,56 A3.5,3.5 0 1,1 28.99,56 Z" />
+    <path
+        android:fillColor="#FFA099"
+        android:pathData="M67,56 A3.5,3.5 0 1,1 66.99,56 Z" />
+</vector>

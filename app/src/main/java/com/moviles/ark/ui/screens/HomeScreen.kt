@@ -62,7 +62,10 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.R
+import com.moviles.ark.data.local.AvatarPreferences
 import com.moviles.ark.data.repositories.ToolRepositoryImpl
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.foundation.border
 import com.moviles.ark.domain.models.Tool
 import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.domain.models.WeatherCondition
@@ -159,12 +162,32 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "Ark",
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = PrimaryColor
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .border(1.5.dp, PrimaryColor, CircleShape)
+                                .background(SecondaryColor.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Image(
+                                painter = painterResource(AvatarPreferences.getDrawableRes(uiState.avatarId)),
+                                contentDescription = "User Avatar",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                        Text(
+                            text = "Ark",
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = PrimaryColor
+                        )
+                    }
 
                     Surface(
                         modifier = Modifier
@@ -205,11 +228,28 @@ fun HomeScreen(
                         .padding(vertical = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Image(
-                        painter = painterResource(R.drawable.ic_mascot_log),
-                        contentDescription = "Mascot",
-                        modifier = Modifier.size(88.dp)
-                    )
+                    Box(contentAlignment = Alignment.BottomEnd) {
+                        Image(
+                            painter = painterResource(R.drawable.ic_mascot_log),
+                            contentDescription = "Mascot",
+                            modifier = Modifier.size(88.dp)
+                        )
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .border(2.dp, BackgroundColor, CircleShape)
+                                .background(Color.White),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Image(
+                                painter = painterResource(AvatarPreferences.getDrawableRes(uiState.avatarId)),
+                                contentDescription = "Active Avatar Badge",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = "Welcome back!",

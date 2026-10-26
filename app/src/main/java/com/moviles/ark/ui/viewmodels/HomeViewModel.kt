@@ -7,8 +7,9 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
-import com.moviles.ark.domain.adapters.WeatherServiceAdapter
+import com.moviles.ark.data.local.AvatarPreferences
 import com.moviles.ark.data.repositories.ToolRepositoryImpl
+import com.moviles.ark.domain.adapters.WeatherServiceAdapter
 import com.moviles.ark.domain.models.CachedRecommendation
 import com.moviles.ark.domain.models.RecommendationContextResolver
 import com.moviles.ark.domain.models.RecommendationDecision
@@ -75,6 +76,7 @@ class HomeViewModel(
         checkTodayStatus()
         loadTools()
         loadWeatherSuggestion()
+        observeAvatar()
     }
 
     //el clima va aparte del resolver de estrategias: no cambia el orden del catalogo, solo llena su propia tarjeta (#134)
@@ -90,6 +92,14 @@ class HomeViewModel(
             val weather = adapter.getCurrentWeather(latitude, longitude).getOrNull() ?: return@launch
             val suggestion = WeatherSuggestionEngine(weather).suggest(_uiState.value.tools)
             _uiState.value = _uiState.value.copy(weatherSuggestion = suggestion)
+        }
+    }
+
+    private fun observeAvatar() {
+        viewModelScope.launch {
+            AvatarPreferences.currentAvatarId.collect { id ->
+                _uiState.value = _uiState.value.copy(avatarId = id)
+            }
         }
     }
 

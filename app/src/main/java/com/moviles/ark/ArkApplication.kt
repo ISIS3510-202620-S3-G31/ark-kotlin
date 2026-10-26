@@ -3,6 +3,7 @@ package com.moviles.ark
 import android.app.Application
 import com.moviles.ark.data.AppContainer
 import com.moviles.ark.data.DefaultAppContainer
+import com.moviles.ark.data.local.AvatarPreferences
 
 class ArkApplication : Application() {
     lateinit var container: AppContainer
@@ -11,6 +12,7 @@ class ArkApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         container = DefaultAppContainer(this)
+        AvatarPreferences.init(this)
         //iniciar el observador de sincronizacion automatica offline (#33)
         container.syncManager.startMonitoring()
     }
