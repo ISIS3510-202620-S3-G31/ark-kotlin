@@ -81,7 +81,8 @@ class UsefulInsightsEngine(
             title = "$name helps you",
             message = "On days you used $name, your difficult feelings were ${percent(bestReduction)}% lower than on other days.",
             advice = "Keep $name close for tough days.",
-            actionLabel = "Open $name"
+            actionLabel = "Open $name",
+            emotion = dominantEmotion(recent, onlyDifficult = true)
         )
     }
 
@@ -101,14 +102,16 @@ class UsefulInsightsEngine(
                 title = "A lighter week",
                 message = "${percent(shareNow)}% of your check-ins this week were difficult, down from ${percent(shareBefore)}% last week.",
                 advice = "Whatever you are doing is working. Keep checking in.",
-                actionLabel = "Check in"
+                actionLabel = "Check in",
+                emotion = dominantEmotion(thisWeek, onlyDifficult = false)
             )
         } else {
             InsightModel(
                 title = "A heavier week",
                 message = "${percent(shareNow)}% of your check-ins this week were difficult, up from ${percent(shareBefore)}% last week.",
                 advice = "Be gentle with yourself. A calming tool can help.",
-                actionLabel = "Find a tool"
+                actionLabel = "Find a tool",
+                emotion = dominantEmotion(thisWeek, onlyDifficult = true)
             )
         }
     }
@@ -129,7 +132,8 @@ class UsefulInsightsEngine(
             title = "Tough moments come ${part.label}",
             message = "${top.value} of your last ${difficult.size} difficult check-ins happened ${part.label}.",
             advice = "Try a calming tool ${part.label}, before the feeling builds up.",
-            actionLabel = "Find a tool"
+            actionLabel = "Find a tool",
+            emotion = dominantEmotion(difficult, onlyDifficult = true)
         )
     }
 
@@ -151,14 +155,16 @@ class UsefulInsightsEngine(
                 title = "$name has been around",
                 message = message,
                 advice = "Naming a feeling is the first step. A Release or Calm down tool can help with it.",
-                actionLabel = "Find a tool"
+                actionLabel = "Find a tool",
+                emotion = top.key
             )
         } else {
             InsightModel(
                 title = "$name has been around",
                 message = message,
                 advice = "Notice what made those moments good and keep making room for it.",
-                actionLabel = "Check in"
+                actionLabel = "Check in",
+                emotion = top.key
             )
         }
     }
@@ -182,6 +188,15 @@ class UsefulInsightsEngine(
             advice = "Tools you trust work best when you start them early, before a feeling peaks.",
             actionLabel = "Open $name"
         )
+    }
+
+    //emocion que mas se repite en los check-ins dados; la usa la tarjeta para filtrar el catalogo (#135)
+    private fun dominantEmotion(checkIns: List<CheckInModel>, onlyDifficult: Boolean): Emotion? {
+        val emotions = checkIns.flatMap { it.mood.getEmotions().distinct() }
+            .filter { !onlyDifficult || it in DIFFICULT_EMOTIONS }
+        return emotions.groupingBy { it }.eachCount().entries
+            .sortedWith(compareByDescending<Map.Entry<Emotion, Int>> { it.value }.thenBy { it.key.ordinal })
+            .firstOrNull()?.key
     }
 
     private fun dayOf(millis: Long): Long = (millis + zone.getOffset(millis)) / DAY_MILLIS

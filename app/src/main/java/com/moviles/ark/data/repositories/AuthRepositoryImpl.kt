@@ -1,22 +1,24 @@
 package com.moviles.ark.data.repositories
 
-import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.moviles.ark.data.remote.dtos.toDto
 import com.moviles.ark.domain.models.UserModel
 import com.moviles.ark.data.remote.CrashlyticsHelper
+import com.moviles.ark.domain.adapters.AuthServiceAdapter
 import com.moviles.ark.domain.repositories.AuthRepository
 import kotlinx.coroutines.tasks.await
 
+//la autenticacion pasa solo por el adapter (#136); firestore sigue aqui para guardar el perfil
 class AuthRepositoryImpl(
-    private val auth: FirebaseAuth,
+    private val authServiceAdapter: AuthServiceAdapter,
     private val firestore: FirebaseFirestore
 ) : AuthRepository {
 
-    // Firebase saves the session on the device, so this works offline
-    override fun isLoggedIn(): Boolean = auth.currentUser != null
+    // the session is saved on the device, so this works offline
+    override fun isLoggedIn(): Boolean = authServiceAdapter.isLoggedIn()
 
     override suspend fun login(email: String, password: String): Result<Unit> = runCatching {
-        auth.signInWithEmailAndPassword(email.trim(), password).await()
+        authServiceAdapter.signIn(email.trim(), password).getOrThrow()
         Unit
     }.onFailure { error ->
         CrashlyticsHelper.logNonFatal(
@@ -31,10 +33,10 @@ class AuthRepositoryImpl(
     }
 
     override suspend fun registerUser(user: UserModel): Result<Unit> = runCatching {
-        val result = auth.createUserWithEmailAndPassword(user.email.trim(), user.password).await()
+        val uid = authServiceAdapter.createUser(user.email.trim(), user.password).getOrThrow()
         // the password stays in Firebase Auth, Firestore only gets the profile
-        firestore.collection("users").document(result.user!!.uid)
-            .set(mapOf("name" to user.name.trim(), "age" to user.age, "email" to user.email.trim()))
+        firestore.collection("users").document(uid)
+            .set(user.toDto())
             .await()
         Unit
     }.onFailure { error ->
@@ -49,6 +51,6 @@ class AuthRepositoryImpl(
         )
     }
 
-    override fun logout() = auth.signOut()
+    override fun logout() = authServiceAdapter.signOut()
 }
 

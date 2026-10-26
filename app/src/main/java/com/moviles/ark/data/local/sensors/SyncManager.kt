@@ -34,6 +34,13 @@ class SyncManager(
         }
     }
 
+    //pide una subida ya, por ejemplo despues de guardar un check-in en room (#143)
+    //sin internet no hace nada: el check-in queda pendiente y se sube cuando vuelva la red
+    fun requestSync() {
+        if (!networkConnectivityObserver.isConnected()) return
+        scope.launch { syncRepository.syncPendingData() }
+    }
+
     //detiene la observacion si es necesario
     fun stopMonitoring() {
         monitoringJob?.cancel()

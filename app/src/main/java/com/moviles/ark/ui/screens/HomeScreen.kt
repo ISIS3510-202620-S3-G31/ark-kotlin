@@ -21,24 +21,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.AccessibilityNew
-import androidx.compose.material.icons.filled.Air
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Casino
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Psychology
-import androidx.compose.material.icons.filled.Whatshot
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -58,7 +48,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -68,12 +57,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.R
+import com.moviles.ark.data.local.AvatarPreferences
 import com.moviles.ark.data.repositories.ToolRepositoryImpl
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.foundation.border
 import com.moviles.ark.domain.models.Tool
 import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.ui.components.RecommendationCardComponent
+import com.moviles.ark.ui.theme.AccentColor
 import com.moviles.ark.ui.theme.AppTheme
 import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.theme.FigtreeFontFamily
@@ -81,7 +75,6 @@ import com.moviles.ark.ui.theme.PrimaryColor
 import com.moviles.ark.ui.theme.SecondaryColor
 import com.moviles.ark.ui.theme.SoreanFontFamily
 import com.moviles.ark.ui.theme.TextColor
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.moviles.ark.ui.viewmodels.HomeUiState
 import com.moviles.ark.ui.viewmodels.HomeViewModel
 import com.moviles.ark.ui.viewmodels.MoodCheckInViewModel
@@ -165,12 +158,32 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "Ark",
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = PrimaryColor
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .border(1.5.dp, PrimaryColor, CircleShape)
+                                .background(SecondaryColor.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Image(
+                                painter = painterResource(AvatarPreferences.getDrawableRes(uiState.avatarId)),
+                                contentDescription = "User Avatar",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                        Text(
+                            text = "Ark",
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = PrimaryColor
+                        )
+                    }
 
                     Surface(
                         modifier = Modifier
@@ -203,24 +216,44 @@ fun HomeScreen(
                 }
             }
 
-            //seccion de bienvenida con la mascota
+            //seccion de bienvenida con la mascota dejando espacio comodo
             item {
                 Column(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Image(
-                        painter = painterResource(R.drawable.ic_mascot_log),
-                        contentDescription = "Mascot",
-                        modifier = Modifier.size(96.dp)
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Box(contentAlignment = Alignment.BottomEnd) {
+                        Image(
+                            painter = painterResource(R.drawable.ic_mascot_log),
+                            contentDescription = "Mascot",
+                            modifier = Modifier.size(88.dp)
+                        )
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .border(2.dp, BackgroundColor, CircleShape)
+                                .background(Color.White),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Image(
+                                painter = painterResource(AvatarPreferences.getDrawableRes(uiState.avatarId)),
+                                contentDescription = "Active Avatar Badge",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = "Welcome back!",
                         style = MaterialTheme.typography.headlineMedium,
                         fontFamily = SoreanFontFamily,
                         color = TextColor
                     )
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = "Track your wellbeing and explore tools",
                         style = MaterialTheme.typography.bodyMedium,
@@ -229,7 +262,28 @@ fun HomeScreen(
                 }
             }
 
-            //tarjeta de recomendacion inteligente (#16)
+            //tarjeta interactiva para el check-in diario si aun no se ha completado hoy
+            if (!uiState.isCheckInCompleted) {
+                item {
+                    DailyCheckInCard(
+                        onClick = { showCheckInPopup = true }
+                    )
+                }
+            }
+
+            //encabezado de la seccion de recomendaciones
+            item {
+                Text(
+                    text = "Today's Recommendations",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontFamily = FigtreeFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    color = TextColor,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+                )
+            }
+
+            //1. recomendacion inteligente por Strategy (#16)
             val recommendedTool = uiState.tools.firstOrNull()
             if (recommendedTool != null) {
                 item {
@@ -241,7 +295,7 @@ fun HomeScreen(
                 }
             }
 
-            //tarjeta leave it to chance (Surprise me - seleccion al azar)
+            //2. recomendacion al azar (Surprise me)
             item {
                 LeaveItToChanceCard(
                     onSurpriseMe = onSurpriseMe
@@ -258,36 +312,17 @@ fun HomeScreen(
                 }
             }
 
-            //pestañas de filtro por categoria usando ToolCategory enum
+            //3. recomendacion basada en el clima (Weather suggestion - boton/tarjeta placeholder)
             item {
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(vertical = 4.dp)
-                ) {
-                    // Chip para "All" (null)
-                    item {
-                        CategoryChip(
-                            label = "All",
-                            isSelected = uiState.selectedCategory == null,
-                            onClick = { onCategorySelect(null) }
-                        )
-                    }
-                    // Chips para cada categoria del enum ToolCategory
-                    items(ToolCategory.entries.toTypedArray()) { category ->
-                        CategoryChip(
-                            label = category.displayName,
-                            isSelected = uiState.selectedCategory == category,
-                            onClick = { onCategorySelect(category) }
-                        )
-                    }
-                }
+                WeatherRecommendationCard(
+                    onClick = { onNavigateToTool("tools_catalog_screen") }
+                )
             }
 
-            //listado de herramientas filtradas/ordenadas
-            items(uiState.filteredTools) { tool ->
-                ToolCardItem(
-                    tool = tool,
-                    onClick = { onToolClick(tool.id) }
+            //acceso directo al catalogo completo de herramientas de regulacion
+            item {
+                BrowseCatalogBanner(
+                    onOpenCatalog = { onNavigateToTool("tools_catalog_screen") }
                 )
             }
         }
@@ -320,38 +355,259 @@ fun HomeScreen(
 }
 
 @Composable
-private fun CategoryChip(
-    label: String,
-    isSelected: Boolean,
-    onClick: () -> Unit
+private fun DailyCheckInCard(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    Surface(
-        modifier = Modifier
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
             .clickable { onClick() },
-        color = if (isSelected) PrimaryColor else Color(0xFFEFE0C2),
         shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = PrimaryColor.copy(alpha = 0.15f)),
+        border = BorderStroke(1.2.dp, PrimaryColor.copy(alpha = 0.45f))
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            if (isSelected) {
-                Icon(
-                    imageVector = Icons.Default.Check,
-                    contentDescription = null,
-                    tint = TextColor,
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Box(
                     modifier = Modifier
-                        .size(16.dp)
-                        .padding(end = 4.dp),
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(PrimaryColor),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.FavoriteBorder,
+                        contentDescription = "Daily Check-in",
+                        tint = TextColor,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(14.dp))
+
+                Column {
+                    Text(
+                        text = "DAILY REFLECTION",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontFamily = FigtreeFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        color = PrimaryColor,
+                        fontSize = 11.sp,
+                        letterSpacing = 0.5.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(2.dp))
+
+                    Text(
+                        text = "How are you feeling?",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontFamily = FigtreeFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        color = TextColor,
+                        fontSize = 16.sp
+                    )
+
+                    Text(
+                        text = "Log your check-in to personalize your practices.",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontFamily = FigtreeFontFamily,
+                        color = TextColor.copy(alpha = 0.75f),
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(10.dp))
+
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(CircleShape)
+                    .background(PrimaryColor),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                    contentDescription = "Start check-in",
+                    tint = TextColor,
+                    modifier = Modifier.size(16.dp)
                 )
             }
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                color = TextColor,
+        }
+    }
+}
+
+@Composable
+private fun WeatherRecommendationCard(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .clickable { onClick() },
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF3E4CF)),
+        border = BorderStroke(1.2.dp, AccentColor.copy(alpha = 0.35f))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(AccentColor.copy(alpha = 0.18f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.WbSunny,
+                        contentDescription = "Weather suggestion",
+                        tint = AccentColor,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(14.dp))
+
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "WEATHER SUGGESTION",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontFamily = FigtreeFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            color = AccentColor,
+                            fontSize = 11.sp,
+                            letterSpacing = 0.5.sp
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = AccentColor.copy(alpha = 0.12f)
+                        ) {
+                            Text(
+                                text = "SOON",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontFamily = FigtreeFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                color = AccentColor,
+                                fontSize = 9.sp,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(2.dp))
+
+                    Text(
+                        text = "Weather-based Activity",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontFamily = FigtreeFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        color = TextColor,
+                        fontSize = 16.sp
+                    )
+
+                    Text(
+                        text = "Tune your practice to today's climate and sunlight.",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontFamily = FigtreeFontFamily,
+                        color = TextColor.copy(alpha = 0.75f),
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(10.dp))
+
+            Surface(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { onClick() },
+                color = AccentColor.copy(alpha = 0.18f),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text(
+                    text = "Explore",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontFamily = FigtreeFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    color = AccentColor,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BrowseCatalogBanner(
+    onOpenCatalog: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .clickable { onOpenCatalog() },
+        color = Color(0xFFEFE0C2),
+        shape = RoundedCornerShape(18.dp),
+        border = BorderStroke(1.dp, TextColor.copy(alpha = 0.08f))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.GridView,
+                    contentDescription = null,
+                    tint = SecondaryColor,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = "Browse Full Regulation Tools Catalog",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontFamily = FigtreeFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    color = TextColor,
+                    fontSize = 13.sp
+                )
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = "Open catalog",
+                tint = SecondaryColor,
+                modifier = Modifier.size(16.dp)
             )
         }
     }
@@ -497,90 +753,6 @@ private fun SurpriseResultBanner(
                 Text("Open", color = TextColor, fontWeight = FontWeight.Bold)
             }
         }
-    }
-}
-
-@Composable
-private fun ToolCardItem(
-    tool: Tool,
-    onClick: () -> Unit
-) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .clickable { onClick() },
-        color = Color(0xFFEFE0C2),
-        shape = RoundedCornerShape(18.dp),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(52.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(SecondaryColor),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = getToolIcon(tool.id),
-                    contentDescription = tool.name,
-                    tint = TextColor,
-                    modifier = Modifier.size(26.dp),
-                )
-            }
-
-            Spacer(modifier = Modifier.width(14.dp))
-
-            Column(
-                modifier = Modifier.weight(1f),
-            ) {
-                Text(
-                    text = tool.name,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    color = TextColor,
-                )
-
-                Spacer(modifier = Modifier.height(2.dp))
-
-                Text(
-                    text = tool.description,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = TextColor.copy(alpha = 0.7f),
-                    fontSize = 13.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            Icon(
-                imageVector = Icons.Default.ChevronRight,
-                contentDescription = "Open",
-                tint = TextColor.copy(alpha = 0.6f),
-                modifier = Modifier.size(22.dp),
-            )
-        }
-    }
-}
-
-private fun getToolIcon(toolId: String): ImageVector {
-    return when (toolId) {
-        "blow_it_out" -> Icons.Default.Whatshot
-        "photo_of_the_day" -> Icons.Default.CameraAlt
-        "custom_breathing" -> Icons.Default.Air
-        "achievement_jar" -> Icons.Default.EmojiEvents
-        "scream_tank" -> Icons.Default.Mic
-        "body_mapping" -> Icons.Default.AccessibilityNew
-        "emotion_detective" -> Icons.Default.Psychology
-        else -> Icons.Default.AutoAwesome
     }
 }
 

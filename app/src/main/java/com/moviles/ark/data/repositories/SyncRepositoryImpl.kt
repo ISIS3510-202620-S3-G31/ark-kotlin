@@ -8,10 +8,14 @@ import com.moviles.ark.data.local.daos.FeedbackDao
 import com.moviles.ark.data.local.daos.PhotoEntryDao
 import com.moviles.ark.data.local.daos.ToolRecordDao
 import com.moviles.ark.data.remote.CrashlyticsHelper
+import com.moviles.ark.data.remote.dtos.toDto
 import com.moviles.ark.domain.repositories.SyncRepository
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
 
 //implementacion de resincronizacion de datos offline hacia firebase (#33)
+//cada fila de room se pasa a su dto antes de subirla (#163): firestore recibe siempre los mismos campos y tipos
 class SyncRepositoryImpl(
     private val auth: FirebaseAuth,
     private val firestore: FirebaseFirestore,
@@ -21,7 +25,12 @@ class SyncRepositoryImpl(
     private val feedbackDao: FeedbackDao
 ) : SyncRepository {
 
-    override suspend fun syncPendingData(): Result<Int> = runCatching {
+    //una sola subida a la vez: el check-in pide subida al guardarse y el SyncManager al volver la red (#143)
+    private val syncMutex = Mutex()
+
+    override suspend fun syncPendingData(): Result<Int> = syncMutex.withLock { syncAllPending() }
+
+    private suspend fun syncAllPending(): Result<Int> = runCatching {
         val currentUserId = auth.currentUser?.uid ?: "anonymous"
         var syncedCount = 0
 
@@ -32,21 +41,10 @@ class SyncRepositoryImpl(
                 val successfulInteractionIds = mutableListOf<Long>()
                 for (interaction in unsyncedInteractions) {
                     try {
-                        val dataMap = hashMapOf(
-                            "userId" to currentUserId,
-                            "toolId" to interaction.toolId,
-                            "timestamp" to interaction.timestamp,
-                            "duration" to interaction.duration,
-                            "interactionType" to interaction.interactionType,
-                            "intensity" to interaction.intensity,
-                            "complete" to interaction.complete,
-                            "value" to interaction.value,
-                            "description" to interaction.description
-                        )
                         firestore.collection("users")
                             .document(currentUserId)
                             .collection("tool_interactions")
-                            .add(dataMap)
+                            .add(interaction.toDto(currentUserId))
                             .await()
 
                         successfulInteractionIds.add(interaction.id)
@@ -70,20 +68,17 @@ class SyncRepositoryImpl(
         }
 
         // 2. Sincronizar fotos pendientes (isSynced = 0)
+        //solo las del usuario con sesion (#133): las reglas de firestore no dejan escribir en la carpeta de otro;
+        //las de otra cuenta esperan a que esa cuenta vuelva a entrar
         try {
-            val unsyncedPhotos = photoEntryDao.getUnsyncedPhotos()
+            val sessionUserId = auth.currentUser?.uid
+            val unsyncedPhotos = if (sessionUserId != null) photoEntryDao.getUnsyncedPhotos(sessionUserId) else emptyList()
             for (photo in unsyncedPhotos) {
                 try {
-                    val photoMap = hashMapOf(
-                        "userId" to currentUserId,
-                        "caption" to photo.caption,
-                        "takenAt" to photo.takenAt,
-                        "localFilePath" to photo.localFilePath
-                    )
                     val docRef = firestore.collection("users")
-                        .document(currentUserId)
+                        .document(photo.userId)
                         .collection("photos")
-                        .add(photoMap)
+                        .add(photo.toDto(currentUserId))
                         .await()
 
                     photoEntryDao.markAsSynced(photo.id, remoteUrl = docRef.id)
@@ -104,30 +99,17 @@ class SyncRepositoryImpl(
 
         // 3. Sincronizar check-ins de animo pendientes (isSynced = 0)
         try {
-            val unsyncedCheckIns = emotionCheckInDao.getUnsyncedCheckIns()
+            val unsyncedCheckIns = emotionCheckInDao.getUnsyncedCheckIns(currentUserId)
             if (unsyncedCheckIns.isNotEmpty()) {
                 val successfulCheckInIds = mutableListOf<Long>()
                 for (checkIn in unsyncedCheckIns) {
                     try {
-                        val emotionsData = checkIn.emotions.map { emotionName ->
-                            mapOf(
-                                "name" to emotionName,
-                                "intensity" to checkIn.intensity
-                            )
-                        }
-                        val checkInMap = hashMapOf(
-                            "userId" to currentUserId,
-                            "moodName" to checkIn.moodName,
-                            "timestamp" to checkIn.timestamp,
-                            "latitude" to checkIn.latitude,
-                            "longitude" to checkIn.longitude,
-                            "emotions" to emotionsData,
-                            "note" to checkIn.note
-                        )
+                        //documento con el remoteId de la fila: si se sube dos veces queda uno solo (#143)
                         firestore.collection("users")
                             .document(currentUserId)
                             .collection("mood_checkins")
-                            .add(checkInMap)
+                            .document(checkIn.remoteId)
+                            .set(checkIn.toDto(currentUserId))
                             .await()
 
                         successfulCheckInIds.add(checkIn.id)
@@ -157,18 +139,10 @@ class SyncRepositoryImpl(
                 val successfulFeedbackIds = mutableListOf<Long>()
                 for (feedback in unsyncedFeedback) {
                     try {
-                        val feedbackMap = hashMapOf(
-                            "userId" to currentUserId,
-                            "toolId" to feedback.toolId,
-                            "rating" to feedback.rating,
-                            "comment" to feedback.comment,
-                            "createdAt" to feedback.createdAt,
-                            "interactionId" to feedback.interactionId
-                        )
                         firestore.collection("users")
                             .document(currentUserId)
                             .collection("tool_feedback")
-                            .add(feedbackMap)
+                            .add(feedback.toDto(currentUserId))
                             .await()
 
                         successfulFeedbackIds.add(feedback.id)

@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
+import com.moviles.ark.data.local.sensors.LocationStatus
 import com.moviles.ark.domain.composite.CompoundMood
 import com.moviles.ark.domain.composite.Emotion
 import com.moviles.ark.domain.composite.MoodComponent
@@ -15,6 +16,7 @@ import com.moviles.ark.domain.composite.SingleEmotion
 import com.moviles.ark.domain.models.CheckInModel
 import com.moviles.ark.domain.repositories.LocationRepository
 import com.moviles.ark.domain.repositories.MoodRepository
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,20 +33,45 @@ class MoodCheckInViewModel(
         loadCurrentLocation()
     }
 
+    private var locationJob: Job? = null
+
+    //init y la pantalla lo llaman al abrir; si ya se esta buscando no se repite
     fun loadCurrentLocation() {
-        if (locationRepository != null) {
-            viewModelScope.launch {
-                val result = locationRepository.getCurrentLocation()
-                if (result != null) {
-                    privateUiState.value = privateUiState.value.copy(
-                        latitude = result.latitude,
-                        longitude = result.longitude,
-                        cityName = result.cityName
-                    )
-                    Log.d("MoodCheckIn", "GPS loaded: lat=${result.latitude}, lon=${result.longitude}, city=${result.cityName}")
-                }
+        val repository = locationRepository ?: return
+        if (locationJob?.isActive == true) return
+        //se borran las coordenadas anteriores mientras se busca: nunca se guarda una ubicacion vieja (#144)
+        privateUiState.value = privateUiState.value.copy(
+            latitude = null,
+            longitude = null,
+            cityName = null,
+            locationStatus = null
+        )
+        locationJob = viewModelScope.launch {
+            //el repositorio lee el gps en Dispatchers.IO con tiempo maximo y no lanza excepciones (#144)
+            val result = repository.getCurrentLocation()
+            privateUiState.value = privateUiState.value.copy(
+                latitude = result.latitude,
+                longitude = result.longitude,
+                locationStatus = result.status,
+                //con el gps apagado o sin permiso se avisa con el dialogo; el check-in se guarda sin coordenadas (#112)
+                showLocationDisabledDialog = result.status == LocationStatus.DISABLED
+            )
+            Log.d("MoodCheckIn", "GPS loaded: status=${result.status}, lat=${result.latitude}, lon=${result.longitude}")
+            val latitude = result.latitude ?: return@launch
+            val longitude = result.longitude ?: return@launch
+            //la ciudad llega despues y solo si hay red; mientras tanto el chip muestra las coordenadas
+            val cityName = repository.getCityName(latitude, longitude) ?: return@launch
+            val current = privateUiState.value
+            if (current.latitude == latitude && current.longitude == longitude) {
+                privateUiState.value = current.copy(cityName = cityName)
             }
         }
+    }
+
+    fun dismissLocationWarningDialog() {
+        privateUiState.value = privateUiState.value.copy(
+            showLocationDisabledDialog = false
+        )
     }
 
     fun onEmotionToggle(emotion: Emotion) {
@@ -86,7 +113,8 @@ class MoodCheckInViewModel(
         privateUiState.value = privateUiState.value.copy(
             latitude = latitude,
             longitude = longitude,
-            cityName = cityName
+            cityName = cityName,
+            locationStatus = LocationStatus.CAPTURED
         )
     }
 
@@ -125,7 +153,7 @@ class MoodCheckInViewModel(
                     privateUiState.value = state.copy(isLoading = false, isSaved = true, errorMessage = null)
                     onSavedCallback()
                 } else {
-                    val errorMsg = result.exceptionOrNull()?.localizedMessage ?: "Could not sync check-in"
+                    val errorMsg = result.exceptionOrNull()?.localizedMessage ?: "Could not save check-in"
                     Log.e("MoodCheckIn", "Save error: $errorMsg")
                     privateUiState.value = state.copy(isLoading = false, errorMessage = errorMsg)
                 }

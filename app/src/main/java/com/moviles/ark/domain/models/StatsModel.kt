@@ -11,4 +11,9 @@ data class StatsModel(
     val toolUsagePercentages: Map<String, Float>,
     val currentInsight: InsightModel? = null,
     val allInsights: List<InsightModel> = emptyList()
-)
+) {
+    //una fuente nueva reemplaza a lo que se ve solo si no tiene menos check-ins, asi la pantalla no salta hacia atras (#135)
+    fun canReplace(shown: StatsModel?): Boolean {
+        return shown == null || totalCheckIns >= shown.totalCheckIns
+    }
+}

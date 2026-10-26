@@ -4,10 +4,12 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -15,6 +17,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.moviles.ark.ArkApplication
+import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.domain.repositories.AuthRepository
 import com.moviles.ark.ui.components.BottomNavItem
 import com.moviles.ark.ui.components.BottomNavigationBar
@@ -27,7 +30,9 @@ import com.moviles.ark.ui.screens.PhotoOfTheDayRoute
 import com.moviles.ark.ui.screens.PostToolFeedbackRoute
 import com.moviles.ark.ui.screens.ProfileRoute
 import com.moviles.ark.ui.screens.RegisterScreen
+import com.moviles.ark.ui.screens.ScreamTankRoute
 import com.moviles.ark.ui.screens.StatsScreen
+import com.moviles.ark.ui.screens.ToolsCatalogRoute
 import com.moviles.ark.ui.theme.BackgroundColor
 
 @Composable
@@ -105,16 +110,45 @@ fun AppNavigation(
                         when (toolId) {
                             "photo_of_the_day" -> navController.navigate("photo_of_the_day_screen")
                             "custom_breathing" -> navController.navigate("custom_breathing_screen")
+                            "tools_catalog_screen" -> navController.navigate("tools_catalog_screen")
+                        }
+                    }
+                )
+            }
+            composable("tools_catalog_screen") { backStackEntry ->
+                //categoria que deja la tarjeta de insight de stats (#135); se aplica una vez y vuelve a null (#190)
+                val catalogViewModel: com.moviles.ark.ui.viewmodels.HomeViewModel =
+                    viewModel(factory = com.moviles.ark.ui.viewmodels.HomeViewModel.Factory)
+                val pendingCategoryId by backStackEntry.savedStateHandle
+                    .getStateFlow<String?>(TOOLS_CATEGORY_KEY, null)
+                    .collectAsStateWithLifecycle()
+                LaunchedEffect(pendingCategoryId) {
+                    pendingCategoryId?.let { id ->
+                        catalogViewModel.onCategorySelect(ToolCategory.fromId(id))
+                        backStackEntry.savedStateHandle[TOOLS_CATEGORY_KEY] = null
+                    }
+                }
+                ToolsCatalogRoute(
+                    viewModel = catalogViewModel,
+                    onNavigateToTool = { toolId ->
+                        when (toolId) {
+                            "photo_of_the_day" -> navController.navigate("photo_of_the_day_screen")
+                            "custom_breathing" -> navController.navigate("custom_breathing_screen")
+                            "tools_catalog_screen" -> navController.navigate("tools_catalog_screen")
                         }
                     }
                 )
             }
             composable("stats_screen") {
                 StatsScreen(
-                    onNavigateToHome = {
-                        navController.navigate("home_screen") {
+                    //la tarjeta de insight abre el catalogo con la categoria ya filtrada (#135, #190)
+                    onNavigateToToolsCatalog = { category ->
+                        navController.navigate("tools_catalog_screen") {
                             popUpTo("home_screen") { saveState = true }
                             launchSingleTop = true
+                        }
+                        if (category != null) {
+                            navController.currentBackStackEntry?.savedStateHandle?.set(TOOLS_CATEGORY_KEY, category.id)
                         }
                     }
                 )
@@ -150,6 +184,18 @@ fun AppNavigation(
                     }
                 })
             }
+            //herramienta scream tank (#157); si el microfono alcanzo a escuchar navega a feedback (#21)
+            composable("scream_tank_screen") {
+                ScreamTankRoute(onBack = { wasCompleted ->
+                    if (wasCompleted) {
+                        navController.navigate("post_tool_feedback/scream_tank") {
+                            popUpTo("scream_tank_screen") { inclusive = true }
+                        }
+                    } else {
+                        navController.popBackStack("home_screen", inclusive = false)
+                    }
+                })
+            }
             composable("checkin_screen") {
                 MoodCheckInScreen(
                     onNavigateBack = { navController.popBackStack() },
@@ -175,3 +221,6 @@ fun AppNavigation(
         }
     }
 }
+
+//clave del savedStateHandle con la que stats le pasa al catalogo la categoria a filtrar (#135)
+private const val TOOLS_CATEGORY_KEY = "tools_category"
