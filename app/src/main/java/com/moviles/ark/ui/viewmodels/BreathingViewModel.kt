@@ -1,5 +1,7 @@
 package com.moviles.ark.ui.viewmodels
 
+import android.os.SystemClock
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
@@ -41,6 +43,8 @@ class BreathingViewModel(
     private var phaseElapsedMs: Long = 0L
     //tiempo que el temporizador ha corrido en esta sesion, sin contar las pausas (#82)
     private var sessionRunningMs: Long = 0L
+    private var phaseStartRealtime: Long = 0L
+    private var sessionStartRealtime: Long = 0L
 
     init {
         loadAmbientTracks()
@@ -156,6 +160,10 @@ class BreathingViewModel(
             _uiState.value.phase
         }
 
+        val now = SystemClock.elapsedRealtime()
+        phaseStartRealtime = now - phaseElapsedMs
+        sessionStartRealtime = now - sessionRunningMs
+
         _uiState.value = _uiState.value.copy(
             isRunning = true,
             phase = currentPhase
@@ -167,6 +175,11 @@ class BreathingViewModel(
     fun pause() {
         timerJob?.cancel()
         timerJob = null
+        if (_uiState.value.isRunning) {
+            val now = SystemClock.elapsedRealtime()
+            phaseElapsedMs = (now - phaseStartRealtime).coerceAtLeast(0L)
+            sessionRunningMs = (now - sessionStartRealtime).coerceAtLeast(0L)
+        }
         _uiState.value = _uiState.value.copy(isRunning = false)
     }
 
@@ -228,15 +241,17 @@ class BreathingViewModel(
         updateDurations(inhale, hold, exhale, 0)
     }
 
+    //bucle del temporizador de respiracion en hilo principal midiendo tiempo real (elapsedRealtime) sin acumulacion de latencia
     private fun startTimerLoop() {
         timerJob?.cancel()
-        timerJob = viewModelScope.launch(Dispatchers.IO) {
-            val tickIntervalMs = 50L
+        timerJob = viewModelScope.launch(Dispatchers.Main.immediate) {
+            val tickIntervalMs = 16L
 
             while (_uiState.value.isRunning) {
                 delay(tickIntervalMs)
-                phaseElapsedMs += tickIntervalMs
-                sessionRunningMs += tickIntervalMs
+                val now = SystemClock.elapsedRealtime()
+                phaseElapsedMs = (now - phaseStartRealtime).coerceAtLeast(0L)
+                sessionRunningMs = (now - sessionStartRealtime).coerceAtLeast(0L)
 
                 val currentPhase = _uiState.value.phase
                 val targetDurationSeconds = getPhaseDuration(currentPhase)
@@ -247,7 +262,8 @@ class BreathingViewModel(
                 val secondsRemaining = ((remainingMs + 999L) / 1000L).toInt()
 
                 if (phaseElapsedMs >= targetDurationMs) {
-                    advanceToNextPhase()
+                    val overshoot = phaseElapsedMs - targetDurationMs
+                    advanceToNextPhase(now - overshoot)
                 } else {
                     _uiState.value = _uiState.value.copy(
                         phaseProgress = progress,
@@ -258,8 +274,9 @@ class BreathingViewModel(
         }
     }
 
-    private fun advanceToNextPhase() {
-        phaseElapsedMs = 0L
+    private fun advanceToNextPhase(phaseStartTime: Long = SystemClock.elapsedRealtime()) {
+        phaseStartRealtime = phaseStartTime
+        phaseElapsedMs = (SystemClock.elapsedRealtime() - phaseStartRealtime).coerceAtLeast(0L)
         val currentPhase = _uiState.value.phase
 
         val state = _uiState.value
