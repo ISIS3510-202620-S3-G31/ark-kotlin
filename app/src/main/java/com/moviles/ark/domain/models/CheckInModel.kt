@@ -15,9 +15,15 @@ data class CheckInModel(
         return mood.getEmotions().isNotEmpty()
     }
     fun isValidNote(): Boolean {
-        return note.length <= 280
+        return note.length <= MAX_NOTE_LENGTH
     }
     fun hasLocation(): Boolean {
         return latitude != null && longitude != null
+    }
+
+    companion object {
+        //estandar de 280 caracteres para micro-journaling: evita fatiga cognitiva en el usuario
+        //y previene desbordamientos de payload en los documentos de room y firestore
+        const val MAX_NOTE_LENGTH = 280
     }
 }

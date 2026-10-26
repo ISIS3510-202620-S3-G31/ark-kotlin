@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.moviles.ark.domain.models.CheckInModel
 import com.moviles.ark.ui.components.MoodSelectorComponent
 import com.moviles.ark.ui.theme.AppTheme
 import com.moviles.ark.ui.theme.FigtreeFontFamily
@@ -193,20 +194,38 @@ fun MoodCheckInScreen(
                 onIntensityChange = { viewModel.onIntensityChange(it) }
             )
             Spacer(modifier = Modifier.height(22.dp))
+            //caja de nota con paleta calida, sombra difusa y borde adaptativo de 20dp
+            //calcula los caracteres restantes con coerceAtLeast para evitar negativos si ingresan emojis o caracteres multibyte
+            val remainingChars = (CheckInModel.MAX_NOTE_LENGTH - uiState.value.note.length).coerceAtLeast(0)
+            val isNearLimit = remainingChars <= 40
+            val isAtLimit = remainingChars == 0
+            //retroalimentacion visual progresiva: naranja primario cuando faltan 40 caracteres y rojo suave al agotarse
+            val counterColor = when {
+                isAtLimit -> Color(0xFFD32F2F)
+                isNearLimit -> PrimaryColor
+                else -> TextColor.copy(alpha = 0.50f)
+            }
+            //borde con acento de color dinamico para guiar visualmente al usuario antes de bloquear el tipeo
+            val noteBorderColor = when {
+                isAtLimit -> Color(0xFFD32F2F).copy(alpha = 0.7f)
+                isNearLimit -> PrimaryColor.copy(alpha = 0.6f)
+                else -> Color(0xFFEADBCE)
+            }
+
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .shadow(1.dp, RoundedCornerShape(18.dp))
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(Color.White.copy(alpha = 0.82f))
-                    .border(1.dp, Color(0xFFEADBCE), RoundedCornerShape(18.dp))
+                    .shadow(2.dp, RoundedCornerShape(20.dp), ambientColor = Color(0x12000000))
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Color.White.copy(alpha = 0.90f))
+                    .border(1.2.dp, noteBorderColor, RoundedCornerShape(20.dp))
                     .padding(16.dp)
             ) {
                 Column {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(72.dp)
+                            .height(76.dp)
                     ) {
                         if (uiState.value.note.isEmpty()) {
                             Text(
@@ -215,9 +234,14 @@ fun MoodCheckInScreen(
                                 color = TextColor.copy(alpha = 0.45f)
                             )
                         }
+                        //filtro en composable para descartar eventos del teclado virtual cuando se alcanza el tope del modelo
                         BasicTextField(
                             value = uiState.value.note,
-                            onValueChange = { viewModel.onNoteChange(it) },
+                            onValueChange = { input ->
+                                if (input.length <= CheckInModel.MAX_NOTE_LENGTH) {
+                                    viewModel.onNoteChange(input)
+                                }
+                            },
                             textStyle = TextStyle(
                                 color = TextColor,
                                 fontSize = 14.sp
@@ -226,15 +250,19 @@ fun MoodCheckInScreen(
                             modifier = Modifier.fillMaxSize()
                         )
                     }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    //contador regresivo reactivo que indica al usuario con precision su margen disponible
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "${uiState.value.note.length} / 280",
+                            text = if (isAtLimit) "0 remaining (limit reached)" else "$remainingChars remaining",
                             style = MaterialTheme.typography.labelSmall,
-                            color = TextColor.copy(alpha = 0.45f),
-                            fontSize = 10.5.sp
+                            color = counterColor,
+                            fontWeight = if (isNearLimit) FontWeight.Bold else FontWeight.Normal,
+                            fontSize = 11.sp
                         )
                     }
                 }
