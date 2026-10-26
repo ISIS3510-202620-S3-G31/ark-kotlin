@@ -1,10 +1,15 @@
 package com.moviles.ark.data.repositories
 
+import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import com.google.firebase.auth.FirebaseAuth
 import com.moviles.ark.data.local.daos.PhotoEntryDao
 import com.moviles.ark.data.local.entities.PhotoEntryEntity
+import com.moviles.ark.data.remote.CrashlyticsHelper
 import com.moviles.ark.domain.models.PhotoEntryModel
 import com.moviles.ark.domain.repositories.PhotoEntryRepository
 import kotlinx.coroutines.Dispatchers
@@ -19,6 +24,7 @@ import java.io.InputStream
 import java.util.UUID
 
 //fotos aisladas por usuario (#133): las filas llevan el uid y los jpg van en filesDir/photos/{uid}/
+//almacenamiento dual (#146): guarda en filesDir/photos/ para acceso privado offline y exporta a la galeria publica via MediaStore
 class PhotoEntryRepositoryImpl(
     private val context: Context,
     private val auth: FirebaseAuth,
@@ -77,6 +83,9 @@ class PhotoEntryRepositoryImpl(
 
             val insertedId = photoEntryDao.insertPhoto(entity)
 
+            // Copia una exportacion a la galeria publica usando Android MediaStore API en Dispatchers.IO (#146)
+            exportToPublicGallery(File(finalPath), takenAt)
+
             PhotoEntryModel(
                 id = insertedId,
                 localFilePath = finalPath,
@@ -84,6 +93,51 @@ class PhotoEntryRepositoryImpl(
                 takenAt = takenAt
             )
         }
+    }
+
+    //exporta una copia a la galeria publica del sistema usando MediaStore API (#146)
+    private suspend fun exportToPublicGallery(photoFile: File, takenAt: Long): Uri? = withContext(Dispatchers.IO) {
+        runCatching {
+            val displayName = "Ark_Photo_${takenAt}.jpg"
+            val mimeType = "image/jpeg"
+            val contentValues = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
+                put(MediaStore.Images.Media.MIME_TYPE, mimeType)
+                put(MediaStore.Images.Media.DATE_ADDED, takenAt / 1000)
+                put(MediaStore.Images.Media.DATE_TAKEN, takenAt)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/Ark")
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                }
+            }
+
+            val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            } else {
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+            }
+
+            val uri = context.contentResolver.insert(collection, contentValues)
+            if (uri != null) {
+                context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                    FileInputStream(photoFile).use { inputStream ->
+                        inputStream.copyTo(outputStream)
+                    }
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    contentValues.clear()
+                    contentValues.put(MediaStore.Images.Media.IS_PENDING, 0)
+                    context.contentResolver.update(uri, contentValues, null, null)
+                }
+            }
+            uri
+        }.onFailure { error ->
+            CrashlyticsHelper.logNonFatal(
+                componentName = "PhotoEntryRepository",
+                action = "exportToPublicGallery",
+                throwable = error
+            )
+        }.getOrNull()
     }
 
     companion object {

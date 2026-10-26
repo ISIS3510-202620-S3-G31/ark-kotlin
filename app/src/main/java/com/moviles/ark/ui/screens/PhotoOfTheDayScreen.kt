@@ -43,11 +43,11 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LocalTextStyle
+
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
+
+
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -278,7 +278,7 @@ private fun EmptyPhotoSection(
     }
 }
 
-//foto recien tomada: vista previa, nota opcional, repetir o guardar
+//foto recien tomada: vista previa, guardar o repetir sin caption (#146)
 @Composable
 private fun PendingPhotoSection(
     uri: String,
@@ -290,53 +290,27 @@ private fun PendingPhotoSection(
 ) {
     PhotoThumbnail(path = uri, modifier = Modifier.fillMaxWidth().aspectRatio(3f / 4f))
     Spacer(modifier = Modifier.height(16.dp))
-    OutlinedTextField(
-        value = caption,
-        onValueChange = onCaptionChange,
-        enabled = !isSaving,
-        modifier = Modifier.fillMaxWidth(),
-        maxLines = 3,
-        textStyle = MaterialTheme.typography.bodyLarge.copy(color = TextColor),
-        //se cambia solo la fuente: material anima el tamano de la etiqueta y usaria su letra por defecto
-        label = { Text("Add a note (optional)", style = LocalTextStyle.current.copy(fontFamily = FigtreeFontFamily)) },
-        supportingText = {
-            Text(
-                "${caption.length} / ${PhotoEntryModel.MAX_CAPTION_LENGTH}",
-                style = LocalTextStyle.current.copy(fontFamily = FigtreeFontFamily),
-                modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.End
-            )
-        },
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = SecondaryColor,
-            unfocusedBorderColor = TextColor.copy(alpha = 0.3f),
-            focusedLabelColor = TextColor,
-            unfocusedLabelColor = TextColor.copy(alpha = 0.7f),
-            cursorColor = TextColor
-        )
-    )
-    Spacer(modifier = Modifier.height(16.dp))
-    Row(modifier = Modifier.fillMaxWidth()) {
-        //repetir es secundario: borde secondary y texto oscuro para que se lea bien
-        OutlinedButton(
-            onClick = onRetakeClick,
-            enabled = !isSaving,
-            modifier = Modifier.weight(1f).height(50.dp),
-            border = BorderStroke(1.dp, SecondaryColor),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = TextColor)
-        ) {
-            Text("Retake", style = MaterialTheme.typography.labelLarge)
+    if (isSaving) {
+        Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = SecondaryColor)
         }
-        Spacer(modifier = Modifier.width(12.dp))
-        //guardar es la accion principal: primary
-        Button(
-            onClick = onSaveClick,
-            enabled = !isSaving,
-            modifier = Modifier.weight(1f).height(50.dp)
-        ) {
-            if (isSaving) {
-                CircularProgressIndicator(modifier = Modifier.size(22.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
-            } else {
+    } else {
+        Row(modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(
+                onClick = onRetakeClick,
+                enabled = !isSaving,
+                modifier = Modifier.weight(1f).height(50.dp),
+                border = BorderStroke(1.dp, SecondaryColor),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = TextColor)
+            ) {
+                Text("Retake", style = MaterialTheme.typography.labelLarge)
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Button(
+                onClick = onSaveClick,
+                enabled = !isSaving,
+                modifier = Modifier.weight(1f).height(50.dp)
+            ) {
                 Text("Save", style = MaterialTheme.typography.labelLarge)
             }
         }
@@ -469,7 +443,7 @@ fun PhotoOfTheDayRoute(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
-            val uri = cameraHelper.createTempPictureUri()
+            val uri = cameraHelper.createPictureUri()
             if (uri != null) {
                 currentPhotoUri = uri
                 takePictureLauncher.launch(uri)
@@ -479,7 +453,7 @@ fun PhotoOfTheDayRoute(
 
     val onTakePhoto = {
         if (cameraHelper.hasCameraPermission()) {
-            val uri = cameraHelper.createTempPictureUri()
+            val uri = cameraHelper.createPictureUri()
             if (uri != null) {
                 currentPhotoUri = uri
                 takePictureLauncher.launch(uri)
