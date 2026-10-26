@@ -8,5 +8,7 @@ data class LoginUiState(
     val passwordError: String? = null,
     val isFormValid: Boolean = false,
     val isLoading: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val showNoInternetDialog: Boolean = false,
+    val isAirplaneModeError: Boolean = false
 )

@@ -46,6 +46,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.R
 import com.moviles.ark.domain.models.UserModel
 import com.moviles.ark.domain.repositories.AuthRepository
+import com.moviles.ark.ui.components.AuthNetworkErrorDialog
 import com.moviles.ark.ui.theme.AppTheme
 import com.moviles.ark.ui.theme.SecondaryColor
 import com.moviles.ark.ui.viewmodels.RegisterViewModel
@@ -85,6 +86,13 @@ fun RegisterScreen(
             defaultYear,
             defaultMonth,
             defaultDay
+        )
+    }
+
+    if (uiState.showNoInternetDialog) {
+        AuthNetworkErrorDialog(
+            isAirplaneMode = uiState.isAirplaneModeError,
+            onDismiss = viewModel::dismissNoInternetDialog
         )
     }
 

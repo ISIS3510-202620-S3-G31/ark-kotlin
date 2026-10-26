@@ -9,6 +9,7 @@ import com.google.firebase.FirebaseNetworkException
 import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
 import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.moviles.ark.ArkApplication
+import com.moviles.ark.domain.exceptions.NetworkUnavailableException
 import com.moviles.ark.domain.models.UserModel
 import com.moviles.ark.domain.repositories.AuthRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -102,6 +103,10 @@ class RegisterViewModel(private val authRepository: AuthRepository) : ViewModel(
         return user.isValidName() && user.isValidBirthDate() && user.isValidEmail() && user.isValidPassword()
     }
 
+    fun dismissNoInternetDialog() {
+        privateUiState.value = privateUiState.value.copy(showNoInternetDialog = false)
+    }
+
     //hacer el registro cuando el usuario presiona el boton en la screen
     //las reglas de negocio pertenecen al modelo UserModel
     fun register(onSuccess: () -> Unit) {
@@ -147,8 +152,8 @@ class RegisterViewModel(private val authRepository: AuthRepository) : ViewModel(
             return
         }
 
-        //activar spinner de carga
-        privateUiState.value = state.copy(isLoading = true, errorMessage = null)
+        //activamos la carga para mostrar el spinner en la pantalla
+        privateUiState.value = state.copy(isLoading = true, errorMessage = null, showNoInternetDialog = false)
 
         viewModelScope.launch {
             val result = authRepository.registerUser(userModel)
@@ -161,13 +166,26 @@ class RegisterViewModel(private val authRepository: AuthRepository) : ViewModel(
                 onSuccess()
             }
             result.onFailure { error ->
-                val message = when (error) {
-                    is FirebaseAuthUserCollisionException -> "This email is already registered"
-                    is FirebaseAuthInvalidCredentialsException -> "Please enter a valid email address"
-                    is FirebaseNetworkException -> "No internet connection, try again"
-                    else -> "Could not create the account, try again"
+                val isNetworkError = error is NetworkUnavailableException ||
+                        error is FirebaseNetworkException ||
+                        (error.cause != null && (error.cause is NetworkUnavailableException || error.cause is FirebaseNetworkException))
+
+                if (isNetworkError) {
+                    val isAirplane = (error as? NetworkUnavailableException)?.isAirplaneMode == true ||
+                            (error.cause as? NetworkUnavailableException)?.isAirplaneMode == true
+                    privateUiState.value = privateUiState.value.copy(
+                        showNoInternetDialog = true,
+                        isAirplaneModeError = isAirplane,
+                        errorMessage = null
+                    )
+                } else {
+                    val message = when (error) {
+                        is FirebaseAuthUserCollisionException -> "This email is already registered"
+                        is FirebaseAuthInvalidCredentialsException -> "Please enter a valid email address"
+                        else -> "Could not create the account, try again"
+                    }
+                    privateUiState.value = privateUiState.value.copy(errorMessage = message)
                 }
-                privateUiState.value = privateUiState.value.copy(errorMessage = message)
             }
         }
     }

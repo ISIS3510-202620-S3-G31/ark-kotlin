@@ -116,6 +116,7 @@ fun AppNavigation(
                         when (toolId) {
                             "photo_of_the_day" -> navController.navigate("photo_of_the_day_screen")
                             "custom_breathing" -> navController.navigate("custom_breathing_screen")
+                            "scream_tank" -> navController.navigate("scream_tank_screen")
                             "tools_catalog_screen" -> navController.navigate("tools_catalog_screen")
                         }
                     }
@@ -140,6 +141,7 @@ fun AppNavigation(
                         when (toolId) {
                             "photo_of_the_day" -> navController.navigate("photo_of_the_day_screen")
                             "custom_breathing" -> navController.navigate("custom_breathing_screen")
+                            "scream_tank" -> navController.navigate("scream_tank_screen")
                             "tools_catalog_screen" -> navController.navigate("tools_catalog_screen")
                         }
                     }

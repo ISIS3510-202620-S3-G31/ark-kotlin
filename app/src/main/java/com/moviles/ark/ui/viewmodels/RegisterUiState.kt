@@ -15,5 +15,7 @@ data class RegisterUiState(
     val isFormValid: Boolean = false,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
-    val successMessage: String? = null
+    val successMessage: String? = null,
+    val showNoInternetDialog: Boolean = false,
+    val isAirplaneModeError: Boolean = false
 )

@@ -19,7 +19,8 @@ data class PhotoEntryDto(
 )
 
 //de fila de room a dto, para subir las fotos guardadas sin conexion (#33)
-fun PhotoEntryEntity.toDto(userId: String): PhotoEntryDto {
+//el userId sale de la fila (#133): la foto siempre va a la carpeta de quien la tomo
+fun PhotoEntryEntity.toDto(): PhotoEntryDto {
     return PhotoEntryDto(
         userId = userId,
         caption = caption,

@@ -7,6 +7,7 @@ import com.moviles.ark.data.local.daos.ToolDao
 import com.moviles.ark.data.local.entities.toDomain
 import com.moviles.ark.data.remote.CrashlyticsHelper
 import com.moviles.ark.data.remote.dtos.ToolDto
+import com.moviles.ark.data.remote.dtos.toDto
 import com.moviles.ark.data.remote.dtos.toEntity
 import com.moviles.ark.domain.models.Tool
 import com.moviles.ark.domain.repositories.ToolRepository
@@ -50,10 +51,7 @@ class ToolRepositoryImpl(
                 document.toObject(ToolDto::class.java)?.let { dto -> if (dto.id.isBlank()) dto.copy(id = document.id) else dto }
             }
             //solo se reemplaza el catalogo si llego algo: una coleccion vacia no borra el del telefono
-            if (remoteTools.isNotEmpty()) {
-                toolDao.replaceTools(remoteTools.map { it.toEntity() })
-                catalogFileStore.writeCatalog(remoteTools)
-            }
+            if (remoteTools.isNotEmpty()) storeCatalog(remoteTools)
         }.onFailure { error ->
             CrashlyticsHelper.logNonFatal(
                 componentName = "ToolRepository",
@@ -61,6 +59,26 @@ class ToolRepositoryImpl(
                 throwable = error
             )
         }
+    }
+
+    override suspend fun saveCatalog(tools: List<Tool>): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            if (tools.isEmpty()) error("The tools catalog is empty")
+            storeCatalog(tools.map { it.toDto() })
+        }.onFailure { error ->
+            CrashlyticsHelper.logNonFatal(
+                componentName = "ToolRepository",
+                action = "saveCatalog",
+                throwable = error,
+                extraKeys = mapOf("tools_count" to tools.size)
+            )
+        }
+    }
+
+    //room para la pantalla y filesDir/tools.json para no perderlo sin internet
+    private suspend fun storeCatalog(tools: List<ToolDto>) {
+        toolDao.replaceTools(tools.map { it.toEntity() })
+        catalogFileStore.writeCatalog(tools)
     }
 
     //room se llena desde filesDir/tools.json (o assets/tools.json si el archivo falta o esta danado) (#145)
