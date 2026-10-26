@@ -12,25 +12,17 @@ import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
-//adapter para el servicio de musica de jamendo con cache en almacenamiento persistente interno (filesDir/audio_cache)
-//evita que android purgue los audios descargados bajo presion de memoria y permite listar canciones en disco sin conexion
+//adapter para el servicio de musica de jamendo con cache temporal en disco (cacheDir/audio_cache)
+//evita retener audios en ram para prevenir oom y permite reproducir y listar canciones en cache sin conexion
 class JamendoServiceAdapterImpl(
     private val context: Context,
     private val apiClient: JamendoApiClient = JamendoApiClient(),
     private val bundledAudioUri: String = ""
 ) : MusicServiceAdapter {
 
-    //directorio interno persistente; a diferencia de cacheDir, filesDir no es purgado arbitrariamente por el sistema operativo
-    private val audioCacheDir = File(context.filesDir, "audio_cache").apply {
+    //cache en disco; cacheDir es el estandar oficial de android para audios descargados bajo demanda con politica lru
+    private val audioCacheDir = File(context.cacheDir, "audio_cache").apply {
         if (!exists()) mkdirs()
-        //migra archivos antiguos de cacheDir si existieran para no perder descargas previas
-        val legacyCache = File(context.cacheDir, "audio_cache")
-        if (legacyCache.exists()) {
-            legacyCache.listFiles()?.forEach { file ->
-                val target = File(this, file.name)
-                if (!target.exists()) file.renameTo(target)
-            }
-        }
     }
 
     override suspend fun getAmbientTracks(limit: Int): Result<List<AmbientTrackModel>> = withContext(Dispatchers.IO) {
