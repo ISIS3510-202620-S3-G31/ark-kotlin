@@ -7,6 +7,10 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
+import com.moviles.ark.data.remote.CrashlyticsHelper
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import com.moviles.ark.data.local.AvatarPreferences
 import com.moviles.ark.data.repositories.ToolRepositoryImpl
 import com.moviles.ark.domain.adapters.WeatherServiceAdapter
@@ -51,7 +55,8 @@ class HomeViewModel(
     private val weatherServiceAdapter: WeatherServiceAdapter? = null,
     private val locationRepository: LocationRepository? = null,
     private val now: () -> Long = { System.currentTimeMillis() },
-    initialTools: List<Tool> = ToolRepositoryImpl.sampleTools
+    initialTools: List<Tool> = ToolRepositoryImpl.sampleTools,
+    private val defaultDispatcher: CoroutineDispatcher = Dispatchers.Default
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -148,16 +153,50 @@ class HomeViewModel(
         )
     }
 
+    // Seleccion aleatoria de una herramienta activa directamente del catalogo local en Dispatchers.Default (#149)
+    // Always Offline: no requiere conexion a internet. Si ocurre un error al leer la lista, se activa el fallback a Custom Breathing
     fun onSurpriseMe() {
-        val available = if (_uiState.value.filteredTools.isNotEmpty()) {
-            _uiState.value.filteredTools
-        } else {
-            _uiState.value.tools
-        }
+        viewModelScope.launch(defaultDispatcher) {
+            try {
+                // Consultar herramientas activas del catalogo local (offline)
+                val localTools = toolRepository.getTools().first()
+                val available = localTools.ifEmpty { _uiState.value.tools }.ifEmpty { ToolRepositoryImpl.sampleTools }
 
-        if (available.isNotEmpty()) {
-            val randomTool = available.random()
-            _uiState.value = _uiState.value.copy(surpriseTool = randomTool)
+                if (available.isNotEmpty()) {
+                    val randomTool = available.random()
+                    _uiState.update { it.copy(surpriseTool = randomTool) }
+                } else {
+                    launchBreathingFallback()
+                }
+            } catch (e: Throwable) {
+                if (e is CancellationException) throw e
+                CrashlyticsHelper.logNonFatal(
+                    componentName = "HomeViewModel",
+                    action = "onSurpriseMe",
+                    throwable = e
+                )
+                launchBreathingFallback()
+            }
+        }
+    }
+
+    private fun launchBreathingFallback() {
+        val fallbackTool = ToolRepositoryImpl.sampleTools.firstOrNull { it.id == "custom_breathing" }
+            ?: Tool(
+                id = "custom_breathing",
+                name = "Custom breathing",
+                description = "Build the rhythm that fits you.",
+                categoryString = "calm_down",
+                format = "touch",
+                iconName = "ic_tool_custom_breathing"
+            )
+
+        toolLatencyTracker?.start("custom_breathing")
+        _uiState.update {
+            it.copy(
+                surpriseTool = fallbackTool,
+                navigateToToolId = "custom_breathing"
+            )
         }
     }
 
