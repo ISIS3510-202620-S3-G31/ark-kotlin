@@ -12,7 +12,6 @@ import com.moviles.ark.domain.composite.CompoundMood
 import com.moviles.ark.domain.composite.Emotion
 import com.moviles.ark.domain.composite.SingleEmotion
 import com.moviles.ark.domain.models.CheckInModel
-import com.moviles.ark.domain.models.InsightModel
 import com.moviles.ark.domain.models.StatsCalculator
 import com.moviles.ark.domain.models.StatsModel
 import com.moviles.ark.domain.models.ToolInteraction
@@ -28,10 +27,10 @@ import java.util.Locale
 class StatsRepositoryImpl(
     private val auth: FirebaseAuth,
     private val firestore: FirebaseFirestore,
-    //los daos de room se quedan en el repositorio: el viewmodel nunca toca la base directo (#135)
+    //los daos de room se quedan en el repositorio: el viewmodel nunca toca la base directo
     private val emotionCheckInDao: EmotionCheckInDao,
     private val toolRecordDao: ToolRecordDao,
-    //cache en disco de las stats que llegaron de firestore (#147)
+    //cache en disco de las stats que llegaron de firestore
     private val statsDiskCache: StatsDiskCache? = null,
     private val statsCalculator: StatsCalculator = StatsCalculator()
 ) : StatsRepository {
@@ -41,7 +40,7 @@ class StatsRepositoryImpl(
         return statsDiskCache?.read(currentUserId)
     }
 
-    //lee check-ins e interacciones de room en IO y calcula en Default; si la base esta vacia devuelve stats en cero (#135)
+    //lee check-ins e interacciones de room en IO y calcula en Default; si la base esta vacia devuelve stats en cero
     override suspend fun getLocalStats(): Result<StatsModel> = runCatching {
         val (checkInEntities, interactionEntities) = withContext(Dispatchers.IO) {
             emotionCheckInDao.getCheckIns().first() to toolRecordDao.getInteractions().first()
@@ -63,7 +62,7 @@ class StatsRepositoryImpl(
         val currentUserId = auth.currentUser?.uid ?: "anonymous"
         val todayKey = SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date())
 
-        //consulta primero el resumen precomputado directamente del backend en firestore (#158)
+        //consulta primero el resumen precomputado directamente del backend en firestore
         val summaryDoc = try {
             firestore.collection("users")
                 .document(currentUserId)
@@ -99,25 +98,12 @@ class StatsRepositoryImpl(
                 toolPercentages[tool] = (pct as? Number)?.toFloat() ?: 0f
             }
 
-            val rawInsight = summaryDoc.get("currentInsight") as? Map<String, Any>
-            val currentInsight = rawInsight?.let {
-                InsightModel(
-                    title = it["title"] as? String ?: "",
-                    message = it["message"] as? String ?: "",
-                    advice = it["advice"] as? String ?: "",
-                    actionLabel = it["actionLabel"] as? String ?: "Explore Tools",
-                    emotion = topEmotion
-                )
-            }
-
             val precomputedStats = StatsModel(
                 totalCheckIns = totalCheckIns,
                 topEmotion = topEmotion,
                 weeklyIntensities = weeklyIntensities,
                 weeklyEmotions = weeklyEmotions,
                 toolUsagePercentages = toolPercentages,
-                currentInsight = currentInsight,
-                allInsights = if (currentInsight != null) listOf(currentInsight) else emptyList(),
                 lastUpdated = lastUpdated
             )
 
@@ -145,7 +131,7 @@ class StatsRepositoryImpl(
         val toolDocs = toolsSnapshot.documents
         val totalToolEntries = toolDocs.size
 
-        //si el usuario es nuevo y no tiene registros, devuelve modelo vacio para mostrar empty state ilustrado (#158)
+        //si el usuario es nuevo y no tiene registros, devuelve modelo vacio para mostrar empty state ilustrado
         if (totalCheckIns == 0 && totalToolEntries == 0) {
             val emptyStats = StatsModel(
                 totalCheckIns = 0,
@@ -153,8 +139,6 @@ class StatsRepositoryImpl(
                 weeklyIntensities = emptyMap(),
                 weeklyEmotions = emptyMap(),
                 toolUsagePercentages = emptyMap(),
-                currentInsight = null,
-                allInsights = emptyList(),
                 lastUpdated = System.currentTimeMillis()
             )
             statsDiskCache?.write(currentUserId, emptyStats)
@@ -237,13 +221,13 @@ class StatsRepositoryImpl(
         )
         val computedStats = calculated.copy(lastUpdated = System.currentTimeMillis())
 
-        //guarda el resumen en el disco del telefono para pintarlo al instante la proxima vez (#147)
+        //guarda el resumen en el disco del telefono para pintarlo al instante la proxima vez
         statsDiskCache?.write(currentUserId, computedStats)
 
-        //guarda el resumen precomputado e insights en firestore para futuras lecturas directas del backend (#158)
+        //guarda el resumen precomputado e insights en firestore para futuras lecturas directas del backend
         saveUserStatsInternal(currentUserId, computedStats, totalToolEntries, todayKey)
 
-        Log.d("StatsRepository", "Calculated and persisted stats with ${computedStats.allInsights.size} insights: total=$totalCheckIns")
+        Log.d("StatsRepository", "Calculated and persisted stats total=$totalCheckIns")
         return@runCatching computedStats
     }
 
@@ -259,15 +243,6 @@ class StatsRepositoryImpl(
     }
 
     private suspend fun saveUserStatsInternal(userId: String, stats: StatsModel, totalTools: Int, dayKey: String) {
-        val currentInsightMap = stats.currentInsight?.let {
-            hashMapOf(
-                "title" to it.title,
-                "message" to it.message,
-                "advice" to it.advice,
-                "actionLabel" to it.actionLabel
-            )
-        }
-
         val data = hashMapOf(
             "totalCheckIns" to stats.totalCheckIns,
             "totalToolEntries" to totalTools,
@@ -275,7 +250,6 @@ class StatsRepositoryImpl(
             "weeklyIntensities" to stats.weeklyIntensities,
             "weeklyEmotions" to stats.weeklyEmotions.mapValues { it.value.name },
             "toolUsagePercentages" to stats.toolUsagePercentages,
-            "currentInsight" to currentInsightMap,
             "lastDayKey" to dayKey,
             "lastUpdated" to if (stats.lastUpdated > 0L) stats.lastUpdated else System.currentTimeMillis()
         )
@@ -286,25 +260,8 @@ class StatsRepositoryImpl(
                 .document("latest")
                 .set(data)
                 .await()
-
-            //persiste los hallazgos calculados en la subcoleccion de insights historicos
-            for (insight in stats.allInsights) {
-                val insightDoc = hashMapOf(
-                    "title" to insight.title,
-                    "message" to insight.message,
-                    "advice" to insight.advice,
-                    "actionLabel" to insight.actionLabel,
-                    "savedAt" to System.currentTimeMillis()
-                )
-                firestore.collection("users")
-                    .document(userId)
-                    .collection("useful_insights")
-                    .document(insight.title.lowercase().replace(" ", "_"))
-                    .set(insightDoc)
-                    .await()
-            }
         } catch (e: Exception) {
-            Log.e("StatsRepository", "Error saving stats summary and insights to firestore", e)
+            Log.e("StatsRepository", "Error saving stats summary to firestore", e)
         }
     }
 

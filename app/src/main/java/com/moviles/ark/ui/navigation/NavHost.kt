@@ -123,7 +123,7 @@ fun AppNavigation(
                 )
             }
             composable("tools_catalog_screen") { backStackEntry ->
-                //categoria que deja la tarjeta de insight de stats (#135); se aplica una vez y vuelve a null (#190)
+                //categoria que deja el filtro del catalogo; se aplica una vez y vuelve a null
                 val catalogViewModel: com.moviles.ark.ui.viewmodels.HomeViewModel =
                     viewModel(factory = com.moviles.ark.ui.viewmodels.HomeViewModel.Factory)
                 val pendingCategoryId by backStackEntry.savedStateHandle
@@ -149,7 +149,7 @@ fun AppNavigation(
             }
             composable("stats_screen") {
                 StatsScreen(
-                    //la tarjeta de insight abre el catalogo con la categoria ya filtrada (#135, #190)
+                    //abre el catalogo de herramientas desde stats con filtro opcional de categoria
                     onNavigateToToolsCatalog = { category ->
                         navController.navigate("tools_catalog_screen") {
                             popUpTo("home_screen") { saveState = true }
