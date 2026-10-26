@@ -126,7 +126,7 @@ class FeedbackViewModel(
                     moodRepository.saveCheckIn(checkIn)
                 }
 
-                // Log tool completion event to Firebase Analytics (#34)
+                // Log tool completion event to Firebase Analytics
                 val format = toolRepository?.getToolById(state.toolId)?.format ?: "touch"
                 analyticsRepository?.logToolEntryCompleted(
                     toolId = state.toolId.ifBlank { "custom_breathing" },

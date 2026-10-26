@@ -27,12 +27,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * ViewModel managing the breathing exercise timer, phase transitions, and Jamendo ambient audio playback .
+ * ViewModel managing the breathing exercise timer, phase transitions, and Jamendo ambient audio playback.
  */
 class BreathingViewModel(
     private val breathingRepository: BreathingRepository? = null,
     private val audioPlayerHelper: AudioPlayerHelper? = null,
-    //cierra la medicion de latencia que empezo con el toque en el home (#90)
+    //cierra la medicion de latencia que empezo con el toque en el home
     private val toolLatencyTracker: ToolLatencyTracker? = null
 ) : ViewModel() {
 
@@ -41,7 +41,7 @@ class BreathingViewModel(
 
     private var timerJob: Job? = null
     private var phaseElapsedMs: Long = 0L
-    //tiempo que el temporizador ha corrido en esta sesion, sin contar las pausas (#82)
+    //tiempo que el temporizador ha corrido en esta sesion, sin contar las pausas
     private var sessionRunningMs: Long = 0L
     private var phaseStartRealtime: Long = 0L
     private var sessionStartRealtime: Long = 0L
@@ -361,12 +361,12 @@ class BreathingViewModel(
         )
     }
 
-    //la pantalla termino su primer dibujo: se cierra la medicion de latencia que empezo con el toque (#90)
+    //la pantalla termino su primer dibujo: se cierra la medicion de latencia que empezo con el toque
     fun onScreenRendered() {
         toolLatencyTracker?.onToolRendered(BreathingSession.TOOL_ID)
     }
 
-    //el usuario sale de la herramienta o reinicia: si termino al menos un ciclo, se guarda la sesion en el telefono (#82)
+    //el usuario sale de la herramienta o reinicia: si termino al menos un ciclo, se guarda la sesion en el telefono
     fun finishSession(): Boolean {
         pause()
         val state = _uiState.value

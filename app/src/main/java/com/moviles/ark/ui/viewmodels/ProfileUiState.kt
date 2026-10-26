@@ -9,7 +9,7 @@ data class ProfileUiState(
     val email: String = "",
     //0 si no se conoce
     val age: Int = 0,
-    //ruta del avatar en el telefono; null muestra las iniciales (#119)
+    //ruta del avatar en el telefono; null muestra las iniciales
     val avatarPath: String? = null,
     //avatar preset de netflix seleccionado localmente
     val selectedAvatarId: String = AvatarPreferences.DEFAULT_AVATAR_ID,
@@ -17,13 +17,13 @@ data class ProfileUiState(
     val memberSince: String = "",
     //dias desde que creo la cuenta, contando el dia del registro como el 1; 0 si no se conoce
     val daysWithArk: Int = 0,
-    //dias seguidos con check-in (#96); 0 si no hay racha o no se pudo leer
+    //dias seguidos con check-in; 0 si no hay racha o no se pudo leer
     val streakDays: Int = 0,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     //true despues de cerrar sesion: la pantalla lo ve y navega al login
     val isSignedOut: Boolean = false,
-    //dialogo para editar nombre y edad (#119); los campos son texto mientras el usuario escribe
+    //dialogo para editar nombre y edad; los campos son texto mientras el usuario escribe
     val isEditing: Boolean = false,
     val editName: String = "",
     val editAge: String = "",

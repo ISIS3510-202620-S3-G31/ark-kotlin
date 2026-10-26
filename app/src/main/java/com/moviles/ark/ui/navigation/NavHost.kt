@@ -45,7 +45,7 @@ fun AppNavigation(
     val app = context.applicationContext as? ArkApplication
     val connectivityObserver = app?.container?.networkConnectivityObserver
 
-    //observa en tiempo real el estado de la conexion para el banner offline (#32)
+    //observa en tiempo real el estado de la conexion para el banner offline
     val isConnected by (connectivityObserver?.observe() ?: kotlinx.coroutines.flow.flowOf(true))
         .collectAsStateWithLifecycle(initialValue = connectivityObserver?.isConnected() ?: true)
 
@@ -62,7 +62,7 @@ fun AppNavigation(
         containerColor = BackgroundColor,
         contentWindowInsets = WindowInsets(0),
         topBar = {
-            //banner no invasivo de conexion offline (#32)
+            //banner no invasivo de conexion offline
             OfflineBannerComponent(isConnected = isConnected)
         },
         bottomBar = {
@@ -116,7 +116,7 @@ fun AppNavigation(
                 )
             }
             composable("tools_catalog_screen") { backStackEntry ->
-                //categoria que deja la tarjeta de insight de stats (#135); se aplica una vez y vuelve a null (#190)
+                //categoria que deja la tarjeta de insight de stats; se aplica una vez y vuelve a null
                 val catalogViewModel: com.moviles.ark.ui.viewmodels.HomeViewModel =
                     viewModel(factory = com.moviles.ark.ui.viewmodels.HomeViewModel.Factory)
                 val pendingCategoryId by backStackEntry.savedStateHandle
@@ -141,7 +141,7 @@ fun AppNavigation(
             }
             composable("stats_screen") {
                 StatsScreen(
-                    //la tarjeta de insight abre el catalogo con la categoria ya filtrada (#135, #190)
+                    //la tarjeta de insight abre el catalogo con la categoria ya filtrada
                     onNavigateToToolsCatalog = { category ->
                         navController.navigateToTab("tools_catalog_screen")
                         if (category != null) {
@@ -158,7 +158,7 @@ fun AppNavigation(
                     }
                 })
             }
-            //herramienta foto del dia (#25); al guardar la foto navega a feedback (#21)
+            //herramienta foto del dia; al guardar la foto navega a feedback
             composable("photo_of_the_day_screen") {
                 PhotoOfTheDayRoute(
                     //vuelve a donde se abrio: home o el catalogo
@@ -170,7 +170,7 @@ fun AppNavigation(
                     }
                 )
             }
-            //herramienta de respiracion guiada (#7); si completo al menos 1 ciclo navega a feedback (#21, #82)
+            //herramienta de respiracion guiada; si completo al menos 1 ciclo navega a feedback
             composable("custom_breathing_screen") {
                 CustomBreathingRoute(onBack = { wasCompleted ->
                     if (wasCompleted) {
@@ -182,7 +182,7 @@ fun AppNavigation(
                     }
                 })
             }
-            //herramienta scream tank (#157); si el microfono alcanzo a escuchar navega a feedback (#21)
+            //herramienta scream tank; si el microfono alcanzo a escuchar navega a feedback
             composable("scream_tank_screen") {
                 ScreamTankRoute(onBack = { wasCompleted ->
                     if (wasCompleted) {
@@ -200,7 +200,7 @@ fun AppNavigation(
                     onCheckInSaved = { navController.popBackStack() }
                 )
             }
-            //pantalla de retroalimentacion post-herramienta (#21, PR #81)
+            //pantalla de retroalimentacion post-herramienta
             composable(
                 route = "post_tool_feedback/{toolId}",
                 arguments = listOf(navArgument("toolId") { type = NavType.StringType })
@@ -239,6 +239,6 @@ private fun NavHostController.navigateToTab(route: String) {
     }
 }
 
-//clave del savedStateHandle con la que stats le pasa al catalogo la categoria a filtrar (#135)
+//clave del savedStateHandle con la que stats le pasa al catalogo la categoria a filtrar
 private const val TOOLS_CATEGORY_KEY = "tools_category"
 

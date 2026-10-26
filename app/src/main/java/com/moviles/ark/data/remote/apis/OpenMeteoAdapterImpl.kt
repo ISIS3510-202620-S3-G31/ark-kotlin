@@ -9,7 +9,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Locale
 
-//adapta el api gratis de open-meteo (sin llave) a WeatherServiceAdapter (#134)
+//adapta el api gratis de open-meteo (sin llave) a WeatherServiceAdapter
 class OpenMeteoAdapterImpl(
     private val baseUrl: String = BASE_URL
 ) : WeatherServiceAdapter {

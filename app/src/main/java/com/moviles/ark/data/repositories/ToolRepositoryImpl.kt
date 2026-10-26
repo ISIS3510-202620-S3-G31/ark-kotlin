@@ -20,9 +20,9 @@ import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 
-//catalogo de herramientas con room como unica fuente de verdad (#132)
+//catalogo de herramientas con room como unica fuente de verdad
 //la ui solo escucha la tabla tools; firestore solo se usa en refreshTools para traer lo nuevo y guardarlo en room
-//filesDir/tools.json guarda la misma copia para no perder el catalogo sin internet (#145)
+//filesDir/tools.json guarda la misma copia para no perder el catalogo sin internet
 class ToolRepositoryImpl(
     private val toolDao: ToolDao,
     private val firestore: FirebaseFirestore,
@@ -81,7 +81,7 @@ class ToolRepositoryImpl(
         catalogFileStore.writeCatalog(tools)
     }
 
-    //room se llena desde filesDir/tools.json (o assets/tools.json si el archivo falta o esta danado) (#145)
+    //room se llena desde filesDir/tools.json (o assets/tools.json si el archivo falta o esta danado)
     //insertTools usa REPLACE, asi que si dos pantallas siembran a la vez no se duplica nada
     private suspend fun seedIfEmpty() {
         if (toolDao.getTools().first().isEmpty()) {

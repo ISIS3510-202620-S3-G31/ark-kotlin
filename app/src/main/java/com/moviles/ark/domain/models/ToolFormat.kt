@@ -1,6 +1,6 @@
 package com.moviles.ark.domain.models
 
-//formatos de interaccion en los que se clasifican las herramientas de ark (#34)
+//formatos de interaccion en los que se clasifican las herramientas de ark
 enum class ToolFormat(val id: String, val displayName: String) {
     VOICE("voice", "Voice / Audio"),
     TEXT("text", "Text / Journaling"),

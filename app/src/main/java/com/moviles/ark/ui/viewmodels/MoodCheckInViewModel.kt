@@ -66,7 +66,7 @@ class MoodCheckInViewModel(
     fun loadCurrentLocation() {
         val repository = locationRepository ?: return
         if (locationJob?.isActive == true) return
-        //se borran las coordenadas anteriores mientras se busca: nunca se guarda una ubicacion vieja (#144)
+        //se borran las coordenadas anteriores mientras se busca: nunca se guarda una ubicacion vieja
         privateUiState.value = privateUiState.value.copy(
             latitude = null,
             longitude = null,
@@ -74,13 +74,13 @@ class MoodCheckInViewModel(
             locationStatus = null
         )
         locationJob = viewModelScope.launch {
-            //el repositorio lee el gps en Dispatchers.IO con tiempo maximo y no lanza excepciones (#144)
+            //el repositorio lee el gps en Dispatchers.IO con tiempo maximo y no lanza excepciones
             val result = repository.getCurrentLocation()
             privateUiState.value = privateUiState.value.copy(
                 latitude = result.latitude,
                 longitude = result.longitude,
                 locationStatus = result.status,
-                //con el gps apagado o sin permiso se avisa con el dialogo; el check-in se guarda sin coordenadas (#112)
+                //con el gps apagado o sin permiso se avisa con el dialogo; el check-in se guarda sin coordenadas
                 showLocationDisabledDialog = result.status == LocationStatus.DISABLED
             )
             Log.d("MoodCheckIn", "GPS loaded: status=${result.status}, lat=${result.latitude}, lon=${result.longitude}")

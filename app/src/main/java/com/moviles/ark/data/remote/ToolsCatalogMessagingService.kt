@@ -12,7 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 
-//receptor de push (fcm) que avisa que cambio el catalogo de herramientas (#156)
+//receptor de push (fcm) que avisa que cambio el catalogo de herramientas
 //esta en data/remote porque fcm es otra forma de recibir datos del backend, igual que firestore
 //solo se usan mensajes de datos: no se muestra ninguna notificacion, por eso no se pide POST_NOTIFICATIONS
 class ToolsCatalogMessagingService : FirebaseMessagingService() {

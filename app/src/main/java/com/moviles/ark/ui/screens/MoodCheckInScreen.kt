@@ -291,7 +291,7 @@ fun MoodCheckInScreen(
             ) {
                 Text("📍", fontSize = 12.sp)
                 Spacer(modifier = Modifier.width(6.dp))
-                //"Location Disabled" sin permiso o con gps apagado; el check-in se guarda igual sin coordenadas (#144)
+                //"Location Disabled" sin permiso o con gps apagado; el check-in se guarda igual sin coordenadas
                 Text(
                     text = uiState.value.locationLabel,
                     style = MaterialTheme.typography.bodySmall,

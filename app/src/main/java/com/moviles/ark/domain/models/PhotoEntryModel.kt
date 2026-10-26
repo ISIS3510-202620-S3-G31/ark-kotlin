@@ -1,6 +1,6 @@
 package com.moviles.ark.domain.models
 
-//modelo de datos de una foto del dia guardada en el telefono (#25, #26, #31)
+//modelo de datos de una foto del dia guardada en el telefono
 data class PhotoEntryModel(
     val id: Long = 0,
     //ruta del archivo dentro del almacenamiento privado de la app

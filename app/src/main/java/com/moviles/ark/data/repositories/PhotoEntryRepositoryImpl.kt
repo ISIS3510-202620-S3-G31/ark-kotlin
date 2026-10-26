@@ -23,8 +23,8 @@ import java.io.FileOutputStream
 import java.io.InputStream
 import java.util.UUID
 
-//fotos aisladas por usuario (#133): las filas llevan el uid y los jpg van en filesDir/photos/{uid}/
-//almacenamiento dual (#146): guarda en filesDir/photos/ para acceso privado offline y exporta a la galeria publica via MediaStore
+//fotos aisladas por usuario: las filas llevan el uid y los jpg van en filesDir/photos/{uid}/
+//almacenamiento dual: guarda en filesDir/photos/ para acceso privado offline y exporta a la galeria publica via MediaStore
 class PhotoEntryRepositoryImpl(
     private val context: Context,
     private val auth: FirebaseAuth,
@@ -83,7 +83,7 @@ class PhotoEntryRepositoryImpl(
 
             val insertedId = photoEntryDao.insertPhoto(entity)
 
-            // Copia una exportacion a la galeria publica usando Android MediaStore API en Dispatchers.IO (#146)
+            // Copia una exportacion a la galeria publica usando Android MediaStore API en Dispatchers.IO
             exportToPublicGallery(File(finalPath), takenAt)
 
             PhotoEntryModel(
@@ -95,7 +95,7 @@ class PhotoEntryRepositoryImpl(
         }
     }
 
-    //exporta una copia a la galeria publica del sistema usando MediaStore API (#146)
+    //exporta una copia a la galeria publica del sistema usando MediaStore API
     private suspend fun exportToPublicGallery(photoFile: File, takenAt: Long): Uri? = withContext(Dispatchers.IO) {
         runCatching {
             val displayName = "Ark_Photo_${takenAt}.jpg"

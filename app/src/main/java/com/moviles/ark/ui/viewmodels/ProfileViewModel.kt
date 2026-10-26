@@ -25,9 +25,9 @@ import java.util.TimeZone
 //now se puede cambiar en las pruebas para fijar "hoy"; en la app es la hora del telefono
 class ProfileViewModel(
     private val authRepository: AuthRepository,
-    //perfil guardado en room (#119): se muestra de una vez, aunque no haya internet
+    //perfil guardado en room: se muestra de una vez, aunque no haya internet
     private val userRepository: UserRepository,
-    //check-ins del usuario para la racha (#96)
+    //check-ins del usuario para la racha
     private val moodRepository: MoodRepository? = null,
     private val now: () -> Long = { System.currentTimeMillis() }
 ) : ViewModel() {
@@ -84,14 +84,14 @@ class ProfileViewModel(
         }
     }
 
-    //la pantalla lo pide cada vez que se muestra, asi la racha se ve al dia despues de un check-in en el home (#96)
+    //la pantalla lo pide cada vez que se muestra, asi la racha se ve al dia despues de un check-in en el home
     fun loadStreak() {
         val repository = moodRepository ?: return
         viewModelScope.launch {
             val from = now() - CheckInStreak.LOOKBACK_DAYS * DAY_MILLIS
             //si no se puede leer (por ejemplo sin internet y sin copia local) se queda la racha guardada en room
             repository.getCheckInTimestampsSince(from).onSuccess { timestamps ->
-                //le preguntamos al modelo cuantos dias seguidos lleva y se guarda para verla sin internet (#119)
+                //le preguntamos al modelo cuantos dias seguidos lleva y se guarda para verla sin internet
                 val days = streak.daysInARow(timestamps)
                 freshStreak = days
                 userRepository.saveStreak(days, timestamps.maxOrNull())

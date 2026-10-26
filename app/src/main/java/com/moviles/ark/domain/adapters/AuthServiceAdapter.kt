@@ -1,6 +1,6 @@
 package com.moviles.ark.domain.adapters
 
-//adapter del servicio de autenticacion (#136): AuthRepositoryImpl solo habla con esta interfaz y no sabe que hay firebase detras
+//adapter del servicio de autenticacion: AuthRepositoryImpl solo habla con esta interfaz y no sabe que hay firebase detras
 //no expone tipos de firebase, asi en las pruebas se cambia por un fake en memoria
 //si algo falla, el Result trae la excepcion original para que los viewmodels sigan mostrando el mismo mensaje
 interface AuthServiceAdapter {

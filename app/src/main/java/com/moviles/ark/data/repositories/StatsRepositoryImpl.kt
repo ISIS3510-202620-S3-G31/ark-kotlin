@@ -28,10 +28,10 @@ import java.util.Locale
 class StatsRepositoryImpl(
     private val auth: FirebaseAuth,
     private val firestore: FirebaseFirestore,
-    //los daos de room se quedan en el repositorio: el viewmodel nunca toca la base directo (#135)
+    //los daos de room se quedan en el repositorio: el viewmodel nunca toca la base directo
     private val emotionCheckInDao: EmotionCheckInDao,
     private val toolRecordDao: ToolRecordDao,
-    //cache en disco de las stats que llegaron de firestore (#147)
+    //cache en disco de las stats que llegaron de firestore
     private val statsDiskCache: StatsDiskCache? = null,
     private val statsCalculator: StatsCalculator = StatsCalculator()
 ) : StatsRepository {
@@ -41,7 +41,7 @@ class StatsRepositoryImpl(
         return statsDiskCache?.read(currentUserId)
     }
 
-    //lee check-ins e interacciones de room en IO y calcula en Default; si la base esta vacia devuelve stats en cero (#135)
+    //lee check-ins e interacciones de room en IO y calcula en Default; si la base esta vacia devuelve stats en cero
     override suspend fun getLocalStats(): Result<StatsModel> = runCatching {
         val (checkInEntities, interactionEntities) = withContext(Dispatchers.IO) {
             emotionCheckInDao.getCheckIns().first() to toolRecordDao.getInteractions().first()
@@ -55,7 +55,7 @@ class StatsRepositoryImpl(
         }
     }
 
-    //pide a firestore en IO (Source.SERVER: sin red falla en vez de devolver datos viejos) y actualiza el cache (#147, #158)
+    //pide a firestore en IO (Source.SERVER: sin red falla en vez de devolver datos viejos) y actualiza el cache
     override suspend fun getUserStats(): Result<StatsModel> = withContext(Dispatchers.IO) { fetchAndCacheStats() }
 
     @Suppress("UNCHECKED_CAST")
@@ -63,7 +63,7 @@ class StatsRepositoryImpl(
         val currentUserId = auth.currentUser?.uid ?: "anonymous"
         val todayKey = SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date())
 
-        //consulta primero el resumen precomputado directamente del backend en firestore (#158)
+        //consulta primero el resumen precomputado directamente del backend en firestore
         val summaryDoc = try {
             firestore.collection("users")
                 .document(currentUserId)
@@ -145,7 +145,7 @@ class StatsRepositoryImpl(
         val toolDocs = toolsSnapshot.documents
         val totalToolEntries = toolDocs.size
 
-        //si el usuario es nuevo y no tiene registros, devuelve modelo vacio para mostrar empty state ilustrado (#158)
+        //si el usuario es nuevo y no tiene registros, devuelve modelo vacio para mostrar empty state ilustrado
         if (totalCheckIns == 0 && totalToolEntries == 0) {
             val emptyStats = StatsModel(
                 totalCheckIns = 0,
@@ -237,10 +237,10 @@ class StatsRepositoryImpl(
         )
         val computedStats = calculated.copy(lastUpdated = System.currentTimeMillis())
 
-        //guarda el resumen en el disco del telefono para pintarlo al instante la proxima vez (#147)
+        //guarda el resumen en el disco del telefono para pintarlo al instante la proxima vez
         statsDiskCache?.write(currentUserId, computedStats)
 
-        //guarda el resumen precomputado e insights en firestore para futuras lecturas directas del backend (#158)
+        //guarda el resumen precomputado e insights en firestore para futuras lecturas directas del backend
         saveUserStatsInternal(currentUserId, computedStats, totalToolEntries, todayKey)
 
         Log.d("StatsRepository", "Calculated and persisted stats with ${computedStats.allInsights.size} insights: total=$totalCheckIns")

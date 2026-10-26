@@ -124,7 +124,7 @@ fun ProfileScreen(
                 Text(uiState.errorMessage, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyLarge)
                 TextButton(onClick = onRetryClick) { Text("Try again", style = MaterialTheme.typography.labelLarge, color = TextColor) }
             } else {
-                //avatar: la foto que eligio el usuario o su avatar; al tocarlo se abre el selector de avatares (#119)
+                //avatar: la foto que eligio el usuario o su avatar; al tocarlo se abre el selector de avatares
                 Avatar(path = uiState.avatarPath, initials = uiState.initials, avatarId = uiState.selectedAvatarId, onClick = { showAvatarPicker = true })
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(uiState.name, style = MaterialTheme.typography.headlineMedium, color = TextColor, textAlign = TextAlign.Center)
@@ -492,12 +492,12 @@ fun ProfileRoute(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    //selector de fotos del sistema: no pide permisos y solo deja elegir imagenes (#119)
+    //selector de fotos del sistema: no pide permisos y solo deja elegir imagenes
     val avatarPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) viewModel.onAvatarPicked(uri.toString())
     }
 
-    //cada vez que se abre la pestana se refresca el perfil (#119) y se recalcula la racha (#96)
+    //cada vez que se abre la pestana se refresca el perfil y se recalcula la racha
     LaunchedEffect(Unit) {
         viewModel.loadProfile()
         viewModel.loadStreak()

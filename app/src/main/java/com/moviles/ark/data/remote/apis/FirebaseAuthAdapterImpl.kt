@@ -4,7 +4,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.moviles.ark.domain.adapters.AuthServiceAdapter
 import kotlinx.coroutines.tasks.await
 
-//adapta firebase auth a AuthServiceAdapter (#136); es la unica clase del login que conoce FirebaseAuth
+//adapta firebase auth a AuthServiceAdapter; es la unica clase del login que conoce FirebaseAuth
 class FirebaseAuthAdapterImpl(
     private val auth: FirebaseAuth
 ) : AuthServiceAdapter {

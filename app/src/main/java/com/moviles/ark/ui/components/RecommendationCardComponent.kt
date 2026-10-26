@@ -40,7 +40,7 @@ import com.moviles.ark.ui.theme.FigtreeFontFamily
 import com.moviles.ark.ui.theme.PrimaryColor
 import com.moviles.ark.ui.theme.TextColor
 
-//componente visual de recomendacion para el home (#16)
+//componente visual de recomendacion para el home
 @Composable
 fun RecommendationCardComponent(
     tool: Tool,

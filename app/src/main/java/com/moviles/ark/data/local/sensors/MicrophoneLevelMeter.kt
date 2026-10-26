@@ -18,7 +18,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.isActive
 import kotlin.math.max
 
-//lee el volumen del microfono para el scream tank (#157)
+//lee el volumen del microfono para el scream tank
 //privacidad: el audio solo pasa por un buffer en memoria que se reutiliza y se borra al final;
 //no se crea ningun archivo ni se usa MediaRecorder para grabar (de MediaRecorder solo se toma la constante MIC)
 class MicrophoneLevelMeter(private val context: Context) {

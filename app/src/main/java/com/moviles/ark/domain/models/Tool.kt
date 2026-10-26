@@ -8,7 +8,7 @@ open class Tool(
     open val description: String,
     // Filtro del tool hub expresado de forma fuertemente tipada con ToolCategory
     open val category: ToolCategory,
-    // Forma de interactuar: "voice", "text", "touch" o "photo" (la usa la bq del #34)
+    // Forma de interactuar: "voice", "text", "touch" o "photo" (la usa la pregunta de negocio #4)
     open val format: String,
     // Nombre del drawable del icono
     open val iconName: String,

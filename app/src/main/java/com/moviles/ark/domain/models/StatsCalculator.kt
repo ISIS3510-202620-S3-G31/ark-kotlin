@@ -6,7 +6,7 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-//clase de dominio que procesa los datos brutos y calcula las estadisticas e insights del usuario (#15 y #29)
+//clase de dominio que procesa los datos brutos y calcula las estadisticas e insights del usuario
 class StatsCalculator(
     private val insightsEngine: UsefulInsightsEngine = UsefulInsightsEngine()
 ) {
@@ -68,8 +68,8 @@ class StatsCalculator(
 
         val topEmotion = allEmotionsCount.maxByOrNull { it.value }?.key
 
-        //llamamos al motor de hallazgos utiles que creo el companero (#28)
-        //si el hallazgo no trae emocion propia se usa la mas frecuente para filtrar el catalogo (#135)
+        //llamamos al motor de hallazgos utiles que creo el companero
+        //si el hallazgo no trae emocion propia se usa la mas frecuente para filtrar el catalogo
         val allInsights = insightsEngine.generateInsights(
             checkIns = checkIns,
             interactions = interactions

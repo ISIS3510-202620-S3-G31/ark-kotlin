@@ -14,9 +14,9 @@ class ArkApplication : Application() {
         super.onCreate()
         container = DefaultAppContainer(this)
         AvatarPreferences.init(this)
-        //iniciar el observador de sincronizacion automatica offline (#33)
+        //iniciar el observador de sincronizacion automatica offline
         container.syncManager.startMonitoring()
-        //escuchar los avisos push de cambios en el catalogo de herramientas (#156)
+        //escuchar los avisos push de cambios en el catalogo de herramientas
         ToolsCatalogMessagingService.subscribeToCatalogUpdates()
     }
 }

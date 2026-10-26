@@ -10,7 +10,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-//guarda en cacheDir/stats_cache.json las ultimas estadisticas con su timestamp para Cache-then-Network (#147, #158)
+//guarda en cacheDir/stats_cache.json las ultimas estadisticas con su timestamp para Cache-then-Network
 //asi la pantalla de stats pinta algo de inmediato al entrar, incluso sin red
 class StatsDiskCache(cacheDir: File) {
     private val file = File(cacheDir, FILE_NAME)

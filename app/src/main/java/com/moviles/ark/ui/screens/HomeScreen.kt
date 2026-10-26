@@ -98,7 +98,7 @@ fun HomeRoute(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    //al volver de una herramienta se recalculan las recomendaciones con la nueva interaccion (#96)
+    //al volver de una herramienta se recalculan las recomendaciones con la nueva interaccion
     LaunchedEffect(Unit) {
         viewModel.onHomeShown()
     }
@@ -301,7 +301,7 @@ fun HomeScreen(
                 )
             }
 
-            //1. recomendacion inteligente por Strategy (#16)
+            //1. recomendacion inteligente por Strategy
             val recommendedTool = uiState.tools.firstOrNull()
             if (recommendedTool != null) {
                 item {
@@ -330,7 +330,7 @@ fun HomeScreen(
                 }
             }
 
-            //3. recomendacion basada en el clima (#134): solo aparece cuando el clima sugiere una herramienta,
+            //3. recomendacion basada en el clima: solo aparece cuando el clima sugiere una herramienta,
             //y Explore la abre; sin internet, sin ubicacion o con clima neutro la tarjeta no se muestra
             uiState.weatherSuggestion?.let { suggestion ->
                 item {

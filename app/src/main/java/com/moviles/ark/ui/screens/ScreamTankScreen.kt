@@ -90,7 +90,7 @@ private val ScreamCardFill = TextColor.copy(alpha = 0.06f)
 private const val GAUGE_START_ANGLE = 135f
 private const val GAUGE_SWEEP_ANGLE = 270f
 
-//conecta la pantalla con el viewmodel (#157)
+//conecta la pantalla con el viewmodel
 @Composable
 fun ScreamTankRoute(
     viewModel: ScreamTankViewModel = viewModel(factory = ScreamTankViewModel.Factory),
@@ -120,7 +120,7 @@ fun ScreamTankRoute(
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.refreshPermission() }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.pauseListening() }
 
-    //#8: se espera al siguiente cuadro; para entonces el primer dibujo de la pantalla ya termino
+    //latencia: se espera al siguiente cuadro; para entonces el primer dibujo de la pantalla ya termino
     LaunchedEffect(Unit) {
         withFrameNanos { }
         viewModel.onScreenRendered()
@@ -390,7 +390,7 @@ private fun ControlButtons(uiState: ScreamTankUiState, onToggleListening: () -> 
     }
 }
 
-//garantia de privacidad del issue: se dice en la pantalla que no se graba nada
+//garantia de privacidad: se dice en la pantalla que no se graba nada
 @Composable
 private fun PrivacyCard() {
     Row(

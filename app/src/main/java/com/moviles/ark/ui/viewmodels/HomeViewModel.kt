@@ -43,11 +43,11 @@ class HomeViewModel(
     private val toolLatencyTracker: ToolLatencyTracker? = null,
     //herramientas que el usuario ya termino para tener la info parecomendar por frecuencia
     private val toolInteractionRepository: ToolInteractionRepository? = null,
-    //ultima recomendacion guardada en disco para cuando no hay internet (#159)
+    //ultima recomendacion guardada en disco para cuando no hay internet
     private val recommendationRepository: RecommendationRepository? = null,
     //true si hay internet en este momento
     private val isOnline: () -> Boolean = { true },
-    //clima de afuera para la tarjeta de clima (#134); necesita la ubicacion del telefono
+    //clima de afuera para la tarjeta de clima; necesita la ubicacion del telefono
     private val weatherServiceAdapter: WeatherServiceAdapter? = null,
     private val locationRepository: LocationRepository? = null,
     private val now: () -> Long = { System.currentTimeMillis() },
@@ -69,7 +69,7 @@ class HomeViewModel(
     //true mientras el usuario esta en una herramienta; al volver se recalculan las recomendaciones
     private var isAwayInTool = false
 
-    //unica estrategia de recomendacion del home (#164); el resolver crea solo la que pide el contexto y se guarda aqui
+    //unica estrategia de recomendacion del home; el resolver crea solo la que pide el contexto y se guarda aqui
     //arranca con el orden por defecto mientras llegan el check-in y el historial
     private var activeStrategy: RecommendationStrategy = DefaultRecommendationStrategy()
 
@@ -80,7 +80,7 @@ class HomeViewModel(
         observeAvatar()
     }
 
-    //el clima va aparte del resolver de estrategias: no cambia el orden del catalogo, solo llena su propia tarjeta (#134)
+    //el clima va aparte del resolver de estrategias: no cambia el orden del catalogo, solo llena su propia tarjeta
     fun loadWeatherSuggestion() {
         val adapter = weatherServiceAdapter ?: return
         viewModelScope.launch(Dispatchers.IO) {
@@ -194,7 +194,7 @@ class HomeViewModel(
         loadTools()
     }
 
-    //online-first (#159): con internet se decide con los datos frescos y el resultado se guarda en disco;
+    //online-first: con internet se decide con los datos frescos y el resultado se guarda en disco;
     //sin internet se usa lo guardado hoy y, si no hay, se decide en el telefono con lo que haya guardado
     private suspend fun recommend(rawTools: List<Tool>): List<Tool> {
         val online = isOnline()
@@ -215,8 +215,8 @@ class HomeViewModel(
         return recommendedTools
     }
 
-    //decide la estrategia con el ultimo check-in del usuario  y las herramientas que termino
-    //si algo falla al leer los datos se usa el orden por defecto (#159)
+    //decide la estrategia con el ultimo check-in del usuario y las herramientas que termino
+    //si algo falla al leer los datos se usa el orden por defecto
     private suspend fun resolveDecision(): RecommendationDecision = runCatching {
         val latestCheckIn = moodRepository?.getLatestCheckIn()?.getOrNull()
         val from = now() - RecommendationContextResolver.USAGE_WINDOW_DAYS * DAY_MILLIS

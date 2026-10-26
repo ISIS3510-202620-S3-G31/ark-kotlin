@@ -2,8 +2,8 @@ package com.moviles.ark.data.remote.dtos
 
 import com.moviles.ark.data.local.entities.FeedbackEntity
 
-//dto del documento users/{uid}/tool_feedback/{id} en firestore (#163)
-//la calificacion que deja el usuario al terminar una herramienta (#21)
+//dto del documento users/{uid}/tool_feedback/{id} en firestore
+//la calificacion que deja el usuario al terminar una herramienta
 data class FeedbackDto(
     val userId: String = "",
     val toolId: String = "",

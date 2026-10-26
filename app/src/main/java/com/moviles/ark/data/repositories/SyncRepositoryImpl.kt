@@ -14,8 +14,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
 
-//implementacion de resincronizacion de datos offline hacia firebase (#33)
-//cada fila de room se pasa a su dto antes de subirla (#163): firestore recibe siempre los mismos campos y tipos
+//implementacion de resincronizacion de datos offline hacia firebase
+//cada fila de room se pasa a su dto antes de subirla: firestore recibe siempre los mismos campos y tipos
 class SyncRepositoryImpl(
     private val auth: FirebaseAuth,
     private val firestore: FirebaseFirestore,
@@ -25,7 +25,7 @@ class SyncRepositoryImpl(
     private val feedbackDao: FeedbackDao
 ) : SyncRepository {
 
-    //una sola subida a la vez: el check-in pide subida al guardarse y el SyncManager al volver la red (#143)
+    //una sola subida a la vez: el check-in pide subida al guardarse y el SyncManager al volver la red
     private val syncMutex = Mutex()
 
     override suspend fun syncPendingData(): Result<Int> = syncMutex.withLock { syncAllPending() }
@@ -68,7 +68,7 @@ class SyncRepositoryImpl(
         }
 
         // 2. Sincronizar fotos pendientes (isSynced = 0)
-        //solo las del usuario con sesion (#133): las reglas de firestore no dejan escribir en la carpeta de otro;
+        //solo las del usuario con sesion: las reglas de firestore no dejan escribir en la carpeta de otro;
         //las de otra cuenta esperan a que esa cuenta vuelva a entrar
         try {
             val sessionUserId = auth.currentUser?.uid
@@ -105,7 +105,7 @@ class SyncRepositoryImpl(
                 val successfulCheckInIds = mutableListOf<Long>()
                 for (checkIn in unsyncedCheckIns) {
                     try {
-                        //documento con el remoteId de la fila: si se sube dos veces queda uno solo (#143)
+                        //documento con el remoteId de la fila: si se sube dos veces queda uno solo
                         firestore.collection("users")
                             .document(currentUserId)
                             .collection("mood_checkins")

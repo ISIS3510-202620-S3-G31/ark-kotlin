@@ -21,11 +21,11 @@ data class StatsUiState(
     val isLoading: Boolean = true,
     val stats: StatsModel? = null,
     val errorMessage: String? = null,
-    //true mientras el pull-to-refresh espera a firestore (#147)
+    //true mientras el pull-to-refresh espera a firestore
     val isRefreshing: Boolean = false,
-    //aviso corto de una sola vez, por ejemplo cuando no hay red al refrescar (#147)
+    //aviso corto de una sola vez, por ejemplo cuando no hay red al refrescar
     val noticeMessage: String? = null,
-    //indica si el intento de conexion detecto falta de internet (#158)
+    //indica si el intento de conexion detecto falta de internet
     val isOffline: Boolean = false
 )
 
@@ -45,7 +45,7 @@ class StatsViewModel(
         loadStats()
     }
 
-    //patron cache-then-network (#147, #158):
+    //patron cache-then-network:
     //1) lee y muestra inmediatamente el cache de disco en 0 ms si existe
     //2) en paralelo, consulta a firestore en Dispatchers.IO el documento precomputado del backend
     //3) al responder firestore, actualiza la interfaz y refresca el cache del disco
@@ -75,7 +75,7 @@ class StatsViewModel(
         }
     }
 
-    //pull-to-refresh y boton de refrescar: fuerza traer firestore y actualiza el cache del disco (#147)
+    //pull-to-refresh y boton de refrescar: fuerza traer firestore y actualiza el cache del disco
     fun refresh() {
         if (statsRepository == null || refreshJob?.isActive == true) return
         refreshJob = viewModelScope.launch {

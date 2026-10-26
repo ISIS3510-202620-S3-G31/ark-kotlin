@@ -9,7 +9,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
-//gestor que vigila el estado de conexion a internet y dispara la sincronizacion automatica cuando vuelve (#33)
+//gestor que vigila el estado de conexion a internet y dispara la sincronizacion automatica cuando vuelve
 class SyncManager(
     private val networkConnectivityObserver: NetworkConnectivityObserver,
     private val syncRepository: SyncRepository,
@@ -34,7 +34,7 @@ class SyncManager(
         }
     }
 
-    //pide una subida ya, por ejemplo despues de guardar un check-in en room (#143)
+    //pide una subida ya, por ejemplo despues de guardar un check-in en room
     //sin internet no hace nada: el check-in queda pendiente y se sube cuando vuelva la red
     fun requestSync() {
         if (!networkConnectivityObserver.isConnected()) return

@@ -14,19 +14,19 @@ data class MoodCheckInUiState(
     val latitude: Double? = null,
     val longitude: Double? = null,
     val cityName: String? = null,
-    //null mientras se busca la ubicacion (#144)
+    //null mientras se busca la ubicacion
     val locationStatus: LocationStatus? = null,
     val isLoading: Boolean = false,
     val isSaved: Boolean = false,
     val errorMessage: String? = null,
-    //dialogo amable cuando el gps esta apagado o no hay permiso (#112)
+    //dialogo amable cuando el gps esta apagado o no hay permiso
     val showLocationDisabledDialog: Boolean = false,
     //indica si el usuario ya completo su unico check-in diario para bloquear nuevas entradas
     val isAlreadyCheckedInToday: Boolean = false,
     //check-in guardado del dia para desplegar en modo revision no editable
     val existingCheckIn: CheckInModel? = null
 ) {
-    //texto del chip de ubicacion; sin red no hay ciudad y se muestran las coordenadas (#144)
+    //texto del chip de ubicacion; sin red no hay ciudad y se muestran las coordenadas
     val locationLabel: String
         get() = when (locationStatus) {
             null -> "Detecting location..."

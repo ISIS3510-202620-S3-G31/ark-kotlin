@@ -13,7 +13,7 @@ data class EmotionDto(
     val intensity: Int = 3
 )
 
-//dto del documento users/{uid}/mood_checkins/{id} en firestore (#163)
+//dto del documento users/{uid}/mood_checkins/{id} en firestore
 //los valores por defecto le dan a firestore el constructor vacio que necesita para leerlo con toObject
 data class MoodCheckInDto(
     val userId: String = "",
@@ -27,7 +27,7 @@ data class MoodCheckInDto(
     val note: String = ""
 )
 
-//de fila de room a dto, para subir los check-ins guardados sin conexion (#33)
+//de fila de room a dto, para subir los check-ins guardados sin conexion
 fun CheckInEntity.toDto(userId: String): MoodCheckInDto {
     return MoodCheckInDto(
         userId = userId,

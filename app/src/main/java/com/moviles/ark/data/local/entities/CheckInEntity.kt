@@ -9,16 +9,16 @@ import com.moviles.ark.domain.composite.SingleEmotion
 import com.moviles.ark.domain.models.CheckInModel
 import java.util.UUID
 
-//tabla de check-ins emocionales guardados en el telefono (#12, #33)
+//tabla de check-ins emocionales guardados en el telefono
 //cada fila es un check-in; el id lo pone room solo (autoGenerate)
-//version 5 de la base: se agregaron userId y remoteId (#143)
+//version 5 de la base: se agregaron userId y remoteId
 @Entity(tableName = "mood_checkins")
 data class CheckInEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
-    //usuario que hizo el check-in; asi el home y el sync no mezclan cuentas en el mismo telefono (#143)
+    //usuario que hizo el check-in; asi el home y el sync no mezclan cuentas en el mismo telefono
     val userId: String = "",
-    //id del documento en firestore, fijo desde que se guarda: si el sync se repite sobrescribe el mismo documento (#143)
+    //id del documento en firestore, fijo desde que se guarda: si el sync se repite sobrescribe el mismo documento
     val remoteId: String = UUID.randomUUID().toString(),
     //nombre del animo, por ejemplo "Happiness" o "Nostalgia"
     val moodName: String,
@@ -31,7 +31,7 @@ data class CheckInEntity(
     val longitude: Double? = null,
     //fecha y hora en milisegundos, igual que CheckInModel.timestamp
     val timestamp: Long,
-    //false mientras no se haya subido a firestore (#33)
+    //false mientras no se haya subido a firestore
     val isSynced: Boolean = false,
 )
 

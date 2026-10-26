@@ -5,7 +5,7 @@ import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.net.Uri
 
-//helper para reproducir audio ambiental de jamendo con el mediaplayer de android (#7)
+//helper para reproducir audio ambiental de jamendo con el mediaplayer de android
 class AudioPlayerHelper(
     private val context: Context? = null
 ) {
@@ -14,7 +14,7 @@ class AudioPlayerHelper(
     private var isPrepared = false
 
     //inicia la reproduccion de una url de audio
-    //onError avisa si no se pudo reproducir (por ejemplo una pista de internet sin conexion) (#82)
+    //onError avisa si no se pudo reproducir (por ejemplo una pista de internet sin conexion)
     fun playUrl(
         url: String,
         onPlaybackStateChanged: (isPlaying: Boolean) -> Unit = {},
@@ -38,7 +38,7 @@ class AudioPlayerHelper(
                         .setUsage(AudioAttributes.USAGE_MEDIA)
                         .build()
                 )
-                //las pistas que vienen dentro de la app (res/raw) se abren con el context (#82)
+                //las pistas que vienen dentro de la app (res/raw) se abren con el context
                 if (url.startsWith(LOCAL_RESOURCE_SCHEME) && context != null) {
                     setDataSource(context, Uri.parse(url))
                 } else {

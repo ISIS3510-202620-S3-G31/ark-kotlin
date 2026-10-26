@@ -4,7 +4,7 @@ import kotlin.math.log10
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
-//una lectura del microfono del scream tank (#157)
+//una lectura del microfono del scream tank
 data class DecibelReading(
     //raiz del promedio de los cuadrados de las muestras (0 a 32768)
     val rms: Double,
@@ -14,7 +14,7 @@ data class DecibelReading(
     val level: Int
 )
 
-//convierte un pedazo de audio pcm de 16 bits en volumen (#157)
+//convierte un pedazo de audio pcm de 16 bits en volumen
 //es kotlin puro: no sabe nada de android ni del microfono, solo recibe numeros que ya estan en memoria
 object DecibelMeter {
     //valor absoluto mas grande de una muestra de 16 bits (Short.MIN_VALUE)

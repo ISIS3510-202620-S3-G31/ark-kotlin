@@ -8,7 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
-//lee las interacciones de la tabla tool_interactions de room (#96); funciona sin internet
+//lee las interacciones de la tabla tool_interactions de room; funciona sin internet
 class ToolInteractionRepositoryImpl(
     private val toolRecordDao: ToolRecordDao
 ) : ToolInteractionRepository {

@@ -67,7 +67,7 @@ interface ToolRecordDao {
         }
     }
 
-    //cuantas veces se uso cada herramienta, de la mas usada a la menos (#15 torta y #22 por frecuencia)
+    //cuantas veces se uso cada herramienta, de la mas usada a la menos (torta de stats y recomendacion por frecuencia)
     @Query("SELECT toolId, COUNT(*) AS uses FROM tool_interactions GROUP BY toolId ORDER BY uses DESC")
     fun getUsageCountsRaw(): Flow<List<ToolUsageCount>>
 
@@ -82,7 +82,7 @@ interface ToolRecordDao {
         }
     }
 
-    //las que faltan por subir a firestore (#33)
+    //las que faltan por subir a firestore
     @Query("SELECT * FROM tool_interactions WHERE isSynced = 0")
     suspend fun getUnsyncedInteractionsRaw(): List<ToolInteractionEntity>
 
