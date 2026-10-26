@@ -13,8 +13,12 @@ data class StatsModel(
     val allInsights: List<InsightModel> = emptyList(),
     val emotionFrequencies: Map<Emotion, Int> = emptyMap()
 ) {
-    //una fuente nueva reemplaza a lo que se ve solo si no tiene menos check-ins, asi la pantalla no salta hacia atras (#135)
+    //una fuente nueva reemplaza a lo que se ve solo si no tiene menos check-ins o es mas reciente (#135, #147, #158)
     fun canReplace(shown: StatsModel?): Boolean {
-        return shown == null || totalCheckIns >= shown.totalCheckIns
+        if (shown == null) return true
+        if (lastUpdated > 0L && shown.lastUpdated > 0L) {
+            return lastUpdated >= shown.lastUpdated || totalCheckIns >= shown.totalCheckIns
+        }
+        return totalCheckIns >= shown.totalCheckIns
     }
 }

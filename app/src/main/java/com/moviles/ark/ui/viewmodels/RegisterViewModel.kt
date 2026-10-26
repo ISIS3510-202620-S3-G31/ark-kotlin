@@ -17,35 +17,92 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-class RegisterViewModel(private val authRepository: AuthRepository): ViewModel() { //hereda de view model, como hay que llamar al constructor super(), se pone ()
-    private val privateUiState = MutableStateFlow(RegisterUiState()) //solo el viewmodel lo puede editar
-    //uiState es un contenedor reactivo, guarda solo 1 register ui state a la vez
-    //aunque solo guardo un objeto, necesito el contenedor para que este pendiente si algo cambia y le avise a la vista
-    val uiState: StateFlow<RegisterUiState> = privateUiState.asStateFlow() //misma direccion de memoria que el private pero solo de lectura
+class RegisterViewModel(private val authRepository: AuthRepository) : ViewModel() {
+    //solo el viewmodel puede modificar el estado privado
+    private val privateUiState = MutableStateFlow(RegisterUiState())
+    //contenedor reactivo expuesto a la vista de solo lectura
+    val uiState: StateFlow<RegisterUiState> = privateUiState.asStateFlow()
 
-    //actualizar el register ui state cuando el usuario escribe algo (con tan solo una letra ya se lanza)
-    //dejamos error message en todos por si ya salio un error y el usuario lo esta corrigiendo, para que no siga viendo que hay error
-    fun onNameChange(newName: String): Unit {
-        //abrir contenedor, sacar el objeto contenido y hace copia cambiando solo el atributo que le decimos
-        //la copia es necesaria porque los campos en register ui state son val (inmutables)
-        //ademas, al crear un objeto nuevo, el stateflow lo nota y avisa a la vista
-        privateUiState.value = privateUiState.value.copy(name = newName, errorMessage = null)
+    //actualizar el estado reactivamente y calcular validacion inline en tiempo real
+    fun onNameChange(newName: String) {
+        val current = privateUiState.value
+        val dummy = UserModel(name = newName, birthDate = current.birthDate, email = current.email, password = current.password)
+        val error = when {
+            newName.isNotBlank() && !dummy.isValidName() -> {
+                val trimmed = newName.trim()
+                if (trimmed.length < UserModel.MIN_NAME_LENGTH) "Name must be at least 2 characters"
+                else if (trimmed.length > UserModel.MAX_NAME_LENGTH) "Name cannot exceed 100 characters"
+                else "Name can only contain letters and spaces"
+            }
+            else -> null
+        }
+        val updated = current.copy(name = newName, nameError = error, errorMessage = null)
+        privateUiState.value = updated.copy(isFormValid = checkFormValidity(updated))
     }
 
-    fun onAgeChange(newAge: String): Unit {
-        privateUiState.value = privateUiState.value.copy(age = newAge, errorMessage = null)
+    fun onBirthDateChange(newBirthDate: String) {
+        val current = privateUiState.value
+        val dummy = UserModel(name = current.name, birthDate = newBirthDate, email = current.email, password = current.password)
+        val error = when {
+            newBirthDate.length >= 10 && !dummy.isValidBirthDate() -> "Must be a valid date and at least 13 years old (YYYY-MM-DD)"
+            else -> null
+        }
+        val updated = current.copy(birthDate = newBirthDate, birthDateError = error, errorMessage = null)
+        privateUiState.value = updated.copy(isFormValid = checkFormValidity(updated))
     }
 
-    fun onEmailChange(newEmail: String): Unit {
-        privateUiState.value = privateUiState.value.copy(email = newEmail, errorMessage = null)
+    fun onEmailChange(newEmail: String) {
+        val current = privateUiState.value
+        val dummy = UserModel(name = current.name, birthDate = current.birthDate, email = newEmail, password = current.password)
+        val error = when {
+            newEmail.isNotBlank() && (newEmail.contains("@") && newEmail.contains(".")) && !dummy.isValidEmail() -> "Please enter a valid email address"
+            newEmail.length >= 6 && !newEmail.contains("@") -> "Email must contain @"
+            else -> null
+        }
+        val updated = current.copy(email = newEmail, emailError = error, errorMessage = null)
+        privateUiState.value = updated.copy(isFormValid = checkFormValidity(updated))
     }
 
-    fun onPasswordChange(newPassword: String): Unit {
-        privateUiState.value = privateUiState.value.copy(password = newPassword, errorMessage = null)
+    fun onPasswordChange(newPassword: String) {
+        val current = privateUiState.value
+        val dummy = UserModel(name = current.name, birthDate = current.birthDate, email = current.email, password = newPassword)
+        val passError = when {
+            newPassword.isNotBlank() && !dummy.isValidPassword() -> "Must be at least 8 chars, 1 uppercase and 1 number"
+            else -> null
+        }
+        val confirmError = when {
+            current.confirmPassword.isNotBlank() && newPassword != current.confirmPassword -> "Passwords do not match"
+            else -> null
+        }
+        val updated = current.copy(password = newPassword, passwordError = passError, confirmPasswordError = confirmError, errorMessage = null)
+        privateUiState.value = updated.copy(isFormValid = checkFormValidity(updated))
     }
 
-    fun onConfirmPasswordChange(newConfirmPassword: String): Unit {
-        privateUiState.value = privateUiState.value.copy(confirmPassword = newConfirmPassword, errorMessage = null)
+    fun onConfirmPasswordChange(newConfirmPassword: String) {
+        val current = privateUiState.value
+        val error = when {
+            newConfirmPassword.isNotBlank() && newConfirmPassword != current.password -> "Passwords do not match"
+            else -> null
+        }
+        val updated = current.copy(confirmPassword = newConfirmPassword, confirmPasswordError = error, errorMessage = null)
+        privateUiState.value = updated.copy(isFormValid = checkFormValidity(updated))
+    }
+
+    //verifica con el modelo de dominio si todo el formulario cumple los requisitos
+    private fun checkFormValidity(state: RegisterUiState): Boolean {
+        if (state.name.isBlank() || state.birthDate.isBlank() || state.email.isBlank() || state.password.isBlank() || state.confirmPassword.isBlank()) {
+            return false
+        }
+        if (state.password != state.confirmPassword) {
+            return false
+        }
+        val user = UserModel(
+            name = state.name,
+            birthDate = state.birthDate,
+            email = state.email,
+            password = state.password
+        )
+        return user.isValidName() && user.isValidBirthDate() && user.isValidEmail() && user.isValidPassword()
     }
 
     fun dismissNoInternetDialog() {
@@ -53,68 +110,67 @@ class RegisterViewModel(private val authRepository: AuthRepository): ViewModel()
     }
 
     //hacer el registro cuando el usuario presiona el boton en la screen
-    //aqui solo hacemos validaciones de presentacion de la pantalla y le delegamos las de negocio al modelo UserModel
-    //onSuccess se ejecuta cuando firebase termina de crear la cuenta
+    //las reglas de negocio pertenecen al modelo UserModel
     fun register(onSuccess: () -> Unit) {
         val state = privateUiState.value
 
-        //reglas de presentacion
-        //revisar que no haya ningun campo vacio en la pantalla
-        if (state.name.isBlank() || state.age.isBlank() || state.email.isBlank() || state.password.isBlank() || state.confirmPassword.isBlank()) {
+        //revisar que no haya ningun campo vacio
+        if (state.name.isBlank() || state.birthDate.isBlank() || state.email.isBlank() || state.password.isBlank() || state.confirmPassword.isBlank()) {
             privateUiState.value = state.copy(errorMessage = "Please fill in all fields")
-            return //detener la funcion, no seguir revisando nada mas, pues porque ya encontro un error
+            return
         }
 
-        //revisar que ambas contrasenas escritas coincidan
+        //revisar coincidencia de claves
         if (state.password != state.confirmPassword) {
-            privateUiState.value = state.copy(errorMessage = "Passwords do not match")
-            return //detener la funcion, no seguir revisando nada mas, pues porque ya encontro un error
-        }
-
-        //revisar que el texto de la edad se pueda convertir a numero
-        val ageNumber = state.age.toIntOrNull()
-        if (ageNumber == null) {
-            privateUiState.value = state.copy(errorMessage = "Please enter a valid age")
+            privateUiState.value = state.copy(errorMessage = "Passwords do not match", confirmPasswordError = "Passwords do not match")
             return
         }
 
-        //creamos el objeto del modelo con los datos listos
-        val userModel = UserModel(state.name, ageNumber, state.email, state.password)
+        val userModel = UserModel(
+            name = state.name.trim(),
+            birthDate = state.birthDate.trim(),
+            email = state.email.trim(),
+            password = state.password
+        )
 
-        //reglas de negocio
-        //le preguntamos al modelo UserModel si cumple con reglas de negocio
+        //validacion con el modelo de dominio
         if (!userModel.isValidName()) {
-            privateUiState.value = state.copy(errorMessage = "Name is too short")
+            val trimmed = userModel.name.trim()
+            val err = if (trimmed.length < UserModel.MIN_NAME_LENGTH) "Name must be at least 2 characters"
+            else if (trimmed.length > UserModel.MAX_NAME_LENGTH) "Name cannot exceed 100 characters"
+            else "Name can only contain letters and spaces"
+            privateUiState.value = state.copy(nameError = err, errorMessage = "Please check highlighted errors")
             return
         }
 
-        if (!userModel.isValidAge()) {
-            privateUiState.value = state.copy(errorMessage = "Please enter a valid age")
+        if (!userModel.isValidBirthDate()) {
+            privateUiState.value = state.copy(birthDateError = "Must be a valid date and at least 13 years old (YYYY-MM-DD)", errorMessage = "Please check highlighted errors")
             return
         }
 
         if (!userModel.isValidEmail()) {
-            privateUiState.value = state.copy(errorMessage = "Please enter a valid email address")
+            privateUiState.value = state.copy(emailError = "Please enter a valid email address", errorMessage = "Please check highlighted errors")
             return
         }
 
         if (!userModel.isValidPassword()) {
-            privateUiState.value = state.copy(errorMessage = "Password must be at least 8 characters and contain 1 uppercase and 1 number")
+            privateUiState.value = state.copy(passwordError = "Must be at least 8 chars, 1 uppercase and 1 number", errorMessage = "Please check highlighted errors")
             return
         }
 
         //activamos la carga para mostrar el spinner en la pantalla
         privateUiState.value = state.copy(isLoading = true, errorMessage = null, showNoInternetDialog = false)
 
-        //llamamos a authRepository para guardar el userModel en firebase
-        //se hace en una corrutina porque firebase se demora en responder
         viewModelScope.launch {
             val result = authRepository.registerUser(userModel)
-
-            //apagamos la carga una vez completado
             privateUiState.value = privateUiState.value.copy(isLoading = false)
 
-            result.onSuccess { onSuccess() }
+            result.onSuccess {
+                privateUiState.value = privateUiState.value.copy(
+                    successMessage = "Account created successfully! Welcome to Ark"
+                )
+                onSuccess()
+            }
             result.onFailure { error ->
                 val isNetworkError = error is NetworkUnavailableException ||
                         error is FirebaseNetworkException ||

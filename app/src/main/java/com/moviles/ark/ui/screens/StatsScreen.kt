@@ -30,7 +30,9 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.material.icons.filled.WifiOff
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -62,11 +64,13 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.domain.composite.Emotion
+import com.moviles.ark.domain.models.InsightModel
 import com.moviles.ark.domain.models.StatsModel
 import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.ui.components.UsefulInsightComponent
@@ -75,10 +79,20 @@ import com.moviles.ark.ui.components.getEmotionEmoji
 import com.moviles.ark.ui.theme.AccentColor
 import com.moviles.ark.ui.theme.AppTheme
 import com.moviles.ark.ui.theme.BackgroundColor
+import com.moviles.ark.ui.theme.FigtreeFontFamily
 import com.moviles.ark.ui.theme.PrimaryColor
 import com.moviles.ark.ui.theme.SecondaryColor
+import com.moviles.ark.ui.theme.SoreanFontFamily
 import com.moviles.ark.ui.theme.TextColor
 import com.moviles.ark.ui.viewmodels.StatsViewModel
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
+
+//paleta consistente de superficies de tarjeta sobre BackgroundColor (#158)
+private val CardSurfaceColor = Color(0xFFF3E4CF)
+private val CardBorderColor = TextColor.copy(alpha = 0.12f)
 
 @Composable
 fun StatsScreen(
@@ -86,10 +100,9 @@ fun StatsScreen(
     onNavigateToToolsCatalog: (ToolCategory?) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
-
     val context = LocalContext.current
 
-    //recarga automaticamente al entrar a la pantalla para mostrar check-ins recientes
+    //recarga automaticamente al entrar a la pantalla para mostrar check-ins recientes con cache-then-network (#147, #158)
     LaunchedEffect(Unit) {
         viewModel.loadStats()
     }
@@ -107,6 +120,7 @@ fun StatsScreen(
         isLoading = uiState.isLoading,
         errorMessage = uiState.errorMessage,
         isRefreshing = uiState.isRefreshing,
+        isOffline = uiState.isOffline,
         onRefresh = { viewModel.refresh() },
         onNavigateToToolsCatalog = onNavigateToToolsCatalog
     )
@@ -120,6 +134,7 @@ fun StatsScreenContent(
     isLoading: Boolean,
     errorMessage: String? = null,
     isRefreshing: Boolean = false,
+    isOffline: Boolean = false,
     onRefresh: () -> Unit = {},
     onNavigateToToolsCatalog: (ToolCategory?) -> Unit = {}
 ) {
@@ -162,8 +177,8 @@ fun StatsScreenContent(
                         .align(Alignment.CenterEnd)
                         .shadow(4.dp, CircleShape, ambientColor = Color(0x35351B08), spotColor = Color(0x35351B08))
                         .clip(CircleShape)
-                        .background(Color(0xFFFFF5E6))
-                        .border(1.2.dp, Color(0xFFE8D3B9), CircleShape)
+                        .background(CardSurfaceColor)
+                        .border(1.dp, CardBorderColor, CircleShape)
                         .clickable { onRefresh() },
                     contentAlignment = Alignment.Center
                 ) {
@@ -176,7 +191,7 @@ fun StatsScreenContent(
                 }
             }
 
-            //deslizar hacia abajo pide datos nuevos a firestore (#147)
+            //deslizar hacia abajo pide datos nuevos al backend en firestore (#147, #158)
             val pullState = rememberPullToRefreshState()
             PullToRefreshBox(
                 isRefreshing = isRefreshing,
@@ -200,22 +215,56 @@ fun StatsScreenContent(
                     ) {
                         CircularProgressIndicator(color = PrimaryColor)
                     }
-                } else if (errorMessage != null && stats == null) {
+                } else if (stats == null) {
                     PullableContent {
-                        StatsErrorView(
-                            message = errorMessage,
-                            onRetry = onRefresh
-                        )
+                        if (isOffline || errorMessage?.contains("offline", ignoreCase = true) == true) {
+                            //cuando no hay nada en disco y no hay internet: fallback ilustrado amigable (#158)
+                            StatsOfflineView(onRetry = onRefresh)
+                        } else if (errorMessage != null) {
+                            StatsErrorView(
+                                message = errorMessage,
+                                onRetry = onRefresh
+                            )
+                        } else {
+                            StatsEmptyView(
+                                onExploreTools = { onNavigateToToolsCatalog(null) }
+                            )
+                        }
                     }
-                } else if (stats == null || (stats.totalCheckIns == 0 && stats.toolUsagePercentages.isEmpty())) {
+                } else if (stats.totalCheckIns == 0 && stats.toolUsagePercentages.isEmpty()) {
                     PullableContent {
-                        StatsEmptyView()
+                        StatsEmptyView(
+                            onExploreTools = { onNavigateToToolsCatalog(null) }
+                        )
                     }
                 } else {
                     StatsMainView(stats = stats, onNavigateToToolsCatalog = onNavigateToToolsCatalog)
                 }
             }
         }
+    }
+}
+
+//formatea el timestamp de las estadisticas para mostrar al usuario la frescura de los datos (#158)
+private fun formatLastUpdated(timestamp: Long): String {
+    if (timestamp <= 0L) return ""
+    return try {
+        val date = Date(timestamp)
+        val timeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
+        val dateFormat = SimpleDateFormat("MMM d, h:mm a", Locale.getDefault())
+
+        val todayCal = Calendar.getInstance()
+        val dateCal = Calendar.getInstance().apply { time = date }
+
+        if (todayCal.get(Calendar.YEAR) == dateCal.get(Calendar.YEAR) &&
+            todayCal.get(Calendar.DAY_OF_YEAR) == dateCal.get(Calendar.DAY_OF_YEAR)
+        ) {
+            "Updated today at ${timeFormat.format(date)}"
+        } else {
+            "Updated on ${dateFormat.format(date)}"
+        }
+    } catch (e: Exception) {
+        ""
     }
 }
 
@@ -231,7 +280,7 @@ private fun PullableContent(content: @Composable () -> Unit) {
     }
 }
 
-//vista cuando ocurre un error al cargar estadisticas
+//vista cuando ocurre un error de servidor al cargar estadisticas
 @Composable
 private fun StatsErrorView(
     message: String,
@@ -248,8 +297,8 @@ private fun StatsErrorView(
                 .fillMaxWidth()
                 .shadow(6.dp, RoundedCornerShape(24.dp), ambientColor = Color(0x35351B08), spotColor = Color(0x35351B08)),
             shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF5E6)),
-            border = BorderStroke(1.2.dp, Color(0xFFE8D3B9))
+            colors = CardDefaults.cardColors(containerColor = CardSurfaceColor),
+            border = BorderStroke(1.2.dp, CardBorderColor)
         ) {
             Column(
                 modifier = Modifier.padding(28.dp),
@@ -274,6 +323,7 @@ private fun StatsErrorView(
                 Text(
                     text = "Unable to load stats",
                     style = MaterialTheme.typography.titleLarge,
+                    fontFamily = SoreanFontFamily,
                     fontWeight = FontWeight.Bold,
                     color = TextColor
                 )
@@ -281,6 +331,7 @@ private fun StatsErrorView(
                 Text(
                     text = message,
                     style = MaterialTheme.typography.bodyLarge,
+                    fontFamily = FigtreeFontFamily,
                     color = TextColor.copy(alpha = 0.7f),
                     textAlign = TextAlign.Center,
                     fontSize = 14.sp
@@ -297,6 +348,7 @@ private fun StatsErrorView(
                 ) {
                     Text(
                         text = "Retry",
+                        fontFamily = FigtreeFontFamily,
                         color = Color.White,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 14.sp
@@ -307,13 +359,15 @@ private fun StatsErrorView(
     }
 }
 
-//vista cuando el usuario aun no ha registrado check-ins ni herramientas
+//tarjeta ilustrada cuando no hay datos en disco y no hay conexion a internet (#158)
 @Composable
-private fun StatsEmptyView() {
+private fun StatsOfflineView(
+    onRetry: () -> Unit
+) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(28.dp),
+            .padding(24.dp),
         contentAlignment = Alignment.Center
     ) {
         Card(
@@ -321,43 +375,172 @@ private fun StatsEmptyView() {
                 .fillMaxWidth()
                 .shadow(6.dp, RoundedCornerShape(24.dp), ambientColor = Color(0x35351B08), spotColor = Color(0x35351B08)),
             shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF5E6)),
-            border = BorderStroke(1.2.dp, Color(0xFFE8D3B9))
+            colors = CardDefaults.cardColors(containerColor = CardSurfaceColor),
+            border = BorderStroke(1.2.dp, CardBorderColor)
         ) {
             Column(
-                modifier = Modifier.padding(28.dp),
+                modifier = Modifier.padding(26.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                //composicion ilustrada calida con icono de offline (#158)
                 Box(
                     modifier = Modifier
-                        .size(56.dp)
+                        .size(88.dp)
                         .clip(CircleShape)
                         .background(PrimaryColor.copy(alpha = 0.18f))
                         .border(1.2.dp, Color(0xFFE8D3B9), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.AutoGraph,
-                        contentDescription = null,
-                        tint = PrimaryColor,
-                        modifier = Modifier.size(28.dp)
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clip(CircleShape)
+                            .background(SecondaryColor.copy(alpha = 0.25f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.WifiOff,
+                            contentDescription = "Offline indicator",
+                            tint = SecondaryColor,
+                            modifier = Modifier.size(34.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(18.dp))
+
+                Text(
+                    text = "You're Currently Offline",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontFamily = SoreanFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    color = TextColor,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Text(
+                    text = "Ark needs an internet connection to fetch your latest cloud analytics for the first time. Check your Wi-Fi or data, and swipe down or tap retry to connect!",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontFamily = FigtreeFontFamily,
+                    color = TextColor.copy(alpha = 0.75f),
+                    textAlign = TextAlign.Center,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Button(
+                    onClick = onRetry,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryColor)
+                ) {
+                    Text(
+                        text = "Retry Connection",
+                        fontFamily = FigtreeFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        color = TextColor,
+                        fontSize = 15.sp
                     )
                 }
-                Spacer(modifier = Modifier.height(16.dp))
+            }
+        }
+    }
+}
+
+//tarjeta ilustrada de estado vacio cuando el usuario aun no ha registrado check-ins ni herramientas (#158)
+@Composable
+private fun StatsEmptyView(
+    onExploreTools: () -> Unit = {}
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .shadow(6.dp, RoundedCornerShape(24.dp), ambientColor = Color(0x35351B08), spotColor = Color(0x35351B08)),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = CardSurfaceColor),
+            border = BorderStroke(1.2.dp, CardBorderColor)
+        ) {
+            Column(
+                modifier = Modifier.padding(26.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                //composicion ilustrada con halo concentrico calido de la paleta oficial (#158)
+                Box(
+                    modifier = Modifier
+                        .size(88.dp)
+                        .clip(CircleShape)
+                        .background(PrimaryColor.copy(alpha = 0.14f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clip(CircleShape)
+                            .background(PrimaryColor.copy(alpha = 0.25f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoGraph,
+                            contentDescription = "Illustrated analytics",
+                            tint = PrimaryColor,
+                            modifier = Modifier.size(34.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(18.dp))
+
                 Text(
-                    text = "No check-ins or tool usage yet",
+                    text = "Your Wellbeing Journey Awaits",
                     style = MaterialTheme.typography.titleLarge,
+                    fontFamily = SoreanFontFamily,
                     fontWeight = FontWeight.Bold,
-                    color = TextColor
+                    color = TextColor,
+                    textAlign = TextAlign.Center
                 )
-                Spacer(modifier = Modifier.height(8.dp))
+
+                Spacer(modifier = Modifier.height(10.dp))
+
                 Text(
-                    text = "Start your first check-in or explore wellbeing tools to see your emotional journey and stats here!",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = TextColor.copy(alpha = 0.7f),
+                    text = "Track your daily emotional check-ins and explore guided wellbeing tools to unlock personalized analytics and healthy habit insights.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontFamily = FigtreeFontFamily,
+                    color = TextColor.copy(alpha = 0.75f),
                     textAlign = TextAlign.Center,
-                    fontSize = 14.sp
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp
                 )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Button(
+                    onClick = onExploreTools,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryColor)
+                ) {
+                    Text(
+                        text = "Explore Wellbeing Tools",
+                        fontFamily = FigtreeFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        color = TextColor,
+                        fontSize = 15.sp
+                    )
+                }
             }
         }
     }
@@ -382,20 +565,20 @@ private fun StatsMainView(
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 6.dp, bottom = 36.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        //capsulas de resumen directo y limpio (sin mascota ni textos largos)
+        //capsulas de resumen directo y limpio
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                //capsula 1 (izquierda): top feeling con halo difuminado del patron composite y relieve
+                //capsula 1 (izquierda): top feeling con relieve y paleta oficial (#158)
                 Surface(
                     modifier = Modifier
                         .weight(1f)
                         .shadow(5.dp, RoundedCornerShape(20.dp), ambientColor = Color(0x30351B08), spotColor = Color(0x30351B08)),
                     shape = RoundedCornerShape(20.dp),
-                    color = Color(0xFFFFF5E6),
-                    border = BorderStroke(1.2.dp, Color(0xFFE8D3B9))
+                    color = CardSurfaceColor,
+                    border = BorderStroke(1.dp, CardBorderColor)
                 ) {
                     val emotion = stats.topEmotion ?: Emotion.HAPPINESS
                     val color = getEmotionColor(emotion)
@@ -406,7 +589,7 @@ private fun StatsMainView(
                         modifier = Modifier
                             .background(
                                 Brush.verticalGradient(
-                                    colors = listOf(Color(0xFFFFF9EE), Color(0xFFFEEDD8))
+                                    colors = listOf(Color(0xFFF7ECDC), Color(0xFFEADBCE))
                                 )
                             )
                             .padding(horizontal = 14.dp, vertical = 12.dp),
@@ -469,6 +652,7 @@ private fun StatsMainView(
                             Text(
                                 text = emotionName,
                                 style = MaterialTheme.typography.titleMedium,
+                                fontFamily = FigtreeFontFamily,
                                 fontWeight = FontWeight.Bold,
                                 color = TextColor,
                                 fontSize = 15.sp
@@ -477,20 +661,20 @@ private fun StatsMainView(
                     }
                 }
 
-                //capsula 2 (derecha): total de checkins con profundidad e icono tactil
+                //capsula 2 (derecha): total de checkins con profundidad e icono tactil (#158)
                 Surface(
                     modifier = Modifier
                         .weight(1f)
                         .shadow(5.dp, RoundedCornerShape(20.dp), ambientColor = Color(0x30351B08), spotColor = Color(0x30351B08)),
                     shape = RoundedCornerShape(20.dp),
-                    color = Color(0xFFFFF5E6),
-                    border = BorderStroke(1.2.dp, Color(0xFFE8D3B9))
+                    color = CardSurfaceColor,
+                    border = BorderStroke(1.dp, CardBorderColor)
                 ) {
                     Row(
                         modifier = Modifier
                             .background(
                                 Brush.verticalGradient(
-                                    colors = listOf(Color(0xFFFFF9EE), Color(0xFFFEEDD8))
+                                    colors = listOf(Color(0xFFF7ECDC), Color(0xFFEADBCE))
                                 )
                             )
                             .padding(horizontal = 14.dp, vertical = 12.dp),
@@ -529,12 +713,14 @@ private fun StatsMainView(
                             Text(
                                 text = "Check-ins",
                                 style = MaterialTheme.typography.bodyLarge,
+                                fontFamily = FigtreeFontFamily,
                                 color = TextColor.copy(alpha = 0.65f),
                                 fontSize = 11.sp
                             )
                             Text(
                                 text = "${stats.totalCheckIns}",
                                 style = MaterialTheme.typography.titleMedium,
+                                fontFamily = FigtreeFontFamily,
                                 fontWeight = FontWeight.Bold,
                                 color = TextColor,
                                 fontSize = 17.sp
@@ -562,7 +748,7 @@ private fun StatsMainView(
             )
         }
 
-        //grafico de torta: frecuencia de herramientas con relieve
+        //grafico de torta: frecuencia de herramientas con relieve (#158)
         item {
             ToolsUsagePieChartCard(toolUsagePercentages = stats.toolUsagePercentages)
         }
@@ -598,7 +784,7 @@ private fun StatsMainView(
     }
 }
 
-//grafico de barras para el journey emocional de la semana con escala visible de 1 a 5 y relieve
+//grafico de barras para el journey emocional de la semana con escala visible de 1 a 5 y tipografia oficial (#158)
 @Composable
 private fun WeeklyEmotionJourneyCard(
     weeklyIntensities: Map<String, Float>,
@@ -612,8 +798,8 @@ private fun WeeklyEmotionJourneyCard(
             .fillMaxWidth()
             .shadow(6.dp, RoundedCornerShape(24.dp), ambientColor = Color(0x35351B08), spotColor = Color(0x35351B08)),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF5E6)),
-        border = BorderStroke(1.2.dp, Color(0xFFE8D3B9))
+        colors = CardDefaults.cardColors(containerColor = CardSurfaceColor),
+        border = BorderStroke(1.dp, CardBorderColor)
     ) {
         Column(
             modifier = Modifier.padding(20.dp)
@@ -658,6 +844,7 @@ private fun WeeklyEmotionJourneyCard(
                     Text(
                         text = "Dominant emotion per day and its intensity",
                         style = MaterialTheme.typography.bodyLarge,
+                        fontFamily = FigtreeFontFamily,
                         color = TextColor.copy(alpha = 0.65f),
                         fontSize = 12.sp
                     )
@@ -691,6 +878,7 @@ private fun WeeklyEmotionJourneyCard(
                         Text(
                             text = "$level",
                             style = MaterialTheme.typography.bodyLarge,
+                            fontFamily = FigtreeFontFamily,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = TextColor.copy(alpha = 0.45f)
@@ -711,15 +899,14 @@ private fun WeeklyEmotionJourneyCard(
                         val intensity = weeklyIntensities[day] ?: 0f
                         val hasEntry = intensity > 0f && emotion != null
                         val barColor = if (emotion != null) getEmotionColor(emotion) else PrimaryColor
-                        val emoji = if (emotion != null) getEmotionEmoji(emotion) else "✨"
+                        val emoji = if (emotion != null) getEmotionEmoji(emotion) else ""
                         val intensityRatio = (intensity / 5f).coerceIn(0f, 1f)
 
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier.weight(1f)
                         ) {
-                            if (hasEntry) {
-                                //emoji con halo difuminado idéntico al mood check-in
+                            if (hasEntry && emoji.isNotBlank()) {
                                 Box(
                                     modifier = Modifier
                                         .size(34.dp)
@@ -753,21 +940,31 @@ private fun WeeklyEmotionJourneyCard(
                             Box(
                                 modifier = Modifier
                                     .width(22.dp)
-                                    .height((90 * intensityRatio).coerceAtLeast(8f).dp)
-                                    .clip(RoundedCornerShape(8.dp))
+                                    .fillMaxHeight(fraction = if (hasEntry) intensityRatio.coerceAtLeast(0.12f) else 0.08f)
+                                    .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp, bottomStart = 4.dp, bottomEnd = 4.dp))
                                     .background(
-                                        if (hasEntry) barColor else Color.Black.copy(alpha = 0.08f)
+                                        if (hasEntry) {
+                                            Brush.verticalGradient(
+                                                colors = listOf(barColor, barColor.copy(alpha = 0.72f))
+                                            )
+                                        } else {
+                                            Brush.verticalGradient(
+                                                colors = listOf(Color(0xFFEADBCE), Color(0xFFDFCCBC))
+                                            )
+                                        }
                                     )
                             )
 
                             Spacer(modifier = Modifier.height(6.dp))
 
+                            //etiqueta del dia con tipografia oficial (#158)
                             Text(
-                                text = day,
-                                style = MaterialTheme.typography.labelLarge,
-                                fontSize = 11.5.sp,
-                                fontWeight = if (hasEntry) FontWeight.Bold else FontWeight.Medium,
-                                color = TextColor.copy(alpha = if (hasEntry) 0.9f else 0.45f)
+                                text = day.take(3),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FigtreeFontFamily,
+                                fontSize = 11.sp,
+                                fontWeight = if (hasEntry) FontWeight.Bold else FontWeight.Normal,
+                                color = if (hasEntry) TextColor else TextColor.copy(alpha = 0.45f)
                             )
                         }
                     }
@@ -915,8 +1112,8 @@ private fun ToolsUsagePieChartCard(
             .fillMaxWidth()
             .shadow(6.dp, RoundedCornerShape(24.dp), ambientColor = Color(0x35351B08), spotColor = Color(0x35351B08)),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF5E6)),
-        border = BorderStroke(1.2.dp, Color(0xFFE8D3B9))
+        colors = CardDefaults.cardColors(containerColor = CardSurfaceColor),
+        border = BorderStroke(1.dp, CardBorderColor)
     ) {
         Column(
             modifier = Modifier.padding(20.dp)
@@ -930,12 +1127,14 @@ private fun ToolsUsagePieChartCard(
                     Text(
                         text = "Tools Frequency",
                         style = MaterialTheme.typography.headlineSmall,
+                        fontFamily = SoreanFontFamily,
                         fontWeight = FontWeight.Bold,
                         color = TextColor
                     )
                     Text(
                         text = "Historical distribution by % of tool usage",
                         style = MaterialTheme.typography.bodyLarge,
+                        fontFamily = FigtreeFontFamily,
                         color = TextColor.copy(alpha = 0.65f),
                         fontSize = 12.sp
                     )
@@ -960,6 +1159,7 @@ private fun ToolsUsagePieChartCard(
                     Text(
                         text = "No tool usage recorded yet",
                         style = MaterialTheme.typography.bodyLarge,
+                        fontFamily = FigtreeFontFamily,
                         color = TextColor.copy(alpha = 0.6f),
                         fontSize = 13.sp
                     )
@@ -970,86 +1170,89 @@ private fun ToolsUsagePieChartCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceAround
                 ) {
-                //dibujo del grafico de torta (donut chart)
-                Box(
-                    modifier = Modifier.size(130.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Canvas(modifier = Modifier.size(110.dp)) {
-                        var startAngle = -90f
-                        var colorIndex = 0
-                        for ((_, percentage) in toolUsagePercentages) {
-                            val sweepAngle = (percentage / 100f) * 360f
-                            val color = sliceColors[colorIndex % sliceColors.size]
-                            drawArc(
-                                color = color,
-                                startAngle = startAngle,
-                                sweepAngle = sweepAngle,
-                                useCenter = false,
-                                style = Stroke(width = 24.dp.toPx(), cap = StrokeCap.Round)
-                            )
-                            startAngle += sweepAngle
-                            colorIndex += 1
+                    //dibujo del grafico de torta (donut chart)
+                    Box(
+                        modifier = Modifier.size(130.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Canvas(modifier = Modifier.size(110.dp)) {
+                            var startAngle = -90f
+                            var colorIndex = 0
+                            for ((_, percentage) in toolUsagePercentages) {
+                                val sweepAngle = (percentage / 100f) * 360f
+                                val color = sliceColors[colorIndex % sliceColors.size]
+                                drawArc(
+                                    color = color,
+                                    startAngle = startAngle,
+                                    sweepAngle = sweepAngle,
+                                    useCenter = false,
+                                    style = Stroke(width = 24.dp.toPx(), cap = StrokeCap.Round)
+                                )
+                                startAngle += sweepAngle
+                                colorIndex += 1
+                            }
                         }
+                        Text(
+                            text = "100%",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontFamily = FigtreeFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            color = TextColor
+                        )
                     }
-                    Text(
-                        text = "100%",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = TextColor
-                    )
-                }
 
-                Spacer(modifier = Modifier.width(16.dp))
+                    Spacer(modifier = Modifier.width(16.dp))
 
-                //leyenda de herramientas con sus porcentajes
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    var colorIndex = 0
-                    for ((toolName, percentage) in toolUsagePercentages) {
-                        val color = sliceColors[colorIndex % sliceColors.size]
-                        colorIndex += 1
+                    //leyenda de herramientas con sus porcentajes y tipografia oficial (#158)
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        var colorIndex = 0
+                        for ((toolName, percentage) in toolUsagePercentages) {
+                            val color = sliceColors[colorIndex % sliceColors.size]
+                            colorIndex += 1
 
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.weight(1f)
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(10.dp)
-                                        .clip(CircleShape)
-                                        .background(color)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(10.dp)
+                                            .clip(CircleShape)
+                                            .background(color)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = toolName,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontFamily = FigtreeFontFamily,
+                                        fontWeight = FontWeight.Medium,
+                                        color = TextColor,
+                                        fontSize = 12.sp
+                                    )
+                                }
                                 Text(
-                                    text = toolName,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.Medium,
-                                    color = TextColor,
+                                    text = "${percentage.toInt()}%",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontFamily = FigtreeFontFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextColor.copy(alpha = 0.8f),
                                     fontSize = 12.sp
                                 )
                             }
-                            Text(
-                                text = "${percentage.toInt()}%",
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = TextColor.copy(alpha = 0.8f),
-                                fontSize = 12.sp
-                            )
                         }
                     }
                 }
             }
         }
     }
-}
 }
 
 @Preview(showBackground = true, name = "Stats Screen Preview")

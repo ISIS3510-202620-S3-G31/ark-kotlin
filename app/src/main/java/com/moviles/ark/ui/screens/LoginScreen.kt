@@ -165,11 +165,15 @@ fun LoginScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Campo Email con icono representativo y teclado especifico
+                    // Campo Email con icono representativo, validacion reactiva y supportingText unicamente en error
                     OutlinedTextField(
                         value = uiState.email,
                         onValueChange = onEmailChange,
                         label = { Text("Email Address", fontFamily = FigtreeFontFamily) },
+                        isError = uiState.emailError != null,
+                        supportingText = if (uiState.emailError != null) {
+                            { Text(uiState.emailError, color = MaterialTheme.colorScheme.error) }
+                        } else null,
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Default.Email,
@@ -187,11 +191,15 @@ fun LoginScreen(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // Campo Password con icono y alternador visual (Show / Hide)
+                    // Campo Password con alternador visual y supportingText unicamente en error
                     OutlinedTextField(
                         value = uiState.password,
                         onValueChange = onPasswordChange,
                         label = { Text("Password", fontFamily = FigtreeFontFamily) },
+                        isError = uiState.passwordError != null,
+                        supportingText = if (uiState.passwordError != null) {
+                            { Text(uiState.passwordError, color = MaterialTheme.colorScheme.error) }
+                        } else null,
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Default.Lock,
@@ -234,13 +242,13 @@ fun LoginScreen(
 
                     Spacer(modifier = Modifier.height(20.dp))
 
-                    // Boton principal de Login con color primario naranja, esquinas suaves y respuesta haptica
+                    // Boton principal de Login habilitado cuando el formulario es valido
                     Button(
                         onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             onLoginClick()
                         },
-                        enabled = !uiState.isLoading,
+                        enabled = uiState.isFormValid && !uiState.isLoading,
                         shape = RoundedCornerShape(16.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = PrimaryColor,
@@ -328,6 +336,7 @@ fun LoginScreenPreview() {
         val dummyUiState = LoginUiState(
             email = "usuario@ejemplo.com",
             password = "password123",
+            isFormValid = true,
             isLoading = false
         )
 

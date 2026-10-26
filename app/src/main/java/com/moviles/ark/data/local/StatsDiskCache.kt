@@ -10,7 +10,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-//guarda en cacheDir/stats_cache.json las ultimas estadisticas que llegaron de firestore (#147)
+//guarda en cacheDir/stats_cache.json las ultimas estadisticas con su timestamp para Cache-then-Network (#147, #158)
 //asi la pantalla de stats pinta algo de inmediato al entrar, incluso sin red
 class StatsDiskCache(cacheDir: File) {
     private val file = File(cacheDir, FILE_NAME)
@@ -33,7 +33,8 @@ class StatsDiskCache(cacheDir: File) {
     //escribe primero un temporal y luego lo renombra, para no dejar un json a medias si la app se cierra
     suspend fun write(userId: String, stats: StatsModel) = withContext(Dispatchers.IO) {
         try {
-            val json = statsToJson(stats).put("userId", userId).put("savedAt", System.currentTimeMillis())
+            val timestamp = if (stats.lastUpdated > 0L) stats.lastUpdated else System.currentTimeMillis()
+            val json = statsToJson(stats).put("userId", userId).put("savedAt", timestamp)
             val temp = File(file.parentFile, "$FILE_NAME.tmp")
             temp.writeText(json.toString())
             if (!temp.renameTo(file)) {
@@ -113,6 +114,8 @@ class StatsDiskCache(cacheDir: File) {
                 val emotion = parseEmotion(item.optString("emotion")) ?: continue
                 emotionFrequencies[emotion] = item.optInt("count", 0)
             }
+
+            val lastUpdated = json.optLong("lastUpdated", json.optLong("savedAt", 0L))
 
             return StatsModel(
                 totalCheckIns = json.getInt("totalCheckIns"),
