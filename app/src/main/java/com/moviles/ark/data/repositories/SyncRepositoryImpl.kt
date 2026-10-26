@@ -61,12 +61,15 @@ class SyncRepositoryImpl(
         }
 
         // 2. Sincronizar fotos pendientes (isSynced = 0)
+        //solo las del usuario con sesion (#133): las reglas de firestore no dejan escribir en la carpeta de otro;
+        //las de otra cuenta esperan a que esa cuenta vuelva a entrar
         try {
-            val unsyncedPhotos = photoEntryDao.getUnsyncedPhotos()
+            val sessionUserId = auth.currentUser?.uid
+            val unsyncedPhotos = if (sessionUserId != null) photoEntryDao.getUnsyncedPhotos(sessionUserId) else emptyList()
             for (photo in unsyncedPhotos) {
                 try {
                     val docRef = firestore.collection("users")
-                        .document(currentUserId)
+                        .document(photo.userId)
                         .collection("photos")
                         .add(photo.toDto(currentUserId))
                         .await()
