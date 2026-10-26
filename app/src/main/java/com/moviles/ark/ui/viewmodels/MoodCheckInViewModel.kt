@@ -102,9 +102,16 @@ class MoodCheckInViewModel(
         )
     }
 
+    //sanitiza con take para tolerar pegados masivos desde el portapapeles sin que superen el limite
+    //y mantiene la inmutabilidad del stateflow notificando solo si el contenido es valido
     fun onNoteChange(newNote: String) {
+        val sanitizedNote = if (newNote.length > CheckInModel.MAX_NOTE_LENGTH) {
+            newNote.take(CheckInModel.MAX_NOTE_LENGTH)
+        } else {
+            newNote
+        }
         privateUiState.value = privateUiState.value.copy(
-            note = newNote,
+            note = sanitizedNote,
             errorMessage = null
         )
     }
