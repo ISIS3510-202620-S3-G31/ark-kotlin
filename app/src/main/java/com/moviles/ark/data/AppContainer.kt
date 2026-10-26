@@ -11,6 +11,7 @@ import com.google.firebase.firestore.firestore
 import com.moviles.ark.R
 import com.moviles.ark.data.local.ArkDatabase
 import com.moviles.ark.data.local.daos.FeedbackDao
+import com.moviles.ark.data.local.daos.ToolRecordDao
 import com.moviles.ark.data.local.sensors.AudioPlayerHelper
 import com.moviles.ark.data.local.sensors.EnvironmentalSensorManager
 import com.moviles.ark.data.local.sensors.Location
@@ -56,6 +57,7 @@ interface AppContainer {
     val weatherServiceAdapter: com.moviles.ark.domain.adapters.WeatherServiceAdapter
     val musicServiceAdapter: com.moviles.ark.domain.adapters.MusicServiceAdapter
     val feedbackDao: FeedbackDao
+    val toolRecordDao: ToolRecordDao
     val breathingRepository: BreathingRepository
     val screamTankRepository: com.moviles.ark.domain.repositories.ScreamTankRepository
     val audioPlayerHelper: AudioPlayerHelper
@@ -118,6 +120,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         )
     }
     override val feedbackDao: FeedbackDao by lazy { database.feedbackDao() }
+    override val toolRecordDao: ToolRecordDao by lazy { database.toolRecordDao() }
     // repositorio de la herramienta de respiracion desacoplado mediante el adapter de musica y sesiones en room
     override val breathingRepository: BreathingRepository by lazy {
         BreathingRepositoryImpl(

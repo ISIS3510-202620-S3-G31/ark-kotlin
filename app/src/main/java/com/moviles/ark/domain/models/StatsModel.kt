@@ -11,7 +11,8 @@ data class StatsModel(
     val toolUsagePercentages: Map<String, Float>,
     val currentInsight: InsightModel? = null,
     val allInsights: List<InsightModel> = emptyList(),
-    val emotionFrequencies: Map<Emotion, Int> = emptyMap()
+    val emotionFrequencies: Map<Emotion, Int> = emptyMap(),
+    val lastUpdated: Long = 0L
 ) {
     //una fuente nueva reemplaza a lo que se ve solo si no tiene menos check-ins o es mas reciente (#135, #147, #158)
     fun canReplace(shown: StatsModel?): Boolean {
