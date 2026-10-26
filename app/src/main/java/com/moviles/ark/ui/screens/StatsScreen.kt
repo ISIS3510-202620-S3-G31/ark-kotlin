@@ -132,18 +132,29 @@ fun StatsScreenContent(
                 .fillMaxSize()
                 .statusBarsPadding()
         ) {
-            //barra superior con titulo principal centrado y boton de refresco
+            //barra superior con titulo principal centrado, ultima actualizacion y boton de refresco
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 22.dp, end = 22.dp, top = 26.dp, bottom = 14.dp)
+                    .padding(start = 22.dp, end = 22.dp, top = 22.dp, bottom = 12.dp)
             ) {
-                Text(
-                    text = "Wellbeing Stats",
-                    style = MaterialTheme.typography.headlineLarge,
-                    color = TextColor,
-                    modifier = Modifier.align(Alignment.Center)
-                )
+                Column(
+                    modifier = Modifier.align(Alignment.Center),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "Wellbeing Stats",
+                        style = MaterialTheme.typography.headlineLarge,
+                        color = TextColor
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Last updated: ${getLastUpdatedLabel()}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextColor.copy(alpha = 0.55f),
+                        fontSize = 12.sp
+                    )
+                }
 
                 Box(
                     modifier = Modifier
@@ -249,7 +260,7 @@ private fun StatsErrorView(
                         .size(56.dp)
                         .clip(CircleShape)
                         .background(Color(0xFFE57373).copy(alpha = 0.18f))
-                        .border(1.2.dp, Color.White.copy(alpha = 0.9f), CircleShape),
+                        .border(1.2.dp, Color(0xFFE8D3B9), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -322,7 +333,7 @@ private fun StatsEmptyView() {
                         .size(56.dp)
                         .clip(CircleShape)
                         .background(PrimaryColor.copy(alpha = 0.18f))
-                        .border(1.2.dp, Color.White.copy(alpha = 0.9f), CircleShape),
+                        .border(1.2.dp, Color(0xFFE8D3B9), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -352,13 +363,9 @@ private fun StatsEmptyView() {
     }
 }
 
-private fun getWeekDateRange(): String {
-    val format = java.text.SimpleDateFormat("MMM d", java.util.Locale.ENGLISH)
-    val cal = java.util.Calendar.getInstance()
-    val end = format.format(cal.time)
-    cal.add(java.util.Calendar.DAY_OF_YEAR, -6)
-    val start = format.format(cal.time)
-    return "$start - $end"
+private fun getLastUpdatedLabel(): String {
+    val format = java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault())
+    return "Today at " + format.format(java.util.Date())
 }
 
 data class TooltipInfo(val title: String, val message: String)
@@ -423,7 +430,7 @@ private fun StatsMainView(
                                 }
                                 .clip(CircleShape)
                                 .background(color.copy(alpha = 0.22f))
-                                .border(1.2.dp, Color.White.copy(alpha = 0.9f), CircleShape),
+                                .border(1.2.dp, Color(0xFFE8D3B9), CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(text = emoji, fontSize = 21.sp)
@@ -507,7 +514,7 @@ private fun StatsMainView(
                                 }
                                 .clip(CircleShape)
                                 .background(PrimaryColor.copy(alpha = 0.18f))
-                                .border(1.2.dp, Color.White.copy(alpha = 0.9f), CircleShape),
+                                .border(1.2.dp, Color(0xFFE8D3B9), CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
@@ -649,10 +656,9 @@ private fun WeeklyEmotionJourneyCard(
                         }
                     }
                     Text(
-                        text = getWeekDateRange(),
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = PrimaryColor,
+                        text = "Dominant emotion per day and its intensity",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = TextColor.copy(alpha = 0.65f),
                         fontSize = 12.sp
                     )
                 }
@@ -873,7 +879,7 @@ private fun EmotionDistributionCard(
                                     .fillMaxWidth()
                                     .height(8.dp)
                                     .clip(RoundedCornerShape(4.dp))
-                                    .background(Color.White.copy(alpha = 0.7f))
+                                    .background(Color(0xFFE8D3B9).copy(alpha = 0.45f))
                             ) {
                                 Box(
                                     modifier = Modifier
