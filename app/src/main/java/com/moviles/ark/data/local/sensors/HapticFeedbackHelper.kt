@@ -8,8 +8,8 @@ import android.os.VibratorManager
 import com.moviles.ark.ui.viewmodels.BreathingPhase
 
 /**
- * Sensor helper responsible for triggering subtle haptic vibrations via VibrationEffect
- * during guided breathing phase transitions (Inhale, Hold, Exhale).
+ * Sensor helper that triggers a subtle haptic cue via VibrationEffect
+ * when the guided breathing goes from Hold to Exhale.
  */
 class HapticFeedbackHelper(private val context: Context) {
 
@@ -21,39 +21,28 @@ class HapticFeedbackHelper(private val context: Context) {
         context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
     }
 
-    /**
-     * Triggers a subtle tactile pulse customized for each breathing transition:
-     * - INHALE: Distinct energetic pulse marking the start of oxygen intake.
-     * - HOLD / HOLD_POST_EXHALE: Soft, concise tap indicating pause and still lungs.
-     * - EXHALE: Gentle decaying wave indicating relaxation and slow air release.
-     */
-    fun triggerPhaseTransition(phase: BreathingPhase) {
+    //la unica vibracion del ejercicio es al pasar de hold a exhale: avisa que ya se puede soltar el aire
+    //los demas cambios de fase no vibran para no distraer
+    fun onPhaseChanged(previous: BreathingPhase?, current: BreathingPhase) {
+        if (previous == BreathingPhase.HOLD && current == BreathingPhase.EXHALE) {
+            vibrateExhaleCue()
+        }
+    }
+
+    private fun vibrateExhaleCue() {
         val targetVibrator = vibrator ?: return
         if (!targetVibrator.hasVibrator()) return
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val effect: VibrationEffect? = when (phase) {
-                    BreathingPhase.INHALE -> {
-                        // Pulso sutil y claro para iniciar la inhalacion
-                        VibrationEffect.createOneShot(45L, 120)
-                    }
-                    BreathingPhase.HOLD,
-                    BreathingPhase.HOLD_POST_EXHALE -> {
-                        // Toque suave y preciso para sostener
-                        VibrationEffect.createOneShot(30L, 80)
-                    }
-                    BreathingPhase.EXHALE -> {
-                        // Doble pulsacion suave que marca la exhalacion y alivio
-                        VibrationEffect.createWaveform(
-                            longArrayOf(0L, 35L, 45L, 30L),
-                            intArrayOf(0, 100, 0, 70),
-                            -1
-                        )
-                    }
-                    BreathingPhase.READY -> null
-                }
-                effect?.let { targetVibrator.vibrate(it) }
+                // Doble pulsacion suave que marca la exhalacion y alivio
+                targetVibrator.vibrate(
+                    VibrationEffect.createWaveform(
+                        longArrayOf(0L, 35L, 45L, 30L),
+                        intArrayOf(0, 100, 0, 70),
+                        -1
+                    )
+                )
             } else {
                 @Suppress("DEPRECATION")
                 targetVibrator.vibrate(35L)

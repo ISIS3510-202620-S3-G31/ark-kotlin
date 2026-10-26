@@ -138,9 +138,20 @@ class BreathingViewModel(
         selectTrack(tracks[prevIndex])
     }
 
-    //muestra u oculta el selector desplegable de canciones
+    //muestra u oculta la hoja inferior con las canciones
     fun toggleTrackSelector() {
         _uiState.update { it.copy(showTrackSelector = !it.showTrackSelector) }
+    }
+
+    //toque sobre una pista de la hoja: si es la que esta sonando se pausa; si no, se cambia y se reproduce
+    fun onTrackTapped(track: AmbientTrackModel) {
+        val state = _uiState.value
+        if (track.id == state.selectedTrack?.id && state.isMusicPlaying) {
+            toggleMusic()
+            return
+        }
+        selectTrack(track)
+        if (!state.isMusicPlaying) toggleMusic()
     }
 
     fun togglePlayPause() {
@@ -202,6 +213,7 @@ class BreathingViewModel(
         _uiState.update { current ->
             current.copy(
                 selectedPreset = preset,
+                isCustomSelected = false,
                 inhaleDuration = preset.inhale,
                 holdDuration = preset.hold,
                 exhaleDuration = preset.exhale,
@@ -239,6 +251,39 @@ class BreathingViewModel(
 
     fun updateDurations(inhale: Int, hold: Int, exhale: Int) {
         updateDurations(inhale, hold, exhale, 0)
+    }
+
+    //opcion Custom del selector: usa el ritmo guardado y, si nunca se configuro, abre la hoja para hacerlo
+    fun selectCustom() {
+        val state = _uiState.value
+        updateDurations(state.customInhale, state.customHold, state.customExhale)
+        _uiState.update { it.copy(isCustomSelected = true, showCustomRhythmSheet = !it.isCustomConfigured) }
+    }
+
+    fun openCustomRhythmSheet() {
+        _uiState.update { it.copy(showCustomRhythmSheet = true) }
+    }
+
+    fun dismissCustomRhythmSheet() {
+        _uiState.update { it.copy(showCustomRhythmSheet = false) }
+    }
+
+    //boton Done de la hoja: guarda el ritmo (solo mientras la pantalla siga abierta) y lo aplica al circulo
+    fun saveCustomRhythm(inhale: Int, hold: Int, exhale: Int) {
+        val safeInhale = inhale.coerceIn(CUSTOM_MIN_BREATH_SECONDS, CUSTOM_MAX_SECONDS)
+        val safeHold = hold.coerceIn(0, CUSTOM_MAX_SECONDS)
+        val safeExhale = exhale.coerceIn(CUSTOM_MIN_BREATH_SECONDS, CUSTOM_MAX_SECONDS)
+        updateDurations(safeInhale, safeHold, safeExhale)
+        _uiState.update {
+            it.copy(
+                isCustomSelected = true,
+                customInhale = safeInhale,
+                customHold = safeHold,
+                customExhale = safeExhale,
+                isCustomConfigured = true,
+                showCustomRhythmSheet = false
+            )
+        }
     }
 
     //bucle del temporizador de respiracion en hilo principal midiendo tiempo real (elapsedRealtime) sin acumulacion de latencia
@@ -363,6 +408,10 @@ class BreathingViewModel(
     }
 
     companion object {
+        //rangos del ritmo Custom: inhalar y exhalar de 2 a 10 s, sostener de 0 a 10 s
+        const val CUSTOM_MIN_BREATH_SECONDS = 2
+        const val CUSTOM_MAX_SECONDS = 10
+
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as ArkApplication

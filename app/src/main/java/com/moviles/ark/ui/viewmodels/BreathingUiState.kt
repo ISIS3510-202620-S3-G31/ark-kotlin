@@ -29,6 +29,14 @@ data class BreathingUiState(
     val exhaleDuration: Int = 4,
     val holdPostExhaleDuration: Int = 4,
     val phaseProgress: Float = 0f, // 0.0f to 1.0f progress within current phase
+    //ritmo propio del usuario (opcion Custom del selector); arranca con los valores del diseno 5-2-6
+    val isCustomSelected: Boolean = false,
+    val customInhale: Int = 5,
+    val customHold: Int = 2,
+    val customExhale: Int = 6,
+    //false hasta que el usuario guarda su ritmo la primera vez; mientras tanto elegir Custom abre la hoja sola
+    val isCustomConfigured: Boolean = false,
+    val showCustomRhythmSheet: Boolean = false,
     // Estado de musica ambiental
     val ambientTracks: List<AmbientTrackModel> = emptyList(),
     val selectedTrack: AmbientTrackModel? = null,
