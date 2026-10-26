@@ -5,30 +5,78 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Geocoder
 import android.location.LocationManager
+import android.os.Build
+import android.os.CancellationSignal
+import android.os.SystemClock
 import androidx.core.content.ContextCompat
+import androidx.core.location.LocationManagerCompat
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
+import java.util.concurrent.Executors
 import kotlin.coroutines.resume
+import android.location.Location as AndroidLocation
 
+//por que hay o no hay coordenadas; la pantalla muestra un texto distinto en cada caso (#144)
+enum class LocationStatus {
+    //coordenadas tomadas ahora
+    CAPTURED,
+    //sin permiso o con la ubicacion apagada en ajustes
+    DISABLED,
+    //ubicacion encendida pero el gps no dio una posicion a tiempo
+    UNAVAILABLE
+}
+
+//coordenadas en null cuando no se pudo leer; el check-in se guarda igual (#144)
 data class LocationResult(
-    val latitude: Double,
-    val longitude: Double,
-    val cityName: String
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val status: LocationStatus
 )
 
+//el gps del telefono funciona sin datos ni wifi; solo el nombre de la ciudad (geocoder) necesita red (#144)
 class Location(private val context: Context) {
     private val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
+    private val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+    //hilo propio para las respuestas del gps, asi nunca se usa el hilo principal
+    private val callbackExecutor = Executors.newSingleThreadExecutor()
 
-    companion object {
-        // Ventana de frescura maxima de 48 horas para reutilizar coordenadas en cache (#110)
-        const val MAX_LOCATION_AGE_MILLIS = 48 * 60 * 60 * 1000L
+    //nunca lanza excepcion: sin permiso, con gps apagado o sin respuesta a tiempo devuelve coordenadas null (#144)
+    suspend fun fetchCurrentLocation(): LocationResult = withContext(Dispatchers.IO) {
+        try {
+            if (!hasLocationPermission()) return@withContext LocationResult(status = LocationStatus.DISABLED)
+            val manager = locationManager ?: return@withContext LocationResult(status = LocationStatus.UNAVAILABLE)
+            if (!LocationManagerCompat.isLocationEnabled(manager)) {
+                return@withContext LocationResult(status = LocationStatus.DISABLED)
+            }
+            val location = freshLastKnownLocation(manager)
+                ?: withTimeoutOrNull(LOCATION_TIMEOUT_MILLIS) { requestCurrentLocation(manager) }
+            if (location == null) {
+                LocationResult(status = LocationStatus.UNAVAILABLE)
+            } else {
+                LocationResult(location.latitude, location.longitude, LocationStatus.CAPTURED)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            //por ejemplo SecurityException si quitan el permiso mientras se lee
+            com.moviles.ark.data.remote.CrashlyticsHelper.logNonFatal(
+                componentName = "LocationSensor",
+                action = "fetchCurrentLocation",
+                throwable = e
+            )
+            LocationResult(status = if (hasLocationPermission()) LocationStatus.UNAVAILABLE else LocationStatus.DISABLED)
+        }
     }
 
-    fun hasLocationPermission(): Boolean {
+    private fun hasLocationPermission(): Boolean {
         val hasFine = ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.ACCESS_FINE_LOCATION
@@ -40,117 +88,118 @@ class Location(private val context: Context) {
         return hasFine || hasCoarse
     }
 
-    // 1. Verifica si el hardware del GPS o el proveedor de red estan habilitados en los ajustes del dispositivo
-    fun isGpsEnabled(): Boolean {
-        val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return false
-        return locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
-               locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
-    }
-
-    suspend fun fetchLastKnownLocation(): LocationResult? {
-        val coords = fetchCoordinates() ?: return null
-        val cityName = resolveCityName(coords.first, coords.second)
-        return LocationResult(coords.first, coords.second, cityName)
-    }
-
-    private suspend fun fetchCoordinates(): Pair<Double, Double>? = suspendCancellableCoroutine { continuation ->
-        if (!hasLocationPermission()) {
-            continuation.resume(null)
-            return@suspendCancellableCoroutine
-        }
-
-        val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
-
-        // Si el GPS esta desactivado a nivel de sistema, se evita consultar o reutilizar coordenadas obsoletas en silencio
-        if (!isGpsEnabled()) {
-            continuation.resume(null)
-            return@suspendCancellableCoroutine
-        }
-
-        val currentTime = System.currentTimeMillis()
-
-        // 2. Verificar cache reciente en LocationManager aplicando la ventana de frescura de 48 horas
-        try {
-            val gpsLoc = locationManager?.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-            val netLoc = locationManager?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
-            val passiveLoc = locationManager?.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER)
-
-            val freshCachedLocation = listOfNotNull(gpsLoc, netLoc, passiveLoc)
-                .filter { (currentTime - it.time) <= MAX_LOCATION_AGE_MILLIS }
-                .maxByOrNull { it.time }
-
-            if (freshCachedLocation != null) {
-                continuation.resume(Pair(freshCachedLocation.latitude, freshCachedLocation.longitude))
-                return@suspendCancellableCoroutine
-            }
-        } catch (e: SecurityException) {
-            com.moviles.ark.data.remote.CrashlyticsHelper.logNonFatal(
-                componentName = "LocationSensor",
-                action = "fetchCoordinates_security",
-                throwable = e
-            )
-        }
-
-        // 3. Si la cache es mayor a 48h o nula, consultar FusedLocationProviderClient con filtro de frescura o solicitud fresca
-        fusedLocationClient.lastLocation
-            .addOnSuccessListener { location ->
-                if (location != null && (currentTime - location.time) <= MAX_LOCATION_AGE_MILLIS) {
-                    continuation.resume(Pair(location.latitude, location.longitude))
-                } else {
-                    try {
-                        fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
-                            .addOnSuccessListener { freshLocation ->
-                                if (freshLocation != null) {
-                                    continuation.resume(Pair(freshLocation.latitude, freshLocation.longitude))
-                                } else {
-                                    continuation.resume(null)
-                                }
-                            }
-                            .addOnFailureListener { freshLocationError ->
-                                com.moviles.ark.data.remote.CrashlyticsHelper.logNonFatal(
-                                    componentName = "LocationSensor",
-                                    action = "getCurrentLocation_failure",
-                                    throwable = freshLocationError
-                                )
-                                continuation.resume(null)
-                            }
-                    } catch (e: SecurityException) {
-                        com.moviles.ark.data.remote.CrashlyticsHelper.logNonFatal(
-                            componentName = "LocationSensor",
-                            action = "getCurrentLocation_security",
-                            throwable = e
-                        )
-                        continuation.resume(null)
-                    }
+    //la ultima posicion guardada solo sirve si es reciente: nunca se usan coordenadas viejas (#144)
+    private fun freshLastKnownLocation(manager: LocationManager): AndroidLocation? {
+        return enabledProviders(manager)
+            .mapNotNull { provider ->
+                try {
+                    manager.getLastKnownLocation(provider)
+                } catch (e: SecurityException) {
+                    null
                 }
             }
-            .addOnFailureListener { error ->
-                com.moviles.ark.data.remote.CrashlyticsHelper.logNonFatal(
-                    componentName = "LocationSensor",
-                    action = "fusedLocation_lastLocation_failure",
-                    throwable = error
-                )
-                continuation.resume(null)
-            }
+            .filter { isFresh(it) }
+            .maxByOrNull { it.elapsedRealtimeNanos }
     }
 
-    private suspend fun resolveCityName(latitude: Double, longitude: Double): String = withContext(Dispatchers.IO) {
+    private fun isFresh(location: AndroidLocation): Boolean {
+        val ageMillis = (SystemClock.elapsedRealtimeNanos() - location.elapsedRealtimeNanos) / 1_000_000
+        return ageMillis in 0..MAX_LOCATION_AGE_MILLIS
+    }
+
+    //gps primero porque no necesita red; network solo si el gps esta apagado o no hay permiso fino
+    private fun enabledProviders(manager: LocationManager): List<String> {
+        val hasFine = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+        val candidates = if (hasFine) {
+            listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+        } else {
+            listOf(LocationManager.NETWORK_PROVIDER)
+        }
+        return candidates.filter { provider ->
+            try {
+                manager.isProviderEnabled(provider)
+            } catch (e: Exception) {
+                false
+            }
+        }
+    }
+
+    //pide una posicion nueva al hardware; si el timeout la cancela, se cancela tambien la peticion
+    private suspend fun requestCurrentLocation(manager: LocationManager): AndroidLocation? {
+        val provider = enabledProviders(manager).firstOrNull()
+        if (provider != null) {
+            requestFromProvider(manager, provider)?.let { return it }
+        }
+        //respaldo con play services (por ejemplo si el proveedor no respondio)
+        return requestFromFused()
+    }
+
+    private suspend fun requestFromProvider(manager: LocationManager, provider: String): AndroidLocation? =
+        suspendCancellableCoroutine { continuation ->
+            val cancellationSignal = CancellationSignal()
+            continuation.invokeOnCancellation { cancellationSignal.cancel() }
+            try {
+                LocationManagerCompat.getCurrentLocation(manager, provider, cancellationSignal, callbackExecutor) { location ->
+                    if (continuation.isActive) continuation.resume(location)
+                }
+            } catch (e: SecurityException) {
+                if (continuation.isActive) continuation.resume(null)
+            }
+        }
+
+    private suspend fun requestFromFused(): AndroidLocation? = suspendCancellableCoroutine { continuation ->
+        val cancellationTokenSource = CancellationTokenSource()
+        continuation.invokeOnCancellation { cancellationTokenSource.cancel() }
         try {
+            fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, cancellationTokenSource.token)
+                .addOnSuccessListener { location ->
+                    if (continuation.isActive) continuation.resume(location)
+                }
+                .addOnFailureListener { error ->
+                    com.moviles.ark.data.remote.CrashlyticsHelper.logNonFatal(
+                        componentName = "LocationSensor",
+                        action = "getCurrentLocation_failure",
+                        throwable = error
+                    )
+                    if (continuation.isActive) continuation.resume(null)
+                }
+        } catch (e: Exception) {
+            //sin play services o sin permiso: se sigue sin coordenadas
+            if (continuation.isActive) continuation.resume(null)
+        }
+    }
+
+    //nombre de la ciudad con geocoder; necesita red, asi que tiene tiempo maximo y sin respuesta devuelve null (#144)
+    suspend fun resolveCityName(latitude: Double, longitude: Double): String? = withContext(Dispatchers.IO) {
+        try {
+            if (!Geocoder.isPresent()) return@withContext null
             val geocoder = Geocoder(context, Locale.getDefault())
-            @Suppress("DEPRECATION")
-            val addresses = geocoder.getFromLocation(latitude, longitude, 1)
-            if (!addresses.isNullOrEmpty()) {
-                val address = addresses[0]
-                val city = address.locality ?: address.subAdminArea ?: address.adminArea
-                val country = address.countryName
-                if (city != null && country != null) {
-                    "$city, $country"
+            val addresses = withTimeoutOrNull(GEOCODER_TIMEOUT_MILLIS) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    suspendCancellableCoroutine { continuation ->
+                        geocoder.getFromLocation(latitude, longitude, 1, object : Geocoder.GeocodeListener {
+                            override fun onGeocode(addresses: MutableList<android.location.Address>) {
+                                if (continuation.isActive) continuation.resume(addresses)
+                            }
+
+                            override fun onError(errorMessage: String?) {
+                                if (continuation.isActive) continuation.resume(null)
+                            }
+                        })
+                    }
                 } else {
-                    city ?: country ?: "Location captured"
+                    //la version vieja bloquea el hilo; runInterruptible lo corta cuando se acaba el tiempo
+                    @Suppress("DEPRECATION")
+                    runInterruptible { geocoder.getFromLocation(latitude, longitude, 1) }
                 }
-            } else {
-                "Location captured"
             }
+            val address = addresses?.firstOrNull() ?: return@withContext null
+            val city = address.locality ?: address.subAdminArea ?: address.adminArea
+            val country = address.countryName
+            if (city != null && country != null) "$city, $country" else city ?: country
         } catch (e: Exception) {
             com.moviles.ark.data.remote.CrashlyticsHelper.logNonFatal(
                 componentName = "LocationSensor",
@@ -161,7 +210,16 @@ class Location(private val context: Context) {
                     "longitude" to longitude
                 )
             )
-            "Location captured"
+            null
         }
+    }
+
+    companion object {
+        //tiempo maximo esperando una posicion nueva del gps
+        private const val LOCATION_TIMEOUT_MILLIS = 8_000L
+        //una posicion guardada de hace mas de 2 minutos ya no es "donde estoy ahora"
+        private const val MAX_LOCATION_AGE_MILLIS = 2 * 60 * 1000L
+        //sin red el geocoder no responde; la pantalla muestra las coordenadas
+        private const val GEOCODER_TIMEOUT_MILLIS = 3_000L
     }
 }

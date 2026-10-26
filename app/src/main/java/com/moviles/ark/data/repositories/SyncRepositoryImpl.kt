@@ -10,6 +10,8 @@ import com.moviles.ark.data.local.daos.ToolRecordDao
 import com.moviles.ark.data.remote.CrashlyticsHelper
 import com.moviles.ark.data.remote.dtos.toDto
 import com.moviles.ark.domain.repositories.SyncRepository
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
 
 //implementacion de resincronizacion de datos offline hacia firebase (#33)
@@ -23,7 +25,12 @@ class SyncRepositoryImpl(
     private val feedbackDao: FeedbackDao
 ) : SyncRepository {
 
-    override suspend fun syncPendingData(): Result<Int> = runCatching {
+    //una sola subida a la vez: el check-in pide subida al guardarse y el SyncManager al volver la red (#143)
+    private val syncMutex = Mutex()
+
+    override suspend fun syncPendingData(): Result<Int> = syncMutex.withLock { syncAllPending() }
+
+    private suspend fun syncAllPending(): Result<Int> = runCatching {
         val currentUserId = auth.currentUser?.uid ?: "anonymous"
         var syncedCount = 0
 
@@ -92,15 +99,17 @@ class SyncRepositoryImpl(
 
         // 3. Sincronizar check-ins de animo pendientes (isSynced = 0)
         try {
-            val unsyncedCheckIns = emotionCheckInDao.getUnsyncedCheckIns()
+            val unsyncedCheckIns = emotionCheckInDao.getUnsyncedCheckIns(currentUserId)
             if (unsyncedCheckIns.isNotEmpty()) {
                 val successfulCheckInIds = mutableListOf<Long>()
                 for (checkIn in unsyncedCheckIns) {
                     try {
+                        //documento con el remoteId de la fila: si se sube dos veces queda uno solo (#143)
                         firestore.collection("users")
                             .document(currentUserId)
                             .collection("mood_checkins")
-                            .add(checkIn.toDto(currentUserId))
+                            .document(checkIn.remoteId)
+                            .set(checkIn.toDto(currentUserId))
                             .await()
 
                         successfulCheckInIds.add(checkIn.id)
