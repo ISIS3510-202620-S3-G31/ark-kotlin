@@ -95,6 +95,31 @@ class PhotoEntryRepositoryImpl(
         }
     }
 
+
+    override suspend fun deletePhoto(photoId: Long): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val userId = auth.currentUser?.uid ?: error("No user is logged in")
+            val entity = photoEntryDao.getPhotoById(photoId, userId)
+            if (entity != null) {
+                //elimina el archivo fisico del almacenamiento interno si existe
+                val localFile = File(entity.localFilePath)
+                if (localFile.exists()) {
+                    localFile.delete()
+                }
+                //elimina el registro en room
+                photoEntryDao.deletePhoto(photoId, userId)
+            }
+            Unit
+        }.onFailure { error ->
+            CrashlyticsHelper.logNonFatal(
+                componentName = "PhotoEntryRepository",
+                action = "deletePhoto",
+                throwable = error,
+                extraKeys = mapOf("photo_id" to photoId)
+            )
+        }
+    }
+
     //exporta una copia a la galeria publica del sistema usando MediaStore API (#146)
     private suspend fun exportToPublicGallery(photoFile: File, takenAt: Long): Uri? = withContext(Dispatchers.IO) {
         runCatching {
