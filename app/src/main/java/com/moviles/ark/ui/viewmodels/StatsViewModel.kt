@@ -24,7 +24,9 @@ data class StatsUiState(
     //true mientras el pull-to-refresh espera a firestore (#147)
     val isRefreshing: Boolean = false,
     //aviso corto de una sola vez, por ejemplo cuando no hay red al refrescar (#147)
-    val noticeMessage: String? = null
+    val noticeMessage: String? = null,
+    //indica si el intento de conexion detecto falta de internet (#158)
+    val isOffline: Boolean = false
 )
 
 class StatsViewModel(
@@ -43,35 +45,33 @@ class StatsViewModel(
         loadStats()
     }
 
-    //orden al entrar (#147): 1) cache del disco al instante, 2) room recalculado (#135), 3) firestore solo con pull-to-refresh
-    //cada fuente reemplaza a la anterior solo si no tiene menos check-ins (StatsModel.canReplace), asi la pantalla no salta hacia atras
+    //patron cache-then-network (#147, #158):
+    //1) lee y muestra inmediatamente el cache de disco en 0 ms si existe
+    //2) en paralelo, consulta a firestore en Dispatchers.IO el documento precomputado del backend
+    //3) al responder firestore, actualiza la interfaz y refresca el cache del disco
     fun loadStats() {
         if (statsRepository == null) {
             privateUiState.value = StatsUiState(isLoading = false, stats = null)
             return
         }
-        privateUiState.value = privateUiState.value.copy(
-            isLoading = privateUiState.value.stats == null,
-            errorMessage = null
-        )
+
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
+            // 1. CACHE: Muestra inmediatamente las ultimas stats guardadas en disco
             val cached = statsRepository.getCachedStats()
             if (cached != null) {
                 showIfNotPoorer(cached)
-                Log.d("StatsViewModel", "Stats from disk cache: total=${cached.totalCheckIns}")
+                privateUiState.value = privateUiState.value.copy(isLoading = false)
+                Log.d("StatsViewModel", "Stats displayed from disk cache: total=${cached.totalCheckIns}")
+            } else {
+                privateUiState.value = privateUiState.value.copy(
+                    isLoading = privateUiState.value.stats == null,
+                    errorMessage = null
+                )
             }
 
-            statsRepository.getLocalStats().onSuccess { local ->
-                showIfNotPoorer(local)
-                Log.d("StatsViewModel", "Local stats from room: total=${local.totalCheckIns}")
-            }
-            privateUiState.value = privateUiState.value.copy(isLoading = false)
-
-            //la primera vez no hay cache: se pide a firestore una vez para no quedar con la pantalla vacia
-            if (cached == null) {
-                fetchFromFirestore(showNotice = false)
-            }
+            // 2. NETWORK: Peticion en segundo plano al backend (Cache-then-Network)
+            fetchFromFirestore(showNotice = false)
         }
     }
 
@@ -93,24 +93,27 @@ class StatsViewModel(
             privateUiState.value = privateUiState.value.copy(
                 isLoading = false,
                 isRefreshing = false,
+                isOffline = true,
+                errorMessage = if (privateUiState.value.stats == null) "Offline" else null,
                 noticeMessage = if (showNotice) OFFLINE_NOTICE else null
             )
             return
         }
-        privateUiState.value = privateUiState.value.copy(isRefreshing = showNotice)
+        privateUiState.value = privateUiState.value.copy(isRefreshing = showNotice, isOffline = false)
         val result = repository.getUserStats()
         if (result.isSuccess) {
             val data = result.getOrNull()
             if (data != null) showIfNotPoorer(data)
-            privateUiState.value = privateUiState.value.copy(isLoading = false, isRefreshing = false)
+            privateUiState.value = privateUiState.value.copy(isLoading = false, isRefreshing = false, isOffline = false)
             Log.d("StatsViewModel", "Stats loaded successfully: total=${data?.totalCheckIns}")
         } else {
             val errorMsg = result.exceptionOrNull()?.localizedMessage ?: "Could not load statistics"
             Log.e("StatsViewModel", "Error loading stats: $errorMsg")
-            //se deja lo que habia (cache o room, aunque este vacio); solo hay error si no hay nada que mostrar
+            val isNetError = !isOnline()
             privateUiState.value = privateUiState.value.copy(
                 isLoading = false,
                 isRefreshing = false,
+                isOffline = isNetError,
                 errorMessage = if (privateUiState.value.stats == null) errorMsg else null,
                 noticeMessage = if (showNotice) OFFLINE_NOTICE else null
             )
