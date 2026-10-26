@@ -10,7 +10,8 @@ data class StatsModel(
     val weeklyEmotions: Map<String, Emotion>,
     val toolUsagePercentages: Map<String, Float>,
     val currentInsight: InsightModel? = null,
-    val allInsights: List<InsightModel> = emptyList()
+    val allInsights: List<InsightModel> = emptyList(),
+    val emotionFrequencies: Map<Emotion, Int> = emptyMap()
 ) {
     //una fuente nueva reemplaza a lo que se ve solo si no tiene menos check-ins, asi la pantalla no salta hacia atras (#135)
     fun canReplace(shown: StatsModel?): Boolean {

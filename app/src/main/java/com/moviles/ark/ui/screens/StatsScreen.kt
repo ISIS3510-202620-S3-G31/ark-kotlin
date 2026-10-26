@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoGraph
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.ui.text.style.TextAlign
@@ -40,11 +41,16 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -346,11 +352,15 @@ private fun StatsEmptyView() {
     }
 }
 
+data class TooltipInfo(val title: String, val message: String)
+
 @Composable
 private fun StatsMainView(
     stats: StatsModel,
     onNavigateToToolsCatalog: (ToolCategory?) -> Unit = {}
 ) {
+    var activeTooltip by remember { mutableStateOf<TooltipInfo?>(null) }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 6.dp, bottom = 36.dp),
@@ -411,12 +421,34 @@ private fun StatsMainView(
                         }
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
-                            Text(
-                                text = "Top Feeling",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = TextColor.copy(alpha = 0.65f),
-                                fontSize = 11.sp
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "Top Feeling",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = TextColor.copy(alpha = 0.65f),
+                                    fontSize = 11.sp
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .size(16.dp)
+                                        .clip(CircleShape)
+                                        .clickable {
+                                            activeTooltip = TooltipInfo(
+                                                "Top Feeling",
+                                                "The emotion you registered most frequently across all your check-ins."
+                                            )
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Info,
+                                        contentDescription = "Info",
+                                        tint = TextColor.copy(alpha = 0.45f),
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                }
+                            }
                             Text(
                                 text = emotionName,
                                 style = MaterialTheme.typography.titleMedium,
@@ -510,7 +542,16 @@ private fun StatsMainView(
         item {
             WeeklyEmotionJourneyCard(
                 weeklyIntensities = stats.weeklyIntensities,
-                weeklyEmotions = stats.weeklyEmotions
+                weeklyEmotions = stats.weeklyEmotions,
+                onShowTooltip = { activeTooltip = it }
+            )
+        }
+
+        //distribucion de frecuencias discretas de emociones (reemplaza promedios planos, #140)
+        item {
+            EmotionDistributionCard(
+                emotionFrequencies = stats.emotionFrequencies,
+                onShowTooltip = { activeTooltip = it }
             )
         }
 
@@ -519,13 +560,43 @@ private fun StatsMainView(
             ToolsUsagePieChartCard(toolUsagePercentages = stats.toolUsagePercentages)
         }
     }
+
+    if (activeTooltip != null) {
+        val tooltip = activeTooltip!!
+        AlertDialog(
+            onDismissRequest = { activeTooltip = null },
+            title = {
+                Text(
+                    text = tooltip.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = TextColor
+                )
+            },
+            text = {
+                Text(
+                    text = tooltip.message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextColor.copy(alpha = 0.8f)
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { activeTooltip = null }) {
+                    Text("OK", color = PrimaryColor, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            containerColor = Color(0xFFFFF9EE),
+            shape = RoundedCornerShape(20.dp)
+        )
+    }
 }
 
 //grafico de barras para el journey emocional de la semana con escala visible de 1 a 5 y relieve
 @Composable
 private fun WeeklyEmotionJourneyCard(
     weeklyIntensities: Map<String, Float>,
-    weeklyEmotions: Map<String, Emotion>
+    weeklyEmotions: Map<String, Emotion>,
+    onShowTooltip: (TooltipInfo) -> Unit = {}
 ) {
     val dayLabels = if (weeklyIntensities.isNotEmpty()) weeklyIntensities.keys.toList() else listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
@@ -546,12 +617,36 @@ private fun WeeklyEmotionJourneyCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
-                    Text(
-                        text = "Weekly Emotion Journey",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = TextColor
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Weekly Emotion Journey",
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = TextColor
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(20.dp)
+                                .clip(CircleShape)
+                                .clickable {
+                                    onShowTooltip(
+                                        TooltipInfo(
+                                            "Weekly Emotion Journey",
+                                            "Shows the dominant emotion and its highest intensity recorded for each day of the past week."
+                                        )
+                                    )
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = "Info",
+                                tint = TextColor.copy(alpha = 0.45f),
+                                modifier = Modifier.size(15.dp)
+                            )
+                        }
+                    }
                     Text(
                         text = "Dominant emotion per day and its intensity",
                         style = MaterialTheme.typography.bodyLarge,
@@ -666,6 +761,124 @@ private fun WeeklyEmotionJourneyCard(
                                 fontWeight = if (hasEntry) FontWeight.Bold else FontWeight.Medium,
                                 color = TextColor.copy(alpha = if (hasEntry) 0.9f else 0.45f)
                             )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+//tarjeta de distribucion de frecuencias de emociones discretas (#140)
+@Composable
+private fun EmotionDistributionCard(
+    emotionFrequencies: Map<Emotion, Int>,
+    onShowTooltip: (TooltipInfo) -> Unit = {}
+) {
+    val total = emotionFrequencies.values.sum().coerceAtLeast(1)
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(6.dp, RoundedCornerShape(24.dp), ambientColor = Color(0x35351B08), spotColor = Color(0x35351B08)),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF5E6)),
+        border = BorderStroke(1.2.dp, Color(0xFFE8D3B9))
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "Emotion Distribution",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = TextColor
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(20.dp)
+                            .clip(CircleShape)
+                            .clickable {
+                                onShowTooltip(
+                                    TooltipInfo(
+                                        "Emotion Distribution",
+                                        "Shows the frequency count of each emotion across all check-ins rather than a flat average."
+                                    )
+                                )
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = "Info",
+                            tint = TextColor.copy(alpha = 0.45f),
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
+                }
+                Text(
+                    text = if (emotionFrequencies.isEmpty()) "" else "$total check-ins",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = TextColor.copy(alpha = 0.65f),
+                    fontSize = 12.sp
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            if (emotionFrequencies.isEmpty()) {
+                Text(
+                    text = "No emotion records yet",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextColor.copy(alpha = 0.5f)
+                )
+            } else {
+                val sorted = emotionFrequencies.entries.sortedByDescending { it.value }
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    for ((emotion, count) in sorted) {
+                        val percentage = (count.toFloat() / total * 100f).toInt()
+                        val color = getEmotionColor(emotion)
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = emotion.name.lowercase().replaceFirstChar { it.uppercase() },
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Medium,
+                                    color = TextColor,
+                                    fontSize = 13.sp
+                                )
+                                Text(
+                                    text = "$count ($percentage%)",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = TextColor.copy(alpha = 0.7f),
+                                    fontSize = 12.sp
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(8.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(Color.White.copy(alpha = 0.7f))
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth(fraction = (count.toFloat() / total).coerceIn(0f, 1f))
+                                        .fillMaxHeight()
+                                        .background(color)
+                                )
+                            }
                         }
                     }
                 }
@@ -865,6 +1078,13 @@ fun StatsScreenPreview() {
             advice = "Keep Breathing close for tough days.",
             actionLabel = "Open Breathing",
             emotion = Emotion.FEAR
+        ),
+        emotionFrequencies = mapOf(
+            Emotion.HAPPINESS to 5,
+            Emotion.SURPRISE to 4,
+            Emotion.FEAR to 2,
+            Emotion.SADNESS to 2,
+            Emotion.ANGER to 1
         )
     )
 

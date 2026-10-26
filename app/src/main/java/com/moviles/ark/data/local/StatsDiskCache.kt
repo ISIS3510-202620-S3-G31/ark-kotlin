@@ -64,6 +64,10 @@ class StatsDiskCache(cacheDir: File) {
             }
             val allInsights = JSONArray()
             stats.allInsights.forEach { allInsights.put(insightToJson(it)) }
+            val emotionFrequencies = JSONArray()
+            for ((emotion, count) in stats.emotionFrequencies) {
+                emotionFrequencies.put(JSONObject().put("emotion", emotion.name).put("count", count))
+            }
 
             return JSONObject()
                 .put("totalCheckIns", stats.totalCheckIns)
@@ -73,6 +77,7 @@ class StatsDiskCache(cacheDir: File) {
                 .put("toolUsagePercentages", toolUsage)
                 .put("currentInsight", stats.currentInsight?.let { insightToJson(it) } ?: JSONObject.NULL)
                 .put("allInsights", allInsights)
+                .put("emotionFrequencies", emotionFrequencies)
         }
 
         //lanza excepcion si faltan campos obligatorios; read() la convierte en null
@@ -101,6 +106,13 @@ class StatsDiskCache(cacheDir: File) {
             for (i in 0 until insights.length()) {
                 allInsights.add(insightFromJson(insights.getJSONObject(i)))
             }
+            val emotionFrequencies = LinkedHashMap<Emotion, Int>()
+            val freqs = json.optJSONArray("emotionFrequencies") ?: JSONArray()
+            for (i in 0 until freqs.length()) {
+                val item = freqs.getJSONObject(i)
+                val emotion = parseEmotion(item.optString("emotion")) ?: continue
+                emotionFrequencies[emotion] = item.optInt("count", 0)
+            }
 
             return StatsModel(
                 totalCheckIns = json.getInt("totalCheckIns"),
@@ -109,7 +121,8 @@ class StatsDiskCache(cacheDir: File) {
                 weeklyEmotions = weeklyEmotions,
                 toolUsagePercentages = toolUsage,
                 currentInsight = json.optJSONObject("currentInsight")?.let { insightFromJson(it) },
-                allInsights = allInsights
+                allInsights = allInsights,
+                emotionFrequencies = emotionFrequencies
             )
         }
 
