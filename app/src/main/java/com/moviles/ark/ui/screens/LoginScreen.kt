@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.R
+import com.moviles.ark.ui.components.AuthNetworkErrorDialog
 import com.moviles.ark.ui.theme.AppTheme
 import com.moviles.ark.ui.theme.ErrorColor
 import com.moviles.ark.ui.theme.FigtreeFontFamily
@@ -71,10 +72,18 @@ fun LoginScreen(
     onEmailChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
     onLoginClick: () -> Unit,
-    onNavigateToRegister: () -> Unit
+    onNavigateToRegister: () -> Unit,
+    onDismissNoInternetDialog: () -> Unit = {}
 ) {
     val haptic = LocalHapticFeedback.current
     var passwordVisible by remember { mutableStateOf(false) }
+
+    if (uiState.showNoInternetDialog) {
+        AuthNetworkErrorDialog(
+            isAirplaneMode = uiState.isAirplaneModeError,
+            onDismiss = onDismissNoInternetDialog
+        )
+    }
 
     // Fondo calido oficial (#FFF5E6) acorde al estilo de RegisterScreen y la identidad de Ark
     val warmBackgroundColor = Color(0xFFFFF5E6)
@@ -297,6 +306,7 @@ fun LoginScreen(
 fun LoginRoute(
     viewModel: LoginViewModel = viewModel(factory = LoginViewModel.Factory),
     onNavigateToRegister: () -> Unit,
+
     onLoginSuccess: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -306,7 +316,8 @@ fun LoginRoute(
         onEmailChange = viewModel::onEmailChange,
         onPasswordChange = viewModel::onPasswordChange,
         onLoginClick = { viewModel.onLoginClick(onLoginSuccess) },
-        onNavigateToRegister = onNavigateToRegister
+        onNavigateToRegister = onNavigateToRegister,
+        onDismissNoInternetDialog = viewModel::dismissNoInternetDialog
     )
 }
 

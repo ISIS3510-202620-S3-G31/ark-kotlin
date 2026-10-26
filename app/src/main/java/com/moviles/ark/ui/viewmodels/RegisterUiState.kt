@@ -10,5 +10,7 @@ data class RegisterUiState(
     val password: String = "",
     val confirmPassword: String = "",
     val isLoading: Boolean = false,
-    val errorMessage: String? = null //? es diciendole que errorMessage es un string que puede estar nulo
+    val errorMessage: String? = null,
+    val showNoInternetDialog: Boolean = false,
+    val isAirplaneModeError: Boolean = false
 )
