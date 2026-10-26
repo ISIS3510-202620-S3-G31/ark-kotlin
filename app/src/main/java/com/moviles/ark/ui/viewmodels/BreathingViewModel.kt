@@ -225,10 +225,11 @@ class BreathingViewModel(
         updateDurations(inhale, hold, exhale, 0)
     }
 
+    //bucle del temporizador de respiracion ejecutado en el hilo principal a 60 fps para animaciones fluidas sin saltos
     private fun startTimerLoop() {
         timerJob?.cancel()
-        timerJob = viewModelScope.launch(Dispatchers.IO) {
-            val tickIntervalMs = 50L
+        timerJob = viewModelScope.launch(Dispatchers.Main.immediate) {
+            val tickIntervalMs = 16L
 
             while (_uiState.value.isRunning) {
                 delay(tickIntervalMs)
