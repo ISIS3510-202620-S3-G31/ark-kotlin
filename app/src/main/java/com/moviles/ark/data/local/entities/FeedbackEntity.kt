@@ -2,6 +2,7 @@ package com.moviles.ark.data.local.entities
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import com.moviles.ark.domain.models.FeedbackModel
 
 //tabla de calificaciones que deja el usuario al terminar una herramienta (#21)
 @Entity(tableName = "tool_feedback")
@@ -20,3 +21,29 @@ data class FeedbackEntity(
     //false mientras no se haya subido a firestore (#33)
     val isSynced: Boolean = false,
 )
+
+//de fila de Room a modelo de dominio (#166)
+fun FeedbackEntity.toDomain(): FeedbackModel {
+    return FeedbackModel(
+        id = id,
+        interactionId = interactionId,
+        toolId = toolId,
+        rating = rating,
+        comment = comment,
+        createdAt = createdAt,
+        isSynced = isSynced
+    )
+}
+
+//de modelo de dominio a fila de Room (#166)
+fun FeedbackModel.toEntity(): FeedbackEntity {
+    return FeedbackEntity(
+        id = id,
+        interactionId = interactionId,
+        toolId = toolId,
+        rating = rating,
+        comment = comment,
+        createdAt = createdAt,
+        isSynced = isSynced
+    )
+}

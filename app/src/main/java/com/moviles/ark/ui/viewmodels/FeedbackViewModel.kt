@@ -10,21 +10,20 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.google.firebase.auth.FirebaseAuth
 import com.moviles.ark.ArkApplication
-import com.moviles.ark.data.local.daos.FeedbackDao
 import com.moviles.ark.data.local.daos.ToolRecordDao
-import com.moviles.ark.data.local.entities.FeedbackEntity
 import com.moviles.ark.data.local.entities.ToolInteractionEntity
 import com.moviles.ark.domain.composite.CompoundMood
 import com.moviles.ark.domain.composite.Emotion
 import com.moviles.ark.domain.composite.MoodComponent
 import com.moviles.ark.domain.composite.SingleEmotion
 import com.moviles.ark.domain.models.CheckInModel
+import com.moviles.ark.domain.models.FeedbackModel
 import com.moviles.ark.domain.repositories.AnalyticsRepository
+import com.moviles.ark.domain.repositories.FeedbackRepository
 import com.moviles.ark.domain.repositories.MoodRepository
 import com.moviles.ark.domain.repositories.ToolRepository
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,7 +32,7 @@ import kotlinx.coroutines.withContext
 import java.util.Date
 
 class FeedbackViewModel(
-    private val feedbackDao: FeedbackDao? = null,
+    private val feedbackRepository: FeedbackRepository? = null,
     private val toolRecordDao: ToolRecordDao? = null,
     private val moodRepository: MoodRepository? = null,
     private val analyticsRepository: AnalyticsRepository? = null,
@@ -105,8 +104,8 @@ class FeedbackViewModel(
         )
     }
 
-    // Persiste en paralelo en Room SQLite usando Dispatchers.IO (#154)
-    // Graba ToolInteractionEntity y FeedbackEntity concurrentemente, 100% offline
+    // Persiste en Room SQLite y sincroniza a Firestore desacoplado via FeedbackRepository (#166)
+    // Vincula la calificacion tanto a toolId como a interactionId
     fun saveFeedback(onSavedCallback: () -> Unit = {}) {
         val state = privateUiState.value
 
@@ -124,36 +123,30 @@ class FeedbackViewModel(
                 val format = toolRepository?.getToolById(state.toolId)?.format ?: "touch"
                 val durationSeconds = if (state.duration > 0) state.duration else 60
 
-                // Grabar en paralelo en Room SQLite usando Dispatchers.IO (#154)
-                coroutineScope {
-                    launch {
-                        toolRecordDao?.insertInteraction(
-                            ToolInteractionEntity(
-                                userId = userId,
-                                toolId = state.toolId,
-                                duration = durationSeconds,
-                                interactionType = format,
-                                complete = true,
-                                timestamp = Date(nowMillis),
-                                isSynced = false
-                            )
-                        )
-                    }
+                // 1. Grabar la interaccion en Room SQLite para obtener el interactionId generado (#154)
+                val interactionId = toolRecordDao?.insertInteraction(
+                    ToolInteractionEntity(
+                        userId = userId,
+                        toolId = state.toolId,
+                        duration = durationSeconds,
+                        interactionType = format,
+                        complete = true,
+                        timestamp = Date(nowMillis),
+                        isSynced = false
+                    )
+                )
 
-                    launch {
-                        feedbackDao?.insertFeedback(
-                            FeedbackEntity(
-                                toolId = state.toolId,
-                                rating = state.rating,
-                                comment = state.comment,
-                                createdAt = nowMillis,
-                                isSynced = false
-                            )
-                        )
-                    }
-                }
+                // 2. Persistir ratings (1 a 5 estrellas) y comentarios en Room vinculados a toolId e interactionId, sincronizando a Firestore (#166)
+                val feedbackModel = FeedbackModel(
+                    toolId = state.toolId,
+                    rating = state.rating,
+                    comment = state.comment.trim(),
+                    createdAt = nowMillis,
+                    interactionId = interactionId
+                )
+                feedbackRepository?.saveFeedback(feedbackModel)
 
-                // Save post-tool emotion check-in if emotions were selected
+                // 3. Guardar el post-tool emotion check-in si se seleccionaron emociones
                 if (state.selectedEmotions.isNotEmpty() && moodRepository != null) {
                     val moodResult: MoodComponent = if (state.selectedEmotions.size == 1) {
                         SingleEmotion(state.selectedEmotions.first(), state.intensity.toInt())
@@ -171,7 +164,7 @@ class FeedbackViewModel(
                     moodRepository.saveCheckIn(checkIn)
                 }
 
-                // Log tool completion event to Firebase Analytics (#34)
+                // 4. Registrar evento de finalizacion de herramienta en Firebase Analytics (#34)
                 analyticsRepository?.logToolEntryCompleted(
                     toolId = state.toolId.ifBlank { "custom_breathing" },
                     toolFormat = format
@@ -200,7 +193,7 @@ class FeedbackViewModel(
             initializer {
                 val app = this[APPLICATION_KEY] as ArkApplication
                 FeedbackViewModel(
-                    feedbackDao = app.container.feedbackDao,
+                    feedbackRepository = app.container.feedbackRepository,
                     toolRecordDao = app.container.toolRecordDao,
                     moodRepository = app.container.moodRepository,
                     analyticsRepository = app.container.analyticsRepository,
