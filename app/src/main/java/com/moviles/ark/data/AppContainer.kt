@@ -83,7 +83,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val toolRepository: com.moviles.ark.domain.repositories.ToolRepository by lazy { ToolRepositoryImpl(database.toolDao(), firestore) }
     // interacciones con herramientas guardadas en room; las usa la recomendacion por frecuencia del home (#96)
     override val toolInteractionRepository: ToolInteractionRepository by lazy { ToolInteractionRepositoryImpl(database.toolRecordDao()) }
-    override val statsRepository: StatsRepository by lazy { StatsRepositoryImpl(auth, firestore, database.emotionCheckInDao(), database.toolRecordDao()) }
+    override val statsRepository: StatsRepository by lazy { StatsRepositoryImpl(auth, firestore, database.emotionCheckInDao(), database.toolRecordDao(), com.moviles.ark.data.local.StatsDiskCache(context.cacheDir)) }
     // real photo repository with Room persistence and internal app private storage (context.filesDir) (#26)
     override val photoRepository: PhotoEntryRepository by lazy {
         //cada usuario solo ve sus fotos y sus archivos van en filesDir/photos/{userId} (#133)
