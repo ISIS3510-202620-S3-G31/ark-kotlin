@@ -11,6 +11,7 @@ import com.moviles.ark.data.local.AvatarPreferences
 import com.moviles.ark.data.repositories.ToolRepositoryImpl
 import com.moviles.ark.domain.adapters.WeatherServiceAdapter
 import com.moviles.ark.domain.models.CachedRecommendation
+import com.moviles.ark.domain.models.CheckInModel
 import com.moviles.ark.domain.models.RecommendationContextResolver
 import com.moviles.ark.domain.models.RecommendationDecision
 import com.moviles.ark.domain.models.Tool
@@ -107,7 +108,11 @@ class HomeViewModel(
         if (moodRepository != null) {
             viewModelScope.launch(Dispatchers.IO) {
                 val hasCheckedIn = moodRepository.hasCheckedInToday().getOrDefault(false)
-                _uiState.value = _uiState.value.copy(isCheckInCompleted = hasCheckedIn)
+                val checkIn = if (hasCheckedIn) moodRepository.getLatestCheckIn().getOrNull() else null
+                _uiState.value = _uiState.value.copy(
+                    isCheckInCompleted = hasCheckedIn,
+                    todayCheckIn = checkIn
+                )
             }
         }
     }
@@ -168,15 +173,22 @@ class HomeViewModel(
         _uiState.value = _uiState.value.copy(navigateToToolId = null)
     }
 
-    //el home se vuelve a mostrar: si venia de una herramienta, puede haber una interaccion nueva en room
+    //el home se vuelve a mostrar: valida el estado del check-in diario y si venia de una herramienta recalcula recomendaciones
     fun onHomeShown() {
+        checkTodayStatus()
         if (!isAwayInTool) return
         isAwayInTool = false
         loadTools()
     }
 
     fun onCheckInSaved() {
-        _uiState.value = _uiState.value.copy(isCheckInCompleted = true)
+        viewModelScope.launch(Dispatchers.IO) {
+            val checkIn = moodRepository?.getLatestCheckIn()?.getOrNull()
+            _uiState.value = _uiState.value.copy(
+                isCheckInCompleted = true,
+                todayCheckIn = checkIn
+            )
+        }
         loadTools()
     }
 

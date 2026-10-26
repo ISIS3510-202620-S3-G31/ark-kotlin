@@ -2,6 +2,7 @@ package com.moviles.ark.ui.viewmodels
 
 import com.moviles.ark.data.local.sensors.LocationStatus
 import com.moviles.ark.domain.composite.Emotion
+import com.moviles.ark.domain.models.CheckInModel
 import java.util.Locale
 
 //estado inmutable de la pantalla de check-in con soporte para coordenadas gps y nombre de la ciudad
@@ -19,7 +20,11 @@ data class MoodCheckInUiState(
     val isSaved: Boolean = false,
     val errorMessage: String? = null,
     //dialogo amable cuando el gps esta apagado o no hay permiso (#112)
-    val showLocationDisabledDialog: Boolean = false
+    val showLocationDisabledDialog: Boolean = false,
+    //indica si el usuario ya completo su unico check-in diario para bloquear nuevas entradas
+    val isAlreadyCheckedInToday: Boolean = false,
+    //check-in guardado del dia para desplegar en modo revision no editable
+    val existingCheckIn: CheckInModel? = null
 ) {
     //texto del chip de ubicacion; sin red no hay ciudad y se muestran las coordenadas (#144)
     val locationLabel: String
