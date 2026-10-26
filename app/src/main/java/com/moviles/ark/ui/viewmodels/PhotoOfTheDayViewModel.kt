@@ -67,12 +67,22 @@ class PhotoOfTheDayViewModel(
         toolLatencyTracker?.onToolRendered(TOOL_ID)
     }
 
-    //la camara (#31) llama esto con la direccion de la foto que se tomo
+    //la camara (#31, #146) llama esto con la direccion de la foto capturada; se guarda sin caption de texto
     fun onPhotoCaptured(uri: String) {
-        _uiState.update { it.copy(pendingPhotoUri = uri, errorMessage = null) }
+        _uiState.update { it.copy(pendingPhotoUri = uri, caption = "", isSaving = true, errorMessage = null) }
+        viewModelScope.launch {
+            val result = photoRepository.savePhoto(uri, "", now())
+            result.onSuccess {
+                //la foto nueva llega sola por observeWeek; aqui solo se limpia lo pendiente y avisa que se guardo
+                _uiState.update { it.copy(isSaving = false, pendingPhotoUri = null, caption = "", isPhotoSaved = true) }
+            }
+            result.onFailure {
+                _uiState.update { it.copy(isSaving = false, errorMessage = "Could not save your photo, try again") }
+            }
+        }
     }
 
-    //no deja escribir mas alla del limite del modelo
+    //mantiene compatibilidad (#146: flujo sin caption)
     fun onCaptionChange(newCaption: String) {
         if (newCaption.length <= PhotoEntryModel.MAX_CAPTION_LENGTH) {
             _uiState.update { it.copy(caption = newCaption) }
@@ -89,16 +99,9 @@ class PhotoOfTheDayViewModel(
         val uri = state.pendingPhotoUri ?: return
         if (state.isSaving) return
 
-        //le preguntamos al modelo si la nota cumple las reglas
-        val entry = PhotoEntryModel(localFilePath = uri, caption = state.caption.trim(), takenAt = now())
-        if (!entry.isValidCaption()) {
-            _uiState.update { it.copy(errorMessage = "Your note can have up to ${PhotoEntryModel.MAX_CAPTION_LENGTH} characters") }
-            return
-        }
-
         _uiState.update { it.copy(isSaving = true, errorMessage = null) }
         viewModelScope.launch {
-            val result = photoRepository.savePhoto(uri, entry.caption, entry.takenAt)
+            val result = photoRepository.savePhoto(uri, "", now())
             result.onSuccess {
                 //la foto nueva llega sola por observeWeek; aqui solo se limpia lo pendiente y avisa que se guardo
                 _uiState.update { it.copy(isSaving = false, pendingPhotoUri = null, caption = "", isPhotoSaved = true) }
