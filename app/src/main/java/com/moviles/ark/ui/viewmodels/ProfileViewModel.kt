@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
+import com.moviles.ark.data.local.AvatarPreferences
 import com.moviles.ark.domain.models.CheckInStreak
 import com.moviles.ark.domain.models.UserProfile
 import com.moviles.ark.domain.repositories.AuthRepository
@@ -45,6 +46,7 @@ class ProfileViewModel(
     //el refresco con firestore lo pide la pantalla cada vez que se muestra (loadProfile)
     init {
         observeProfile()
+        observeAvatar()
     }
 
     //room avisa cada vez que cambia la fila: al refrescar desde firestore, al editar o al cambiar el avatar
@@ -54,6 +56,18 @@ class ProfileViewModel(
                 if (profile != null) showProfile(profile)
             }
         }
+    }
+
+    private fun observeAvatar() {
+        viewModelScope.launch {
+            AvatarPreferences.currentAvatarId.collect { avatarId ->
+                _uiState.update { it.copy(selectedAvatarId = avatarId) }
+            }
+        }
+    }
+
+    fun onAvatarSelected(avatarId: String) {
+        AvatarPreferences.setAvatarId(avatarId)
     }
 
     //trae lo ultimo de firestore (y sube un cambio que haya quedado pendiente sin internet)

@@ -51,6 +51,7 @@ fun PhotoEntryDto.toDomain(): PhotoEntryModel {
 //de dto a fila de room; ya viene de firestore, asi que esta sincronizada
 fun PhotoEntryDto.toEntity(): PhotoEntryEntity {
     return PhotoEntryEntity(
+        userId = userId,
         localFilePath = localFilePath,
         caption = caption,
         takenAt = takenAt,

@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
+import com.moviles.ark.data.local.AvatarPreferences
 import com.moviles.ark.data.repositories.ToolRepositoryImpl
 import com.moviles.ark.domain.models.RecommendationContextResolver
 import com.moviles.ark.domain.models.RecommendationDecision
@@ -54,6 +55,15 @@ class HomeViewModel(
     init {
         checkTodayStatus()
         loadTools()
+        observeAvatar()
+    }
+
+    private fun observeAvatar() {
+        viewModelScope.launch {
+            AvatarPreferences.currentAvatarId.collect { id ->
+                _uiState.value = _uiState.value.copy(avatarId = id)
+            }
+        }
     }
 
     fun checkTodayStatus() {

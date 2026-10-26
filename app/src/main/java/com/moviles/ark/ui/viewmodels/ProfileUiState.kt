@@ -1,5 +1,7 @@
 package com.moviles.ark.ui.viewmodels
 
+import com.moviles.ark.data.local.AvatarPreferences
+
 data class ProfileUiState(
     val name: String = "",
     //iniciales para el avatar, por ejemplo "DF" para "David Forero"
@@ -9,6 +11,8 @@ data class ProfileUiState(
     val age: Int = 0,
     //ruta del avatar en el telefono; null muestra las iniciales (#119)
     val avatarPath: String? = null,
+    //avatar preset de netflix seleccionado localmente
+    val selectedAvatarId: String = AvatarPreferences.DEFAULT_AVATAR_ID,
     //fecha ya formateada para mostrar, por ejemplo "October 2026"
     val memberSince: String = "",
     //dias desde que creo la cuenta, contando el dia del registro como el 1; 0 si no se conoce
