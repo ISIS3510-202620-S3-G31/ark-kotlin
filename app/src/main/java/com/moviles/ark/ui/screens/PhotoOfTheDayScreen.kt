@@ -13,6 +13,13 @@ import androidx.activity.result.contract.ActivityResultContracts
 import com.moviles.ark.data.local.sensors.CameraHelper
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,6 +32,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -44,11 +52,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-
-
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -105,27 +110,54 @@ fun PhotoOfTheDayScreen(
     onRetakeClick: () -> Unit,
     onSaveClick: () -> Unit
 ) {
+    //dias con foto en orden (el mas viejo primero); son las paginas del carrusel
+    val photoDays = uiState.week.filter { it.photo != null }
+    val pagerState = rememberPagerState(initialPage = (photoDays.size - 1).coerceAtLeast(0)) { photoDays.size }
+    val scope = rememberCoroutineScope()
+    val carouselRequester = remember { BringIntoViewRequester() }
+
+    //cuando llega una foto nueva (o un retake) el carrusel se va a la mas reciente
+    LaunchedEffect(photoDays.size, uiState.todayPhoto?.id) {
+        if (photoDays.isNotEmpty()) pagerState.scrollToPage(photoDays.size - 1)
+    }
+
+    //dia que se ve en el carrusel, para resaltarlo en la tira
+    val shownDay = photoDays.getOrNull(pagerState.currentPage)
+
     Surface(modifier = Modifier.fillMaxSize(), color = BackgroundColor) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
+                //deja libre la barra de gestos de android para que el nombre del dia del carrusel no quede debajo
+                .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
                 .padding(24.dp)
         ) {
             Header(todayLabel = uiState.todayLabel, onBack = onBack)
             Spacer(modifier = Modifier.height(20.dp))
-            WeekStrip(week = uiState.week)
+            WeekStrip(
+                week = uiState.week,
+                shownDay = shownDay,
+                //tocar un chulito lleva el carrusel a la foto de ese dia
+                onDayClick = { day ->
+                    val page = photoDays.indexOf(day)
+                    if (page >= 0) {
+                        scope.launch {
+                            carouselRequester.bringIntoView()
+                            pagerState.animateScrollToPage(page)
+                        }
+                    }
+                }
+            )
             Spacer(modifier = Modifier.height(24.dp))
 
-            //el orden importa: primero lo que esta cargando, luego la foto de hoy, luego la pendiente
-            val todayPhoto = uiState.todayPhoto
             val pendingPhotoUri = uiState.pendingPhotoUri
             when {
                 uiState.isLoading -> Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = SecondaryColor)
                 }
-                todayPhoto != null -> SavedPhotoSection(photo = todayPhoto)
+                //foto recien tomada guardandose (tambien al retomar la de hoy)
                 pendingPhotoUri != null -> PendingPhotoSection(
                     uri = pendingPhotoUri,
                     caption = uiState.caption,
@@ -134,10 +166,28 @@ fun PhotoOfTheDayScreen(
                     onRetakeClick = onRetakeClick,
                     onSaveClick = onSaveClick
                 )
-                else -> EmptyPhotoSection(
-                    onTakePhotoClick = onTakePhotoClick,
-                    onPickPhotoClick = onPickPhotoClick
-                )
+                else -> {
+                    //sin foto hoy: primero el espacio para tomarla y debajo el carrusel de los dias pasados
+                    if (uiState.todayPhoto == null) {
+                        EmptyPhotoSection(
+                            onTakePhotoClick = onTakePhotoClick,
+                            onPickPhotoClick = onPickPhotoClick
+                        )
+                    }
+                    if (photoDays.isNotEmpty()) {
+                        if (uiState.todayPhoto == null) Spacer(modifier = Modifier.height(32.dp))
+                        PhotoCarousel(
+                            photoDays = photoDays,
+                            pagerState = pagerState,
+                            modifier = Modifier.bringIntoViewRequester(carouselRequester)
+                        )
+                        //solo la foto de hoy se puede retomar; las de dias pasados solo se miran
+                        if (shownDay?.isToday == true) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            TodayPhotoActions(onRetakePhotoClick = onTakePhotoClick)
+                        }
+                    }
+                }
             }
 
             if (uiState.errorMessage != null) {
@@ -171,54 +221,112 @@ private fun Header(todayLabel: String, onBack: () -> Unit) {
 }
 
 //tira de los ultimos 7 dias con el estado de cada uno; el ultimo es hoy
+//los dias con foto se pueden tocar y el que se ve en el carrusel lleva un anillo secondary
 @Composable
-private fun WeekStrip(week: List<PhotoDay>) {
+private fun WeekStrip(week: List<PhotoDay>, shownDay: PhotoDay?, onDayClick: (PhotoDay) -> Unit) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        week.forEach { day -> DayDot(day) }
+        week.forEach { day -> DayDot(day = day, isShown = day == shownDay, onClick = { onDayClick(day) }) }
     }
 }
 
 @Composable
-private fun DayDot(day: PhotoDay) {
+private fun DayDot(day: PhotoDay, isShown: Boolean, onClick: () -> Unit) {
     val stateText = when (day.state) {
         PhotoDayState.TAKEN -> "photo taken"
         PhotoDayState.TODAY -> "today"
         PhotoDayState.MISSED -> "no photo"
     }
+    val canOpen = day.photo != null
     Column(
         //el lector de pantalla lee "Monday, photo taken" en vez de la letra sola
-        modifier = Modifier.clearAndSetSemantics { contentDescription = "${day.name}, $stateText" },
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .then(if (canOpen) Modifier.clickable(role = Role.Button, onClickLabel = "Show photo", onClick = onClick) else Modifier)
+            .clearAndSetSemantics { contentDescription = "${day.name}, $stateText" }
+            .padding(2.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        when (day.state) {
-            //success: la paleta lo reserva para tareas completadas
-            PhotoDayState.TAKEN -> Box(
-                modifier = Modifier.size(36.dp).background(SuccessColor, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(Icons.Filled.Check, contentDescription = null, tint = TextColor, modifier = Modifier.size(16.dp))
-            }
-            //primary: lo importante de hoy
-            PhotoDayState.TODAY -> Box(
-                modifier = Modifier.size(36.dp).border(2.dp, PrimaryColor, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Box(modifier = Modifier.size(10.dp).background(PrimaryColor, CircleShape))
-            }
-            //dia sin foto: x en color de texto sobre el mismo circulo suave, sin rojo para no castigar al usuario
-            PhotoDayState.MISSED -> Box(
-                modifier = Modifier.size(36.dp).background(TextColor.copy(alpha = 0.1f), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(Icons.Filled.Close, contentDescription = null, tint = TextColor, modifier = Modifier.size(16.dp))
+        //anillo secondary alrededor del dia que se esta viendo en el carrusel
+        Box(
+            modifier = Modifier
+                .size(42.dp)
+                .border(2.dp, if (isShown) SecondaryColor else BackgroundColor, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            when (day.state) {
+                //success: la paleta lo reserva para tareas completadas
+                PhotoDayState.TAKEN -> Box(
+                    modifier = Modifier.size(34.dp).background(SuccessColor, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Filled.Check, contentDescription = null, tint = TextColor, modifier = Modifier.size(16.dp))
+                }
+                //primary: lo importante de hoy
+                PhotoDayState.TODAY -> Box(
+                    modifier = Modifier.size(34.dp).border(2.dp, PrimaryColor, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(modifier = Modifier.size(10.dp).background(PrimaryColor, CircleShape))
+                }
+                //dia sin foto: x en color de texto sobre el mismo circulo suave, sin rojo para no castigar al usuario
+                PhotoDayState.MISSED -> Box(
+                    modifier = Modifier.size(34.dp).background(TextColor.copy(alpha = 0.1f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Filled.Close, contentDescription = null, tint = TextColor, modifier = Modifier.size(16.dp))
+                }
             }
         }
         Spacer(modifier = Modifier.height(4.dp))
         Text(
             day.shortLabel,
             style = MaterialTheme.typography.labelLarge,
-            color = if (day.state == PhotoDayState.TODAY) TextColor else TextColor.copy(alpha = 0.7f)
+            color = if (day.isToday) TextColor else TextColor.copy(alpha = 0.7f)
         )
+    }
+}
+
+//carrusel con las fotos de los ultimos 7 dias que existen; debajo dice de que dia es y en que pagina va
+@Composable
+private fun PhotoCarousel(photoDays: List<PhotoDay>, pagerState: PagerState, modifier: Modifier = Modifier) {
+    Column(modifier = modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        HorizontalPager(
+            state = pagerState,
+            pageSpacing = 12.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) { page ->
+            val day = photoDays[page]
+            day.photo?.let { photo ->
+                PhotoThumbnail(
+                    path = photo.localFilePath,
+                    description = if (day.isToday) "Today's photo" else "Photo from ${day.name}",
+                    modifier = Modifier.fillMaxWidth().aspectRatio(3f / 4f)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        val shown = photoDays.getOrNull(pagerState.currentPage)
+        Text(
+            text = if (shown?.isToday == true) "Today" else shown?.name.orEmpty(),
+            style = MaterialTheme.typography.headlineSmall,
+            color = TextColor
+        )
+        //puntos de pagina solo si hay mas de una foto
+        if (photoDays.size > 1) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                photoDays.indices.forEach { index ->
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .background(
+                                if (index == pagerState.currentPage) SecondaryColor else TextColor.copy(alpha = 0.2f),
+                                CircleShape
+                            )
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -322,11 +430,9 @@ private fun PendingPhotoSection(
     }
 }
 
-//ya hay foto hoy: se muestra con su nota (una foto por dia)
+//la foto que se ve es la de hoy: etiqueta de guardada y boton para retomarla
 @Composable
-private fun SavedPhotoSection(photo: PhotoEntryModel) {
-    PhotoThumbnail(path = photo.localFilePath, modifier = Modifier.fillMaxWidth().aspectRatio(3f / 4f))
-    Spacer(modifier = Modifier.height(16.dp))
+private fun TodayPhotoActions(onRetakePhotoClick: (() -> Unit)?) {
     Row(
         modifier = Modifier
             .background(SuccessColor, RoundedCornerShape(12.dp))
@@ -337,17 +443,24 @@ private fun SavedPhotoSection(photo: PhotoEntryModel) {
         Spacer(modifier = Modifier.width(6.dp))
         Text("Saved for today", style = MaterialTheme.typography.labelLarge, color = TextColor)
     }
-    if (photo.caption.isNotBlank()) {
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(photo.caption, style = MaterialTheme.typography.bodyLarge, color = TextColor)
+    if (onRetakePhotoClick != null) {
+        Spacer(modifier = Modifier.height(16.dp))
+        OutlinedButton(
+            onClick = onRetakePhotoClick,
+            modifier = Modifier.fillMaxWidth().height(50.dp),
+            border = BorderStroke(1.dp, SecondaryColor),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = TextColor)
+        ) {
+            Icon(Icons.Filled.PhotoCamera, contentDescription = null, tint = TextColor, modifier = Modifier.size(20.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Retake today's photo", style = MaterialTheme.typography.labelLarge)
+        }
     }
-    Spacer(modifier = Modifier.height(8.dp))
-    Text("Come back tomorrow for a new moment.", style = MaterialTheme.typography.bodyLarge, color = TextColor.copy(alpha = 0.7f))
 }
 
 //miniatura de la foto: se lee en segundo plano y reducida, para no trabar la pantalla ni gastar memoria
 @Composable
-private fun PhotoThumbnail(path: String, modifier: Modifier = Modifier) {
+private fun PhotoThumbnail(path: String, modifier: Modifier = Modifier, description: String = "Photo of the day") {
     val context = LocalContext.current
     //null mientras carga; despues trae la imagen o el error
     val result by produceState<Result<ImageBitmap>?>(initialValue = null, path) {
@@ -359,7 +472,7 @@ private fun PhotoThumbnail(path: String, modifier: Modifier = Modifier) {
     ) {
         val bitmap = result?.getOrNull()
         when {
-            bitmap != null -> Image(bitmap, contentDescription = "Photo of the day", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            bitmap != null -> Image(bitmap, contentDescription = description, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
             result == null -> CircularProgressIndicator(color = SecondaryColor)
             else -> Icon(Icons.Filled.BrokenImage, contentDescription = "The photo could not be opened", tint = TextColor.copy(alpha = 0.5f), modifier = Modifier.size(48.dp))
         }
@@ -498,7 +611,7 @@ private val previewWeek = listOf(
     PhotoDay("T", "Tuesday", PhotoDayState.MISSED),
     PhotoDay("W", "Wednesday", PhotoDayState.TAKEN),
     PhotoDay("T", "Thursday", PhotoDayState.TAKEN),
-    PhotoDay("F", "Friday", PhotoDayState.TODAY)
+    PhotoDay("F", "Friday", PhotoDayState.TODAY, isToday = true)
 )
 
 @Preview(showBackground = true, name = "Photo of the day - empty")

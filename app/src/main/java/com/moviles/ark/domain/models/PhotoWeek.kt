@@ -13,11 +13,14 @@ enum class PhotoDayState {
     MISSED
 }
 
-//un dia de la tira: "M" arriba y el nombre completo para lectores de pantalla
+//un dia de la tira: "M" arriba, el nombre completo para lectores de pantalla y la foto de ese dia si hay
 data class PhotoDay(
     val shortLabel: String,
     val name: String,
-    val state: PhotoDayState
+    val state: PhotoDayState,
+    //si ese dia hay varias fotos (por ejemplo hoy se retomo), es la mas reciente
+    val photo: PhotoEntryModel? = null,
+    val isToday: Boolean = false
 )
 
 //reglas de la tira de fotos: los ultimos 7 dias en la hora local, y el ultimo siempre es hoy
@@ -53,14 +56,15 @@ object PhotoWeek {
         return (0 until DAYS).map { index ->
             val from = starts[index]
             val until = starts[index + 1]
-            val hasPhoto = photos.any { it.takenAt >= from && it.takenAt < until }
+            val photo = photos.filter { it.takenAt >= from && it.takenAt < until }.maxByOrNull { it.takenAt }
+            val isToday = index == DAYS - 1
             val state = when {
-                hasPhoto -> PhotoDayState.TAKEN
-                index == DAYS - 1 -> PhotoDayState.TODAY
+                photo != null -> PhotoDayState.TAKEN
+                isToday -> PhotoDayState.TODAY
                 else -> PhotoDayState.MISSED
             }
             val dayOfWeek = Calendar.getInstance(zone).apply { timeInMillis = from }.get(Calendar.DAY_OF_WEEK)
-            PhotoDay(SHORT_LABELS.getValue(dayOfWeek), NAMES.getValue(dayOfWeek), state)
+            PhotoDay(SHORT_LABELS.getValue(dayOfWeek), NAMES.getValue(dayOfWeek), state, photo, isToday)
         }
     }
 
