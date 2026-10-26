@@ -19,8 +19,8 @@ import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 
-// la autenticacion pasa solo por el adapter (#136); firestore sigue aqui para guardar el perfil
-// Authentication is strictly Network-Only and requires active server connectivity (#141)
+//la autenticacion pasa solo por el adapter; firestore sigue aqui para guardar el perfil
+//la autenticacion requiere conectividad activa con el servidor
 class AuthRepositoryImpl(
     private val authServiceAdapter: AuthServiceAdapter,
     private val firestore: FirebaseFirestore,
@@ -73,7 +73,7 @@ class AuthRepositoryImpl(
                 action = "registerUser",
                 throwable = error,
                 extraKeys = mapOf(
-                    "user_age" to user.age,
+                    "user_birth_date" to user.birthDate,
                     "email_domain" to user.email.substringAfter("@", "unknown"),
                     "is_network_error" to (error is NetworkUnavailableException || error is FirebaseNetworkException)
                 )
@@ -124,8 +124,7 @@ class AuthRepositoryImpl(
         ) {
             return true
         }
-        val cause = error.cause
-        return cause != null && isNetworkError(cause)
+        return false
     }
 
     override fun logout() = authServiceAdapter.signOut()

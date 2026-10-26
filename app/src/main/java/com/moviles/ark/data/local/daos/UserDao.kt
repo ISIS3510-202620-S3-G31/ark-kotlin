@@ -8,7 +8,7 @@ import com.moviles.ark.data.remote.CrashlyticsHelper
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 
-//consultas de la tabla users (#119)
+//consultas de la tabla users
 @Dao
 interface UserDao {
 
@@ -61,16 +61,33 @@ interface UserDao {
     }
 
     //cambio hecho por el usuario: queda pendiente de subir a firestore
-    @Query("UPDATE users SET name = :name, age = :age, isSynced = 0 WHERE uid = :uid")
-    suspend fun updateProfileRaw(uid: String, name: String, age: Int)
+    @Query("UPDATE users SET name = :name, birthDate = :birthDate, isSynced = 0 WHERE uid = :uid")
+    suspend fun updateProfileRaw(uid: String, name: String, birthDate: String)
 
-    suspend fun updateProfile(uid: String, name: String, age: Int) {
+    suspend fun updateProfile(uid: String, name: String, birthDate: String) {
         try {
-            updateProfileRaw(uid, name, age)
+            updateProfileRaw(uid, name, birthDate)
         } catch (e: Exception) {
             CrashlyticsHelper.logNonFatal(
                 componentName = "UserDao",
                 action = "updateProfile",
+                throwable = e,
+                extraKeys = mapOf("birthDate" to birthDate)
+            )
+            throw e
+        }
+    }
+
+    @Query("UPDATE users SET name = :name, age = :age, isSynced = 0 WHERE uid = :uid")
+    suspend fun updateProfileWithAgeRaw(uid: String, name: String, age: Int)
+
+    suspend fun updateProfileWithAge(uid: String, name: String, age: Int) {
+        try {
+            updateProfileWithAgeRaw(uid, name, age)
+        } catch (e: Exception) {
+            CrashlyticsHelper.logNonFatal(
+                componentName = "UserDao",
+                action = "updateProfileWithAge",
                 throwable = e,
                 extraKeys = mapOf("age" to age)
             )
@@ -111,7 +128,7 @@ interface UserDao {
         }
     }
 
-    //despues de subir el nombre y la edad a firestore
+    //despues de subir los datos a firestore
     @Query("UPDATE users SET isSynced = 1 WHERE uid = :uid")
     suspend fun markAsSyncedRaw(uid: String)
 

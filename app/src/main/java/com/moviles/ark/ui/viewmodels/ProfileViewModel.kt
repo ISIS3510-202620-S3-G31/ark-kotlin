@@ -177,7 +177,7 @@ class ProfileViewModel(
                 name = name,
                 initials = initialsOf(name),
                 email = profile.email,
-                age = profile.age,
+                age = profile.getCalculatedAge(),
                 avatarPath = profile.avatarPath,
                 memberSince = formatMemberSince(profile.memberSince),
                 daysWithArk = daysSince(profile.memberSince),
@@ -229,3 +229,4 @@ class ProfileViewModel(
         }
     }
 }
+

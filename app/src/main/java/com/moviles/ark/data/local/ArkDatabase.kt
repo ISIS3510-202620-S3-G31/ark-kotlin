@@ -33,7 +33,7 @@ import com.moviles.ark.data.local.entities.UserEntity
         BreathingSessionEntity::class,
         UserEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)

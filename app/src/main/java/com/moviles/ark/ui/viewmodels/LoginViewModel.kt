@@ -17,18 +17,34 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 class LoginViewModel(private val authRepository: AuthRepository) : ViewModel() {
-    //  Privado: solo el ViewModel puede modificarlo
-    private val _uiState = MutableStateFlow(LoginUiState()) // se le pasa los valores por defecto que estan en ese archivo
-
-    //  Público: la pantalla solo lo escucha
+    private val _uiState = MutableStateFlow(LoginUiState())
     val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()
 
     fun onEmailChange(newEmail: String) {
-        _uiState.value = _uiState.value.copy(email = newEmail, errorMessage = null) // hacemos la copia por lo que los valores son inmutables y aja entonces hacemos copia modificando el nuevo valor y el otro se elimina
+        val current = _uiState.value
+        val emailError = when {
+            newEmail.isNotBlank() && (newEmail.contains("@") && newEmail.contains(".")) && !newEmail.matches(EMAIL_REGEX) -> "Please enter a valid email address"
+            newEmail.length >= 6 && !newEmail.contains("@") -> "Email must contain @"
+            else -> null
+        }
+        val updated = current.copy(email = newEmail, emailError = emailError, errorMessage = null)
+        _uiState.value = updated.copy(isFormValid = checkFormValidity(updated))
     }
 
     fun onPasswordChange(newPassword: String) {
-        _uiState.value = _uiState.value.copy(password = newPassword, errorMessage = null)
+        val current = _uiState.value
+        val passError = when {
+            newPassword.isNotBlank() && newPassword.length < 6 -> "Password must be at least 6 characters"
+            else -> null
+        }
+        val updated = current.copy(password = newPassword, passwordError = passError, errorMessage = null)
+        _uiState.value = updated.copy(isFormValid = checkFormValidity(updated))
+    }
+
+    private fun checkFormValidity(state: LoginUiState): Boolean {
+        val emailValid = state.email.isNotBlank() && state.email.matches(EMAIL_REGEX)
+        val passValid = state.password.length >= 6
+        return emailValid && passValid
     }
 
     fun dismissNoInternetDialog() {
@@ -39,6 +55,11 @@ class LoginViewModel(private val authRepository: AuthRepository) : ViewModel() {
         val state = _uiState.value
         if (state.email.isBlank() || state.password.isBlank()) {
             _uiState.value = state.copy(errorMessage = "Please fill in all fields")
+            return
+        }
+
+        if (!state.email.matches(EMAIL_REGEX)) {
+            _uiState.value = state.copy(emailError = "Please enter a valid email address", errorMessage = "Please check highlighted errors")
             return
         }
 
@@ -62,7 +83,6 @@ class LoginViewModel(private val authRepository: AuthRepository) : ViewModel() {
                         errorMessage = null
                     )
                 } else {
-                    // firebase no dice si fallo el correo o la clave, por eso es un solo mensaje
                     val message = when (error) {
                         is FirebaseAuthInvalidCredentialsException, is FirebaseAuthInvalidUserException -> "Incorrect email or password"
                         else -> "Could not log in, try again"
@@ -73,8 +93,9 @@ class LoginViewModel(private val authRepository: AuthRepository) : ViewModel() {
         }
     }
 
-    // factory para que el viewmodel reciba el authRepository del AppContainer
     companion object {
+        private val EMAIL_REGEX = Regex("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")
+
         val Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as ArkApplication

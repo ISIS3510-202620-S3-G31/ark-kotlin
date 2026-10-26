@@ -9,12 +9,15 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == userId;
     }
 
-    // Profile saved by register: name, age, email
+    // Profile saved by register: name, email, and birthDate (or legacy age from flutter)
     function isValidUser(data) {
-      return data.keys().hasOnly(['name', 'age', 'email'])
+      return (data.keys().hasOnly(['name', 'birthDate', 'email']) ||
+              data.keys().hasOnly(['name', 'age', 'email']) ||
+              data.keys().hasOnly(['name', 'birthDate', 'age', 'email']))
         && data.name is string && data.name.size() > 0 && data.name.size() <= 100
-        && data.age is int && data.age >= 0 && data.age <= 120
-        && data.email is string && data.email.size() <= 254;
+        && data.email is string && data.email.size() <= 254
+        && (!('birthDate' in data) || (data.birthDate is string && data.birthDate.size() >= 8 && data.birthDate.size() <= 15))
+        && (!('age' in data) || (data.age is int && data.age >= 0 && data.age <= 120));
     }
 
     match /users/{userId}/check_ins/{day} {
