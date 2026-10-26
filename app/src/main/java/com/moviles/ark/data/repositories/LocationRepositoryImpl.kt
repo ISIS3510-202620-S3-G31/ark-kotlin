@@ -8,11 +8,11 @@ class LocationRepositoryImpl(
     private val locationDataSource: Location
 ) : LocationRepository {
 
-    override suspend fun getCurrentLocation(): LocationResult? {
-        return locationDataSource.fetchLastKnownLocation()
+    override suspend fun getCurrentLocation(): LocationResult {
+        return locationDataSource.fetchCurrentLocation()
     }
 
-    override fun isLocationAvailable(): Boolean {
-        return locationDataSource.hasLocationPermission() && locationDataSource.isGpsEnabled()
+    override suspend fun getCityName(latitude: Double, longitude: Double): String? {
+        return locationDataSource.resolveCityName(latitude, longitude)
     }
 }

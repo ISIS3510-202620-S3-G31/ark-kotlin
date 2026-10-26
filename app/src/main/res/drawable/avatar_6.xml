@@ -1,0 +1,59 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="96dp"
+    android:height="96dp"
+    android:viewportWidth="96"
+    android:viewportHeight="96">
+    <!-- Background Circle -->
+    <path
+        android:fillColor="#4CA975"
+        android:pathData="M48,4 A44,44 0 1,1 47.99,4 Z" />
+
+    <!-- Sprout Leaves on Top -->
+    <path
+        android:fillColor="#74C69D"
+        android:pathData="M48,27 C42,20 34,19 32,24 C31,29 40,31 47,28 Z" />
+    <path
+        android:fillColor="#52B788"
+        android:pathData="M48,27 C54,18 64,19 65,24 C66,29 56,31 49,28 Z" />
+    <path
+        android:strokeColor="#2D6A4F"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M48,27 L48,31" />
+
+    <!-- Face Main -->
+    <path
+        android:fillColor="#FFF8EE"
+        android:pathData="M48,30 C32,30 23,41 23,56 C23,71 34,79 48,79 C62,79 73,71 73,56 C73,41 64,30 48,30 Z" />
+
+    <!-- Peaceful Happy Eyes -->
+    <path
+        android:strokeColor="#221100"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M34,50 C36,46 40,46 42,50" />
+    <path
+        android:strokeColor="#221100"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M54,50 C56,46 60,46 62,50" />
+
+    <!-- Sweet Gentle Smile -->
+    <path
+        android:strokeColor="#221100"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M43,60 C46,64 50,64 53,60" />
+
+    <!-- Rosy Cheeks -->
+    <path
+        android:fillColor="#FFA8A0"
+        android:pathData="M29,57 A4,4 0 1,1 28.99,57 Z" />
+    <path
+        android:fillColor="#FFA8A0"
+        android:pathData="M67,57 A4,4 0 1,1 66.99,57 Z" />
+</vector>
