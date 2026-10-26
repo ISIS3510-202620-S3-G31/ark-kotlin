@@ -29,8 +29,10 @@ class RegisterViewModel(private val authRepository: AuthRepository) : ViewModel(
         val dummy = UserModel(name = newName, birthDate = current.birthDate, email = current.email, password = current.password)
         val error = when {
             newName.isNotBlank() && !dummy.isValidName() -> {
-                if (newName.trim().length < UserModel.MIN_NAME_LENGTH) "Name must be at least 2 characters"
-                else "Name cannot exceed 100 characters"
+                val trimmed = newName.trim()
+                if (trimmed.length < UserModel.MIN_NAME_LENGTH) "Name must be at least 3 characters"
+                else if (trimmed.length > UserModel.MAX_NAME_LENGTH) "Name cannot exceed 40 characters"
+                else "Name can only contain letters and spaces"
             }
             else -> null
         }
@@ -42,7 +44,7 @@ class RegisterViewModel(private val authRepository: AuthRepository) : ViewModel(
         val current = privateUiState.value
         val dummy = UserModel(name = current.name, birthDate = newBirthDate, email = current.email, password = current.password)
         val error = when {
-            newBirthDate.length >= 10 && !dummy.isValidBirthDate() -> "Must be a valid date and at least 13 years old (YYYY-MM-DD)"
+            newBirthDate.length >= 10 && !dummy.isValidBirthDate() -> "Must be a valid date and age between 13 and 100 (YYYY-MM-DD)"
             else -> null
         }
         val updated = current.copy(birthDate = newBirthDate, birthDateError = error, errorMessage = null)
@@ -133,12 +135,16 @@ class RegisterViewModel(private val authRepository: AuthRepository) : ViewModel(
 
         //validacion con el modelo de dominio
         if (!userModel.isValidName()) {
-            privateUiState.value = state.copy(nameError = "Name must be at least 2 characters", errorMessage = "Please check highlighted errors")
+            val trimmed = userModel.name.trim()
+            val err = if (trimmed.length < UserModel.MIN_NAME_LENGTH) "Name must be at least 3 characters"
+            else if (trimmed.length > UserModel.MAX_NAME_LENGTH) "Name cannot exceed 40 characters"
+            else "Name can only contain letters and spaces"
+            privateUiState.value = state.copy(nameError = err, errorMessage = "Please check highlighted errors")
             return
         }
 
         if (!userModel.isValidBirthDate()) {
-            privateUiState.value = state.copy(birthDateError = "Must be a valid date and at least 13 years old (YYYY-MM-DD)", errorMessage = "Please check highlighted errors")
+            privateUiState.value = state.copy(birthDateError = "Must be a valid date and age between 13 and 100 (YYYY-MM-DD)", errorMessage = "Please check highlighted errors")
             return
         }
 

@@ -156,11 +156,18 @@ class UserRepositoryImpl(
         }
     }
 
-    //las reglas de firestore aceptan name, birthDate y email en users/{uid}: la racha y el avatar se quedan en room
+    //las reglas de firestore aceptan name, birthDate, age y email en users/{uid}: la racha y el avatar se quedan en room
     private suspend fun pushProfile(uid: String, name: String, birthDate: String) {
+        val dummy = com.moviles.ark.domain.models.UserModel(name = name, birthDate = birthDate, email = "", password = "")
+        val calculatedAge = dummy.getCalculatedAge()
+        val updates = if (calculatedAge > 0) {
+            mapOf("name" to name, "birthDate" to birthDate, "age" to calculatedAge)
+        } else {
+            mapOf("name" to name, "birthDate" to birthDate)
+        }
         val written = withTimeoutOrNull(PUSH_TIMEOUT_MILLIS) {
             firestore.collection("users").document(uid)
-                .update("name", name, "birthDate", birthDate)
+                .update(updates)
                 .await()
             true
         } ?: false
