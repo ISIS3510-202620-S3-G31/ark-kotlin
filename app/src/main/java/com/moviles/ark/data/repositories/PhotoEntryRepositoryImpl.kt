@@ -49,28 +49,9 @@ class PhotoEntryRepositoryImpl(
     override suspend fun savePhoto(sourceUri: String, caption: String, takenAt: Long): Result<PhotoEntryModel> = withContext(Dispatchers.IO) {
         runCatching {
             val userId = auth.currentUser?.uid ?: error("No user is logged in")
-            val photosDir = userPhotosDir(context.filesDir, userId).apply { if (!exists()) mkdirs() }
-            val fileName = "photo_${takenAt}_${UUID.randomUUID().toString().take(6)}.jpg"
-            val destFile = File(photosDir, fileName)
-
-            val sourceFile = File(sourceUri)
-            val finalPath = if (sourceFile.exists() && sourceFile.parentFile?.absolutePath == photosDir.absolutePath) {
-                sourceFile.absolutePath
-            } else {
-                val inputStream: InputStream = when {
-                    sourceUri.startsWith("content://") || sourceUri.startsWith("file://") -> {
-                        context.contentResolver.openInputStream(Uri.parse(sourceUri))
-                            ?: throw IllegalArgumentException("Cannot open input stream for URI: $sourceUri")
-                    }
-                    else -> FileInputStream(sourceFile)
-                }
-                inputStream.use { input ->
-                    FileOutputStream(destFile).use { output ->
-                        input.copyTo(output)
-                    }
-                }
-                destFile.absolutePath
-            }
+            //guarda directamente en la galeria publica mediastore sin duplicar en filesDir
+            val publicUri = exportToPublicGallery(sourceUri, takenAt, userId)
+            val finalPath = publicUri?.toString() ?: sourceUri
 
             val entity = PhotoEntryEntity(
                 userId = userId,
@@ -82,9 +63,6 @@ class PhotoEntryRepositoryImpl(
             )
 
             val insertedId = photoEntryDao.insertPhoto(entity)
-
-            // Copia una exportacion a la galeria publica usando Android MediaStore API en Dispatchers.IO (#146)
-            exportToPublicGallery(File(finalPath), takenAt, userId)
 
             PhotoEntryModel(
                 id = insertedId,
@@ -101,14 +79,14 @@ class PhotoEntryRepositoryImpl(
             val userId = auth.currentUser?.uid ?: error("No user is logged in")
             val entity = photoEntryDao.getPhotoById(photoId, userId)
             if (entity != null) {
-                //elimina el archivo fisico del almacenamiento interno si existe
-                val localFile = File(entity.localFilePath)
-                if (localFile.exists()) {
-                    localFile.delete()
-                }
-                //si es uri de mediastore externa, la elimina con el content resolver
+                //elimina la foto de mediastore publica si es content:// o del archivo si es ruta directa
                 if (entity.localFilePath.startsWith("content://")) {
                     runCatching { context.contentResolver.delete(Uri.parse(entity.localFilePath), null, null) }
+                } else {
+                    val localFile = File(entity.localFilePath)
+                    if (localFile.exists()) {
+                        localFile.delete()
+                    }
                 }
                 //elimina el registro en room
                 photoEntryDao.deletePhoto(photoId, userId)
@@ -124,8 +102,8 @@ class PhotoEntryRepositoryImpl(
         }
     }
 
-    //exporta una copia a la galeria publica del sistema usando MediaStore API (#146)
-    private suspend fun exportToPublicGallery(photoFile: File, takenAt: Long, userId: String): Uri? = withContext(Dispatchers.IO) {
+    //guarda la foto en la galeria publica del sistema usando MediaStore API en subcarpetas por usuario (#146)
+    private suspend fun exportToPublicGallery(sourceUri: String, takenAt: Long, userId: String): Uri? = withContext(Dispatchers.IO) {
         runCatching {
             val displayName = "Ark_Photo_${takenAt}.jpg"
             val mimeType = "image/jpeg"
@@ -149,9 +127,14 @@ class PhotoEntryRepositoryImpl(
 
             val uri = context.contentResolver.insert(collection, contentValues)
             if (uri != null) {
-                context.contentResolver.openOutputStream(uri)?.use { outputStream ->
-                    FileInputStream(photoFile).use { inputStream ->
-                        inputStream.copyTo(outputStream)
+                val inputStream: InputStream = if (sourceUri.startsWith("content://") || sourceUri.startsWith("file://")) {
+                    context.contentResolver.openInputStream(Uri.parse(sourceUri)) ?: error("Cannot open $sourceUri")
+                } else {
+                    FileInputStream(File(sourceUri))
+                }
+                inputStream.use { input ->
+                    context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                        input.copyTo(outputStream)
                     }
                 }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
