@@ -1,5 +1,6 @@
 package com.moviles.ark.ui.screens
 
+import com.bumptech.glide.Glide
 import android.Manifest
 import android.content.Context
 import android.graphics.Bitmap
