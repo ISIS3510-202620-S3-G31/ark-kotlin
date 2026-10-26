@@ -8,7 +8,7 @@ import com.moviles.ark.domain.adapters.AuthServiceAdapter
 import com.moviles.ark.domain.repositories.AuthRepository
 import kotlinx.coroutines.tasks.await
 
-//la autenticacion pasa solo por el adapter (#136); firestore sigue aqui para guardar el perfil
+//la autenticacion pasa solo por el adapter; firestore sigue aqui para guardar el perfil
 class AuthRepositoryImpl(
     private val authServiceAdapter: AuthServiceAdapter,
     private val firestore: FirebaseFirestore
@@ -45,7 +45,7 @@ class AuthRepositoryImpl(
             action = "registerUser",
             throwable = error,
             extraKeys = mapOf(
-                "user_age" to user.age,
+                "user_birth_date" to user.birthDate,
                 "email_domain" to user.email.substringAfter("@", "unknown")
             )
         )
@@ -53,4 +53,3 @@ class AuthRepositoryImpl(
 
     override fun logout() = authServiceAdapter.signOut()
 }
-

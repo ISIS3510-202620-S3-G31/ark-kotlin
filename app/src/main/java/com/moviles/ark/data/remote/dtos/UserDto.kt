@@ -3,12 +3,12 @@ package com.moviles.ark.data.remote.dtos
 import com.moviles.ark.domain.models.UserModel
 import com.moviles.ark.domain.models.UserProfile
 
-//dto del documento users/{uid} en firestore (#163)
-//las reglas de firestore solo aceptan estos tres campos (isValidUser): no agregar mas sin cambiar las reglas
+//dto del documento users/{uid} en firestore
+//las reglas de firestore aceptan name, email, birthDate y opcionalmente age por compatibilidad con flutter
 //la clave nunca viaja: se queda en firebase auth
 data class UserDto(
     val name: String = "",
-    val age: Int = 0,
+    val birthDate: String = "",
     val email: String = ""
 )
 
@@ -16,7 +16,7 @@ data class UserDto(
 fun UserModel.toDto(): UserDto {
     return UserDto(
         name = name.trim(),
-        age = age,
+        birthDate = birthDate.trim(),
         email = email.trim()
     )
 }
@@ -26,6 +26,7 @@ fun UserDto.toProfile(memberSince: Long): UserProfile {
     return UserProfile(
         name = name,
         email = email,
-        memberSince = memberSince
+        memberSince = memberSince,
+        birthDate = birthDate
     )
 }

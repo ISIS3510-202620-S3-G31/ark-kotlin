@@ -24,7 +24,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.io.FileOutputStream
 
-//perfil del usuario: room primero, firestore despues (#119)
+//perfil del usuario: room primero, firestore despues
 class UserRepositoryImpl(
     private val context: Context,
     private val auth: FirebaseAuth,
@@ -44,11 +44,15 @@ class UserRepositoryImpl(
 
             //el usuario edito su perfil sin internet: se sube lo local en vez de pisarlo con lo de firestore
             if (local != null && !local.isSynced) {
-                pushProfile(user.uid, local.name, local.age)
+                if (local.birthDate.isNotBlank()) {
+                    pushProfile(user.uid, local.name, local.birthDate)
+                } else {
+                    pushProfileWithAge(user.uid, local.name, local.age)
+                }
                 return@runCatching
             }
 
-            //email y fecha de creacion vienen de la sesion guardada en el telefono; nombre y edad de firestore
+            //email y fecha de creacion vienen de la sesion guardada en el telefono; nombre y fecha de firestore
             //sin internet firestore responde con su copia local; si no tiene, se queda lo que habia en room
             val document = runCatching {
                 firestore.collection("users").document(user.uid).get().await()
@@ -62,12 +66,14 @@ class UserRepositoryImpl(
             }.getOrNull()
 
             val remoteName = document?.getString("name").orEmpty()
+            val remoteBirthDate = document?.getString("birthDate").orEmpty()
             val remoteAge = document?.getLong("age")?.toInt() ?: 0
             userDao.upsertUser(
                 UserEntity(
                     uid = user.uid,
                     name = remoteName.ifBlank { local?.name.orEmpty() },
                     email = user.email.orEmpty(),
+                    birthDate = remoteBirthDate.ifBlank { local?.birthDate.orEmpty() },
                     age = if (remoteAge > 0) remoteAge else local?.age ?: 0,
                     streakDays = local?.streakDays ?: 0,
                     lastCheckInAt = local?.lastCheckInAt,
@@ -87,16 +93,31 @@ class UserRepositoryImpl(
         }
     }
 
-    override suspend fun updateProfile(name: String, age: Int): Result<Unit> = withContext(Dispatchers.IO) {
+    override suspend fun updateProfile(name: String, birthDate: String): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val uid = auth.currentUser?.uid ?: error("No user is logged in")
             //primero room: la pantalla cambia de una vez, haya o no internet
-            userDao.updateProfile(uid, name.trim(), age)
-            pushProfile(uid, name.trim(), age)
+            userDao.updateProfile(uid, name.trim(), birthDate)
+            pushProfile(uid, name.trim(), birthDate)
         }.onFailure { error ->
             CrashlyticsHelper.logNonFatal(
                 componentName = "UserRepository",
                 action = "updateProfile",
+                throwable = error,
+                extraKeys = mapOf("birthDate" to birthDate)
+            )
+        }
+    }
+
+    override suspend fun updateProfile(name: String, age: Int): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val uid = auth.currentUser?.uid ?: error("No user is logged in")
+            userDao.updateProfileWithAge(uid, name.trim(), age)
+            pushProfileWithAge(uid, name.trim(), age)
+        }.onFailure { error ->
+            CrashlyticsHelper.logNonFatal(
+                componentName = "UserRepository",
+                action = "updateProfileWithAge",
                 throwable = error,
                 extraKeys = mapOf("age" to age)
             )
@@ -135,11 +156,19 @@ class UserRepositoryImpl(
         }
     }
 
-    //las reglas de firestore solo aceptan name, age y email en users/{uid}: la racha y el avatar se quedan en room
-    //sin internet firestore guarda la escritura en su cola y la manda sola al volver la conexion,
-    //pero el await no termina hasta que el servidor responde; por eso se espera poco y se deja pendiente en room
-    private suspend fun pushProfile(uid: String, name: String, age: Int) {
-        //update devuelve Task<Void>: su await da null, por eso el bloque devuelve true para saber que si termino
+    //las reglas de firestore aceptan name, birthDate y email en users/{uid}: la racha y el avatar se quedan en room
+    private suspend fun pushProfile(uid: String, name: String, birthDate: String) {
+        val written = withTimeoutOrNull(PUSH_TIMEOUT_MILLIS) {
+            firestore.collection("users").document(uid)
+                .update("name", name, "birthDate", birthDate)
+                .await()
+            true
+        } ?: false
+        if (written) userDao.markAsSynced(uid)
+    }
+
+    //para retrocompatibilidad en caso de perfiles guardados anteriormente con edad
+    private suspend fun pushProfileWithAge(uid: String, name: String, age: Int) {
         val written = withTimeoutOrNull(PUSH_TIMEOUT_MILLIS) {
             firestore.collection("users").document(uid)
                 .update("name", name, "age", age)
@@ -152,7 +181,6 @@ class UserRepositoryImpl(
     //el avatar se guarda pequeno y ya derecho (segun el exif de la camara), asi la pantalla solo lo lee
     private fun decodeAvatar(uri: Uri): Bitmap {
         val resolver = context.contentResolver
-        //primero solo las medidas (con inJustDecodeBounds decodeStream siempre devuelve null)
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         val stream = resolver.openInputStream(uri) ?: error("Cannot open the photo: $uri")
         stream.use { BitmapFactory.decodeStream(it, null, bounds) }

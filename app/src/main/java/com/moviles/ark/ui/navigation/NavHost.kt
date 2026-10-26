@@ -90,7 +90,13 @@ fun AppNavigation(
             composable("register_screen") {
                 RegisterScreen(
                     onNavigateToLogin = { navController.navigate("login_screen") },
-                    onRegisterSuccess = { navController.navigate("login_screen") }
+                    onRegisterSuccess = {
+                        //al registrarse en firebase la sesion queda iniciada automaticamente,
+                        //por lo que se navega directo a home limpiando el historial para no volver a registro
+                        navController.navigate("home_screen") {
+                            popUpTo(navController.graph.id) { inclusive = true }
+                        }
+                    }
                 )
             }
             composable("login_screen") {
@@ -224,3 +230,4 @@ fun AppNavigation(
 
 //clave del savedStateHandle con la que stats le pasa al catalogo la categoria a filtrar (#135)
 private const val TOOLS_CATEGORY_KEY = "tools_category"
+
