@@ -5,6 +5,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.provider.Settings
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -14,8 +15,9 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 class NetworkConnectivityObserver(
     context: Context
 ) {
+    private val appContext = context.applicationContext
     private val connectivityManager =
-        context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
     //emite un flujo con true cuando hay conexion a internet y false cuando se pierde
     fun observe(): Flow<Boolean> = callbackFlow {
@@ -56,5 +58,18 @@ class NetworkConnectivityObserver(
         val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return false
         return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
                 capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    }
+
+    //detecta si el modo avion esta activado (#141)
+    fun isAirplaneModeOn(): Boolean {
+        return try {
+            Settings.Global.getInt(
+                appContext.contentResolver,
+                Settings.Global.AIRPLANE_MODE_ON,
+                0
+            ) != 0
+        } catch (_: Exception) {
+            false
+        }
     }
 }

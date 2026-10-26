@@ -76,7 +76,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     //adapter de firebase auth para que el repositorio de login no dependa de firebase (#136)
     private val authServiceAdapter: com.moviles.ark.domain.adapters.AuthServiceAdapter by lazy { com.moviles.ark.data.remote.apis.FirebaseAuthAdapterImpl(auth) }
     override val firestore: FirebaseFirestore by lazy { Firebase.firestore }
-    override val authRepository: AuthRepository by lazy { AuthRepositoryImpl(authServiceAdapter, firestore) }
+    override val authRepository: AuthRepository by lazy { AuthRepositoryImpl(authServiceAdapter, firestore, networkConnectivityObserver) }
     // perfil guardado en room para verlo sin internet, con nombre y edad sincronizados con firestore (#119)
     override val userRepository: UserRepository by lazy { UserRepositoryImpl(context, auth, firestore, database.userDao()) }
     override val locationRepository: LocationRepository by lazy { LocationRepositoryImpl(Location(context)) }
