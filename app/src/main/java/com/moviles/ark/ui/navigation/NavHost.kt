@@ -10,6 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -68,16 +69,7 @@ fun AppNavigation(
             if (currentRoute in BottomNavItem.routes) {
                 BottomNavigationBar(
                     currentRoute = currentRoute,
-                    onItemClick = { item ->
-                        navController.navigate(item.route) {
-                            //home es la base de las pestanas: "atras" desde stats o profile vuelve a home
-                            popUpTo("home_screen") { saveState = true }
-                            //tocar la pestana actual no abre otra copia de la pantalla
-                            launchSingleTop = true
-                            //al volver a una pestana se recupera como estaba
-                            restoreState = true
-                        }
-                    }
+                    onItemClick = { item -> navController.navigateToTab(item.route) }
                 )
             }
         }
@@ -117,7 +109,8 @@ fun AppNavigation(
                             "photo_of_the_day" -> navController.navigate("photo_of_the_day_screen")
                             "custom_breathing" -> navController.navigate("custom_breathing_screen")
                             "scream_tank" -> navController.navigate("scream_tank_screen")
-                            "tools_catalog_screen" -> navController.navigate("tools_catalog_screen")
+                            //el catalogo es una pestana: se abre igual que desde la barra para no dejar el stack trabado
+                            "tools_catalog_screen" -> navController.navigateToTab("tools_catalog_screen")
                         }
                     }
                 )
@@ -142,7 +135,6 @@ fun AppNavigation(
                             "photo_of_the_day" -> navController.navigate("photo_of_the_day_screen")
                             "custom_breathing" -> navController.navigate("custom_breathing_screen")
                             "scream_tank" -> navController.navigate("scream_tank_screen")
-                            "tools_catalog_screen" -> navController.navigate("tools_catalog_screen")
                         }
                     }
                 )
@@ -151,10 +143,7 @@ fun AppNavigation(
                 StatsScreen(
                     //la tarjeta de insight abre el catalogo con la categoria ya filtrada (#135, #190)
                     onNavigateToToolsCatalog = { category ->
-                        navController.navigate("tools_catalog_screen") {
-                            popUpTo("home_screen") { saveState = true }
-                            launchSingleTop = true
-                        }
+                        navController.navigateToTab("tools_catalog_screen")
                         if (category != null) {
                             navController.currentBackStackEntry?.savedStateHandle?.set(TOOLS_CATEGORY_KEY, category.id)
                         }
@@ -172,7 +161,8 @@ fun AppNavigation(
             //herramienta foto del dia (#25); al guardar la foto navega a feedback (#21)
             composable("photo_of_the_day_screen") {
                 PhotoOfTheDayRoute(
-                    onBack = { navController.popBackStack("home_screen", inclusive = false) },
+                    //vuelve a donde se abrio: home o el catalogo
+                    onBack = { navController.popBackStack() },
                     onPhotoSaved = {
                         navController.navigate("post_tool_feedback/photo_of_the_day") {
                             popUpTo("photo_of_the_day_screen") { inclusive = true }
@@ -188,7 +178,7 @@ fun AppNavigation(
                             popUpTo("custom_breathing_screen") { inclusive = true }
                         }
                     } else {
-                        navController.popBackStack("home_screen", inclusive = false)
+                        navController.popBackStack()
                     }
                 })
             }
@@ -200,7 +190,7 @@ fun AppNavigation(
                             popUpTo("scream_tank_screen") { inclusive = true }
                         }
                     } else {
-                        navController.popBackStack("home_screen", inclusive = false)
+                        navController.popBackStack()
                     }
                 })
             }
@@ -227,6 +217,25 @@ fun AppNavigation(
                 )
             }
         }
+    }
+}
+
+//abre una pestana de la barra con home como base: "atras" desde cualquier pestana vuelve a home
+//home se trata aparte: navegar a la misma ruta del popUpTo con restoreState volvia a montar la pestana
+//que se acababa de guardar (por eso el boton Home dejaba al usuario en el catalogo)
+private fun NavHostController.navigateToTab(route: String) {
+    if (route == "home_screen") {
+        if (currentDestination?.route == "home_screen") return
+        //si home no esta en el historial (no deberia pasar con sesion iniciada) se abre de cero
+        if (!popBackStack("home_screen", inclusive = false)) navigate("home_screen")
+        return
+    }
+    navigate(route) {
+        popUpTo("home_screen") { saveState = true }
+        //tocar la pestana actual no abre otra copia de la pantalla
+        launchSingleTop = true
+        //al volver a una pestana se recupera como estaba
+        restoreState = true
     }
 }
 
