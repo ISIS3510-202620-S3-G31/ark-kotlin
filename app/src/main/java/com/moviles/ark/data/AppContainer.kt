@@ -54,6 +54,7 @@ interface AppContainer {
     val toolLatencyTracker: ToolLatencyTracker
     val recommendationRepository: com.moviles.ark.domain.repositories.RecommendationRepository
     val weatherServiceAdapter: com.moviles.ark.domain.adapters.WeatherServiceAdapter
+    val musicServiceAdapter: com.moviles.ark.domain.adapters.MusicServiceAdapter
     val feedbackDao: FeedbackDao
     val breathingRepository: BreathingRepository
     val screamTankRepository: com.moviles.ark.domain.repositories.ScreamTankRepository
@@ -65,8 +66,8 @@ interface AppContainer {
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
-    //base de datos room del telefono (#11); private para que los viewmodels siempre pasen por un repositorio
-    //lazy: no se crea hasta que un repositorio la use (por ejemplo los de #9, #21 y #26)
+    //base de datos room del telefono; private para que los viewmodels siempre pasen por un repositorio
+    //lazy: no se crea hasta que un repositorio la use
     private val database: ArkDatabase by lazy {
         Room.databaseBuilder(context, ArkDatabase::class.java, "ark.db")
             //mientras desarrollamos: si cambia una tabla se borra la base y se crea otra (se pierden los datos locales)
@@ -75,51 +76,59 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     }
 
     override val auth: FirebaseAuth by lazy { Firebase.auth }
-    //adapter de firebase auth para que el repositorio de login no dependa de firebase (#136)
+    //adapter de firebase auth para que el repositorio de login no dependa de firebase
     private val authServiceAdapter: com.moviles.ark.domain.adapters.AuthServiceAdapter by lazy { com.moviles.ark.data.remote.apis.FirebaseAuthAdapterImpl(auth) }
     override val firestore: FirebaseFirestore by lazy { Firebase.firestore }
     override val authRepository: AuthRepository by lazy { AuthRepositoryImpl(authServiceAdapter, firestore, networkConnectivityObserver) }
-    // perfil guardado en room para verlo sin internet, con nombre y edad sincronizados con firestore (#119)
+    // perfil guardado en room para verlo sin internet, con nombre y fecha sincronizados con firestore
     override val userRepository: UserRepository by lazy { UserRepositoryImpl(context, auth, firestore, database.userDao()) }
     override val locationRepository: LocationRepository by lazy { LocationRepositoryImpl(Location(context)) }
-    // check-ins guardados en room al instante; el sync los sube a firestore cuando hay red (#143)
+    // check-ins guardados en room al instante; el sync los sube a firestore cuando hay red
     override val moodRepository: MoodRepository by lazy {
         MoodRepositoryImpl(auth, firestore, database.emotionCheckInDao(), onCheckInSaved = { syncManager.requestSync() })
     }
-    // catalogo de herramientas en room como unica fuente de verdad, actualizado desde firestore (#132) y con copia en filesDir/tools.json (#145)
+    // catalogo de herramientas en room como unica fuente de verdad, actualizado desde firestore y con copia en filesDir/tools.json
     override val toolRepository: com.moviles.ark.domain.repositories.ToolRepository by lazy {
         ToolRepositoryImpl(database.toolDao(), firestore, com.moviles.ark.data.local.ToolCatalogFileStore(context))
     }
-    // interacciones con herramientas guardadas en room; las usa la recomendacion por frecuencia del home (#96)
+    // interacciones con herramientas guardadas en room; las usa la recomendacion por frecuencia del home
     override val toolInteractionRepository: ToolInteractionRepository by lazy { ToolInteractionRepositoryImpl(database.toolRecordDao()) }
     override val statsRepository: StatsRepository by lazy { StatsRepositoryImpl(auth, firestore, database.emotionCheckInDao(), database.toolRecordDao(), com.moviles.ark.data.local.StatsDiskCache(context.cacheDir)) }
-    // real photo repository with Room persistence and internal app private storage (context.filesDir) (#26)
+    // real photo repository with Room persistence and internal app private storage (context.filesDir)
     override val photoRepository: PhotoEntryRepository by lazy {
-        //cada usuario solo ve sus fotos y sus archivos van en filesDir/photos/{userId} (#133)
+        //cada usuario solo ve sus fotos y sus archivos van en filesDir/photos/{userId}
         PhotoEntryRepositoryImpl(context, auth, database.photoEntryDao())
     }
     override val analyticsRepository: AnalyticsRepository by lazy { AnalyticsRepositoryImpl(Firebase.analytics) }
-    // one tracker for the whole app: the tap on a tool and its screen live in different places (#8)
+    // one tracker for the whole app: the tap on a tool and its screen live in different places
     override val toolLatencyTracker: ToolLatencyTracker by lazy { ToolLatencyTracker(analyticsRepository) }
-    // ultima recomendacion del home en cacheDir/last_recommendation.json para usarla sin internet (#159)
+    // ultima recomendacion del home en cacheDir/last_recommendation.json para usarla sin internet
     override val recommendationRepository: com.moviles.ark.domain.repositories.RecommendationRepository by lazy {
         com.moviles.ark.data.repositories.RecommendationRepositoryImpl(context.cacheDir)
     }
-    // clima de afuera con open-meteo detras del adapter (#134)
+    // clima de afuera con open-meteo detras del adapter
     override val weatherServiceAdapter: com.moviles.ark.domain.adapters.WeatherServiceAdapter by lazy {
         com.moviles.ark.data.remote.apis.OpenMeteoAdapterImpl()
     }
+    // adapter de musica ambiental para desacoplar el consumo de jamendo y cachear audios en disco
+    override val musicServiceAdapter: com.moviles.ark.domain.adapters.MusicServiceAdapter by lazy {
+        com.moviles.ark.data.remote.apis.JamendoServiceAdapterImpl(
+            context = context,
+            bundledAudioUri = "android.resource://${context.packageName}/${R.raw.breathing_ambient}"
+        )
+    }
     override val feedbackDao: FeedbackDao by lazy { database.feedbackDao() }
-    // repositorio de la herramienta de respiracion con pistas de jamendo (#7) y sesiones guardadas en room (#82)
+    // repositorio de la herramienta de respiracion desacoplado mediante el adapter de musica y sesiones en room
     override val breathingRepository: BreathingRepository by lazy {
         BreathingRepositoryImpl(
             breathingSessionDao = database.breathingSessionDao(),
             toolRecordDao = database.toolRecordDao(),
             auth = auth,
-            bundledAudioUri = "android.resource://${context.packageName}/${R.raw.breathing_ambient}"
+            bundledAudioUri = "android.resource://${context.packageName}/${R.raw.breathing_ambient}",
+            musicServiceAdapter = musicServiceAdapter
         )
     }
-    // scream tank: volumen del microfono medido en memoria, sin guardar audio; la sesion va a room (#157)
+    // scream tank: volumen del microfono medido en memoria, sin guardar audio; la sesion va a room
     override val screamTankRepository: com.moviles.ark.domain.repositories.ScreamTankRepository by lazy {
         com.moviles.ark.data.repositories.ScreamTankRepositoryImpl(
             microphoneLevelMeter = com.moviles.ark.data.local.sensors.MicrophoneLevelMeter(context),
@@ -128,9 +137,9 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         )
     }
     override val audioPlayerHelper: AudioPlayerHelper by lazy { AudioPlayerHelper(context) }
-    // observador reactivo de conectividad a internet (#32)
+    // observador reactivo de conectividad a internet
     override val networkConnectivityObserver: NetworkConnectivityObserver by lazy { NetworkConnectivityObserver(context) }
-    // repositorio y gestor de resincronizacion de datos offline (#33)
+    // repositorio y gestor de resincronizacion de datos offline
     override val syncRepository: SyncRepository by lazy {
         SyncRepositoryImpl(
             auth = auth,
@@ -144,6 +153,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val syncManager: SyncManager by lazy {
         SyncManager(networkConnectivityObserver, syncRepository)
     }
-    // sensor de luz + hora del dia para recomendaciones segun el entorno (#165); uno para toda la app
+    // sensor de luz + hora del dia para recomendaciones segun el entorno; uno para toda la app
     override val environmentalSensorManager: EnvironmentalSensorManager by lazy { EnvironmentalSensorManager(context) }
 }
+
