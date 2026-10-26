@@ -37,6 +37,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.Button
@@ -169,7 +170,7 @@ private fun Header(todayLabel: String, onBack: () -> Unit) {
     }
 }
 
-//tira de lunes a domingo con el estado de cada dia
+//tira de los ultimos 7 dias con el estado de cada uno; el ultimo es hoy
 @Composable
 private fun WeekStrip(week: List<PhotoDay>) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -183,7 +184,6 @@ private fun DayDot(day: PhotoDay) {
         PhotoDayState.TAKEN -> "photo taken"
         PhotoDayState.TODAY -> "today"
         PhotoDayState.MISSED -> "no photo"
-        PhotoDayState.UPCOMING -> "not yet"
     }
     Column(
         //el lector de pantalla lee "Monday, photo taken" en vez de la letra sola
@@ -205,8 +205,13 @@ private fun DayDot(day: PhotoDay) {
             ) {
                 Box(modifier = Modifier.size(10.dp).background(PrimaryColor, CircleShape))
             }
-            PhotoDayState.MISSED -> Box(modifier = Modifier.size(36.dp).background(TextColor.copy(alpha = 0.1f), CircleShape))
-            PhotoDayState.UPCOMING -> Box(modifier = Modifier.size(36.dp).border(1.dp, TextColor.copy(alpha = 0.2f), CircleShape))
+            //dia sin foto: x en color de texto sobre el mismo circulo suave, sin rojo para no castigar al usuario
+            PhotoDayState.MISSED -> Box(
+                modifier = Modifier.size(36.dp).background(TextColor.copy(alpha = 0.1f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Filled.Close, contentDescription = null, tint = TextColor, modifier = Modifier.size(16.dp))
+            }
         }
         Spacer(modifier = Modifier.height(4.dp))
         Text(
@@ -278,7 +283,7 @@ private fun EmptyPhotoSection(
     }
 }
 
-//foto recien tomada: vista previa, guardar o repetir sin caption (#146)
+//foto recien tomada: vista previa, guardar o repetir sin caption
 @Composable
 private fun PendingPhotoSection(
     uri: String,
@@ -361,7 +366,7 @@ private fun PhotoThumbnail(path: String, modifier: Modifier = Modifier) {
     }
 }
 
-//abre la foto desde una direccion content:// o file:// (camara) o desde una ruta de archivo (#26)
+//abre la foto desde una direccion content:// o file:// (camara) o desde una ruta de archivo
 private fun openPhoto(context: Context, path: String): InputStream {
     return if (path.startsWith("content://") || path.startsWith("file://")) {
         context.contentResolver.openInputStream(Uri.parse(path)) ?: error("Cannot open $path")
@@ -420,7 +425,7 @@ fun PhotoOfTheDayRoute(
         }
     }
 
-    //launcher para capturar foto con la camara del dispositivo (#31)
+    //launcher para capturar foto con la camara del dispositivo
     val takePictureLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
     ) { success ->
@@ -429,7 +434,7 @@ fun PhotoOfTheDayRoute(
         }
     }
 
-    //launcher para seleccionar foto de la galeria mediante PickVisualMedia (#31)
+    //launcher para seleccionar foto de la galeria mediante PickVisualMedia
     val pickVisualMediaLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
@@ -438,7 +443,7 @@ fun PhotoOfTheDayRoute(
         }
     }
 
-    //launcher para solicitar el permiso de camara al usuario (#31)
+    //launcher para solicitar el permiso de camara al usuario
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
@@ -469,7 +474,7 @@ fun PhotoOfTheDayRoute(
         )
     }
 
-    //#8: se espera al siguiente cuadro; para entonces el primer dibujo de la pantalla ya termino
+    //latencia: se espera al siguiente cuadro; para entonces el primer dibujo de la pantalla ya termino
     LaunchedEffect(Unit) {
         withFrameNanos { }
         viewModel.onScreenRendered()
@@ -487,13 +492,13 @@ fun PhotoOfTheDayRoute(
 }
 
 private val previewWeek = listOf(
+    PhotoDay("S", "Saturday", PhotoDayState.MISSED),
+    PhotoDay("S", "Sunday", PhotoDayState.TAKEN),
     PhotoDay("M", "Monday", PhotoDayState.TAKEN),
     PhotoDay("T", "Tuesday", PhotoDayState.MISSED),
     PhotoDay("W", "Wednesday", PhotoDayState.TAKEN),
     PhotoDay("T", "Thursday", PhotoDayState.TAKEN),
-    PhotoDay("F", "Friday", PhotoDayState.TODAY),
-    PhotoDay("S", "Saturday", PhotoDayState.UPCOMING),
-    PhotoDay("S", "Sunday", PhotoDayState.UPCOMING)
+    PhotoDay("F", "Friday", PhotoDayState.TODAY)
 )
 
 @Preview(showBackground = true, name = "Photo of the day - empty")

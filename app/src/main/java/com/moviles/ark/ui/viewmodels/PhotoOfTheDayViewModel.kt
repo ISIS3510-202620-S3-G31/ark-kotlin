@@ -26,7 +26,7 @@ class PhotoOfTheDayViewModel(
     private val photoRepository: PhotoEntryRepository,
     private val zone: TimeZone = TimeZone.getDefault(),
     private val now: () -> Long = { System.currentTimeMillis() },
-    //mide cuanto tardo en abrirse la herramienta (#8); null en previews
+    //mide cuanto tardo en abrirse la herramienta; null en previews
     private val toolLatencyTracker: ToolLatencyTracker? = null
 ) : ViewModel() {
     //privado: solo el viewmodel lo modifica
@@ -40,7 +40,7 @@ class PhotoOfTheDayViewModel(
         observeWeek()
     }
 
-    //escucha las fotos de la semana; cada vez que se guarda una, la tira y la foto de hoy se actualizan solas
+    //escucha las fotos de los ultimos 7 dias; cada vez que se guarda una, la tira y la foto de hoy se actualizan solas
     private fun observeWeek() {
         val starts = PhotoWeek.dayStarts(now(), zone)
         viewModelScope.launch {
@@ -62,12 +62,12 @@ class PhotoOfTheDayViewModel(
         }
     }
 
-    //la pantalla termino su primer dibujo: se cierra la medicion de latencia que empezo con el toque (#8)
+    //la pantalla termino su primer dibujo: se cierra la medicion de latencia que empezo con el toque
     fun onScreenRendered() {
         toolLatencyTracker?.onToolRendered(TOOL_ID)
     }
 
-    //la camara (#31, #146) llama esto con la direccion de la foto capturada; se guarda sin caption de texto
+    //la camara llama esto con la direccion de la foto capturada; se guarda sin caption de texto
     fun onPhotoCaptured(uri: String) {
         _uiState.update { it.copy(pendingPhotoUri = uri, caption = "", isSaving = true, errorMessage = null) }
         viewModelScope.launch {
@@ -82,7 +82,7 @@ class PhotoOfTheDayViewModel(
         }
     }
 
-    //mantiene compatibilidad (#146: flujo sin caption)
+    //mantiene compatibilidad (flujo sin caption)
     fun onCaptionChange(newCaption: String) {
         if (newCaption.length <= PhotoEntryModel.MAX_CAPTION_LENGTH) {
             _uiState.update { it.copy(caption = newCaption) }
