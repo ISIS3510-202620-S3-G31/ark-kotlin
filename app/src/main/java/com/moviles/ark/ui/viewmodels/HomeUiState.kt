@@ -1,5 +1,6 @@
 package com.moviles.ark.ui.viewmodels
 
+import com.moviles.ark.data.local.AvatarPreferences
 import com.moviles.ark.domain.models.Tool
 import com.moviles.ark.domain.models.ToolCategory
 
@@ -14,5 +15,6 @@ data class HomeUiState(
     val surpriseTool: Tool? = null,
     val navigateToToolId: String? = null,
     val isCheckInCompleted: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val avatarId: String = AvatarPreferences.DEFAULT_AVATAR_ID
 )

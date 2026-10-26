@@ -1,0 +1,50 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="96dp"
+    android:height="96dp"
+    android:viewportWidth="96"
+    android:viewportHeight="96">
+    <!-- Background Circle -->
+    <path
+        android:fillColor="#FFE769"
+        android:pathData="M48,4 A44,44 0 1,1 47.99,4 Z" />
+
+    <!-- Sun / Spark Rays -->
+    <path
+        android:fillColor="#F8840E"
+        android:pathData="M48,8 L51,18 L45,18 Z M48,88 L51,78 L45,78 Z M8,48 L18,51 L18,45 Z M88,48 L78,51 L78,45 Z M20,20 L29,26 L25,30 Z M76,76 L67,70 L71,66 Z M20,76 L25,66 L29,70 Z M76,20 L71,30 L67,26 Z" />
+
+    <!-- Inner Cheerful Face -->
+    <path
+        android:fillColor="#FFF6B3"
+        android:pathData="M48,22 A26,26 0 1,1 47.99,22 Z" />
+
+    <!-- Cheerful Eyes -->
+    <path
+        android:strokeColor="#221100"
+        android:strokeWidth="2.8"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M34,44 C36,39 41,39 43,44" />
+    <path
+        android:strokeColor="#221100"
+        android:strokeWidth="2.8"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M53,44 C55,39 60,39 62,44" />
+
+    <!-- Happy Open Smile with Tongue -->
+    <path
+        android:fillColor="#221100"
+        android:pathData="M39,53 C39,63 57,63 57,53 Z" />
+    <path
+        android:fillColor="#EB5249"
+        android:pathData="M43,58 C45,63 51,63 53,58 Z" />
+
+    <!-- Rosy Glowing Cheeks -->
+    <path
+        android:fillColor="#FFA5A0"
+        android:pathData="M31,52 A4,4 0 1,1 30.99,52 Z" />
+    <path
+        android:fillColor="#FFA5A0"
+        android:pathData="M65,52 A4,4 0 1,1 64.99,52 Z" />
+</vector>
