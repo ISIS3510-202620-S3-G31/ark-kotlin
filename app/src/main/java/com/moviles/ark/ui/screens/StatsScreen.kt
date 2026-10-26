@@ -352,6 +352,15 @@ private fun StatsEmptyView() {
     }
 }
 
+private fun getWeekDateRange(): String {
+    val format = java.text.SimpleDateFormat("MMM d", java.util.Locale.ENGLISH)
+    val cal = java.util.Calendar.getInstance()
+    val end = format.format(cal.time)
+    cal.add(java.util.Calendar.DAY_OF_YEAR, -6)
+    val start = format.format(cal.time)
+    return "$start - $end"
+}
+
 data class TooltipInfo(val title: String, val message: String)
 
 @Composable
@@ -428,11 +437,12 @@ private fun StatsMainView(
                                     color = TextColor.copy(alpha = 0.65f),
                                     fontSize = 11.sp
                                 )
-                                Spacer(modifier = Modifier.width(4.dp))
+                                Spacer(modifier = Modifier.width(5.dp))
                                 Box(
                                     modifier = Modifier
-                                        .size(16.dp)
+                                        .size(18.dp)
                                         .clip(CircleShape)
+                                        .background(PrimaryColor.copy(alpha = 0.15f))
                                         .clickable {
                                             activeTooltip = TooltipInfo(
                                                 "Top Feeling",
@@ -444,7 +454,7 @@ private fun StatsMainView(
                                     Icon(
                                         imageVector = Icons.Default.Info,
                                         contentDescription = "Info",
-                                        tint = TextColor.copy(alpha = 0.45f),
+                                        tint = PrimaryColor,
                                         modifier = Modifier.size(12.dp)
                                     )
                                 }
@@ -525,16 +535,6 @@ private fun StatsMainView(
                         }
                     }
                 }
-            }
-        }
-
-        //tarjeta compacta del hallazgo util si existe; abre el catalogo filtrado por la emocion (#29, #135)
-        if (stats.currentInsight != null) {
-            item {
-                UsefulInsightComponent(
-                    insight = stats.currentInsight,
-                    onClick = { onNavigateToToolsCatalog(stats.currentInsight.toolCategory()) }
-                )
             }
         }
 
@@ -629,6 +629,7 @@ private fun WeeklyEmotionJourneyCard(
                             modifier = Modifier
                                 .size(20.dp)
                                 .clip(CircleShape)
+                                .background(PrimaryColor.copy(alpha = 0.15f))
                                 .clickable {
                                     onShowTooltip(
                                         TooltipInfo(
@@ -642,15 +643,16 @@ private fun WeeklyEmotionJourneyCard(
                             Icon(
                                 imageVector = Icons.Default.Info,
                                 contentDescription = "Info",
-                                tint = TextColor.copy(alpha = 0.45f),
-                                modifier = Modifier.size(15.dp)
+                                tint = PrimaryColor,
+                                modifier = Modifier.size(14.dp)
                             )
                         }
                     }
                     Text(
-                        text = "Dominant emotion per day and its intensity",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = TextColor.copy(alpha = 0.65f),
+                        text = getWeekDateRange(),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = PrimaryColor,
                         fontSize = 12.sp
                     )
                 }
@@ -804,6 +806,7 @@ private fun EmotionDistributionCard(
                         modifier = Modifier
                             .size(20.dp)
                             .clip(CircleShape)
+                            .background(PrimaryColor.copy(alpha = 0.15f))
                             .clickable {
                                 onShowTooltip(
                                     TooltipInfo(
@@ -817,8 +820,8 @@ private fun EmotionDistributionCard(
                         Icon(
                             imageVector = Icons.Default.Info,
                             contentDescription = "Info",
-                            tint = TextColor.copy(alpha = 0.45f),
-                            modifier = Modifier.size(15.dp)
+                            tint = PrimaryColor,
+                            modifier = Modifier.size(14.dp)
                         )
                     }
                 }
@@ -1072,13 +1075,7 @@ fun StatsScreenPreview() {
             "Achievement Jar" to 17f,
             "Blow It Out" to 16f
         ),
-        currentInsight = com.moviles.ark.domain.models.InsightModel(
-            title = "Breathing helps you",
-            message = "On days you used Breathing, your difficult feelings were 35% lower than on other days.",
-            advice = "Keep Breathing close for tough days.",
-            actionLabel = "Open Breathing",
-            emotion = Emotion.FEAR
-        ),
+        currentInsight = null,
         emotionFrequencies = mapOf(
             Emotion.HAPPINESS to 5,
             Emotion.SURPRISE to 4,
