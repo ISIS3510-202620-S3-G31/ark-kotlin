@@ -60,7 +60,10 @@ class StatsCalculator(
                 if (dominant != null) {
                     weeklyEmotions[dayLabel] = dominant
                 }
-                weeklyIntensities[dayLabel] = dayIntensitiesList[i].average().toFloat()
+                //usamos la intensidad dominante del dia en lugar de un promedio plano
+                val dominantIntensity = dayIntensitiesList[i].groupingBy { it }.eachCount().maxByOrNull { it.value }?.key?.toFloat()
+                    ?: (dayIntensitiesList[i].maxOrNull()?.toFloat() ?: 0f)
+                weeklyIntensities[dayLabel] = dominantIntensity
             } else {
                 weeklyIntensities[dayLabel] = 0f
             }
@@ -90,7 +93,8 @@ class StatsCalculator(
             weeklyEmotions = weeklyEmotions,
             toolUsagePercentages = toolPercentages,
             currentInsight = currentInsight,
-            allInsights = allInsights
+            allInsights = allInsights,
+            emotionFrequencies = allEmotionsCount
         )
     }
 }
