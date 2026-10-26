@@ -330,14 +330,15 @@ fun HomeScreen(
                 }
             }
 
-            //3. recomendacion basada en el clima (#134): con sugerencia la tarjeta muestra la herramienta y el motivo
-            //y Explore la abre; sin internet, sin ubicacion o con clima neutro queda la tarjeta general
-            item {
-                WeatherRecommendationCard(
-                    suggestion = uiState.weatherSuggestion,
-                    onClick = { onNavigateToTool("tools_catalog_screen") },
-                    onOpenTool = { toolId -> onToolClick(toolId) }
-                )
+            //3. recomendacion basada en el clima (#134): solo aparece cuando el clima sugiere una herramienta,
+            //y Explore la abre; sin internet, sin ubicacion o con clima neutro la tarjeta no se muestra
+            uiState.weatherSuggestion?.let { suggestion ->
+                item {
+                    WeatherRecommendationCard(
+                        suggestion = suggestion,
+                        onOpenTool = { toolId -> onToolClick(toolId) }
+                    )
+                }
             }
 
             //acceso directo al catalogo completo de herramientas de regulacion
@@ -487,13 +488,12 @@ private fun DailyCheckInCard(
 
 @Composable
 private fun WeatherRecommendationCard(
-    suggestion: WeatherSuggestion?,
-    onClick: () -> Unit,
+    suggestion: WeatherSuggestion,
     onOpenTool: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    //con sugerencia del clima la tarjeta abre esa herramienta; sin ella sigue llevando al catalogo
-    val onCardClick = { if (suggestion != null) onOpenTool(suggestion.tool.id) else onClick() }
+    //la tarjeta abre la herramienta que sugiere el clima
+    val onCardClick = { onOpenTool(suggestion.tool.id) }
     Card(
         modifier = modifier
             .fillMaxWidth()
@@ -522,7 +522,7 @@ private fun WeatherRecommendationCard(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = when (suggestion?.condition) {
+                        imageVector = when (suggestion.condition) {
                             WeatherCondition.RAINY -> Icons.Default.Umbrella
                             WeatherCondition.COLD -> Icons.Default.AcUnit
                             else -> Icons.Default.WbSunny
@@ -546,29 +546,12 @@ private fun WeatherRecommendationCard(
                             fontSize = 11.sp,
                             letterSpacing = 0.5.sp
                         )
-                        if (suggestion == null) {
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = AccentColor.copy(alpha = 0.12f)
-                        ) {
-                            Text(
-                                text = "SOON",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontFamily = FigtreeFontFamily,
-                                fontWeight = FontWeight.Bold,
-                                color = AccentColor,
-                                fontSize = 9.sp,
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                            )
-                        }
-                        }
                     }
 
                     Spacer(modifier = Modifier.height(2.dp))
 
                     Text(
-                        text = suggestion?.tool?.name ?: "Weather-based Activity",
+                        text = suggestion.tool.name,
                         style = MaterialTheme.typography.titleMedium,
                         fontFamily = FigtreeFontFamily,
                         fontWeight = FontWeight.Bold,
@@ -577,7 +560,7 @@ private fun WeatherRecommendationCard(
                     )
 
                     Text(
-                        text = suggestion?.reason ?: "Tune your practice to today's climate and sunlight.",
+                        text = suggestion.reason,
                         style = MaterialTheme.typography.bodyLarge,
                         fontFamily = FigtreeFontFamily,
                         color = TextColor.copy(alpha = 0.75f),

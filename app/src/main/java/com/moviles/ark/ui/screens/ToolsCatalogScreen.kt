@@ -127,6 +127,10 @@ fun ToolsCatalogScreen(
                 //filtros de categoria colocados al inicio de la cuadricula
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     CatalogCategoryFilterRow(
+                        //solo las categorias que tienen alguna herramienta; la elegida se deja para poder quitarla
+                        categories = ToolCategory.entries.filter { category ->
+                            category == uiState.selectedCategory || uiState.tools.any { it.category == category }
+                        },
                         selectedCategory = uiState.selectedCategory,
                         onCategorySelect = onCategorySelect
                     )
@@ -196,6 +200,7 @@ private fun ToolsCatalogTopBar(
 
 @Composable
 private fun CatalogCategoryFilterRow(
+    categories: List<ToolCategory>,
     selectedCategory: ToolCategory?,
     onCategorySelect: (ToolCategory?) -> Unit,
     modifier: Modifier = Modifier
@@ -212,7 +217,7 @@ private fun CatalogCategoryFilterRow(
                 onClick = { onCategorySelect(null) }
             )
         }
-        items(ToolCategory.entries.toTypedArray()) { category ->
+        items(categories) { category ->
             CatalogCategoryChip(
                 label = category.displayName,
                 isSelected = selectedCategory == category,

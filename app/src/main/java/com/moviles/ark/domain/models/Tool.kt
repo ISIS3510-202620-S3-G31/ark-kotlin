@@ -32,6 +32,9 @@ open class Tool(
 
     val categoryId: String get() = category.id
 
+    //true si la app ya tiene pantalla para esta herramienta; las demas siguen en el catalogo de firestore pero no se muestran
+    val isImplemented: Boolean get() = id in IMPLEMENTED_TOOL_IDS
+
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is Tool) return false
@@ -56,5 +59,9 @@ open class Tool(
     override fun toString(): String {
         return "Tool(id='$id', name='$name', description='$description', category=$category, format='$format', iconName='$iconName')"
     }
-}
 
+    companion object {
+        //herramientas con pantalla propia en el NavHost; al implementar una nueva se agrega aqui
+        val IMPLEMENTED_TOOL_IDS = setOf("custom_breathing", "scream_tank", "photo_of_the_day")
+    }
+}

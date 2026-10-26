@@ -57,8 +57,8 @@ class HomeViewModel(
     private val _uiState = MutableStateFlow(
         HomeUiState(
             isLoading = false,
-            tools = initialTools,
-            filteredTools = initialTools
+            tools = initialTools.filter { it.isImplemented },
+            filteredTools = initialTools.filter { it.isImplemented }
         )
     )
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
@@ -127,7 +127,9 @@ class HomeViewModel(
                         errorMessage = error.message ?: "Could not load tools"
                     )
                 }
-                .collect { rawTools ->
+                .collect { catalogTools ->
+                    //solo se recomiendan y se muestran las herramientas que ya tienen pantalla
+                    val rawTools = catalogTools.filter { it.isImplemented }
                     val recommendedTools = recommend(rawTools)
                     val filtered = applyCategoryFilter(recommendedTools, _uiState.value.selectedCategory)
                     _uiState.value = _uiState.value.copy(
