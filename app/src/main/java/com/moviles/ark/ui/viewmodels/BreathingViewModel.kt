@@ -94,13 +94,16 @@ class BreathingViewModel(
 
     //reproduce una pista; si falla (por ejemplo sin internet) pasa a la pista que viene en la app )
     private fun playTrack(track: AmbientTrackModel) {
-        audioPlayerHelper?.playUrl(
-            url = track.audioUrl,
+        viewModelScope.launch {
+            val audioUrl = breathingRepository?.resolveTrackAudio(track) ?: track.audioUrl
+            audioPlayerHelper?.playUrl(
+            url = audioUrl,
             onPlaybackStateChanged = { isPlaying ->
                 _uiState.update { it.copy(isMusicPlaying = isPlaying) }
             },
             onError = { playOfflineTrackInsteadOf(track) }
-        )
+            )
+        }
     }
 
     private fun playOfflineTrackInsteadOf(failedTrack: AmbientTrackModel) {
@@ -355,3 +358,5 @@ class BreathingViewModel(
         }
     }
 }
+
+
