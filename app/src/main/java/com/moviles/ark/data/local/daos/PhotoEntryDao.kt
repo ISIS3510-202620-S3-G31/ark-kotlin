@@ -8,7 +8,7 @@ import com.moviles.ark.data.remote.CrashlyticsHelper
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 
-//consultas de la tabla photo_entries (#26)
+//consultas de la tabla photo_entries
 @Dao
 interface PhotoEntryDao {
 
@@ -30,7 +30,7 @@ interface PhotoEntryDao {
         }
     }
 
-    //todas las fotos de un usuario, de la mas nueva a la mas vieja (#133)
+    //todas las fotos de un usuario, de la mas nueva a la mas vieja
     @Query("SELECT * FROM photo_entries WHERE userId = :currentUserId ORDER BY takenAt DESC")
     fun getPhotosRaw(currentUserId: String): Flow<List<PhotoEntryEntity>>
 
@@ -61,7 +61,11 @@ interface PhotoEntryDao {
         }
     }
 
-    //las de un usuario que faltan por subir a firebase (#33, #133)
+    //la foto de un usuario tomada en ese momento exacto; sirve para no traer de la nube una que ya esta en el telefono
+    @Query("SELECT * FROM photo_entries WHERE userId = :currentUserId AND takenAt = :takenAt LIMIT 1")
+    suspend fun getPhotoByTakenAt(currentUserId: String, takenAt: Long): PhotoEntryEntity?
+
+    //las de un usuario que faltan por subir a firebase
     @Query("SELECT * FROM photo_entries WHERE userId = :currentUserId AND isSynced = 0")
     suspend fun getUnsyncedPhotosRaw(currentUserId: String): List<PhotoEntryEntity>
 

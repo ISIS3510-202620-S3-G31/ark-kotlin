@@ -4,7 +4,7 @@ import com.moviles.ark.data.local.entities.ToolEntity
 import com.moviles.ark.domain.models.Tool
 import com.moviles.ark.domain.models.ToolCategory
 
-//dto del documento tools/{toolId} en firestore (#163)
+//dto del documento tools/{toolId} en firestore
 //el catalogo es de solo lectura para la app (las reglas no dejan escribir); sirve para refreshTools cuando el catalogo venga de firestore
 data class ToolDto(
     val id: String = "",

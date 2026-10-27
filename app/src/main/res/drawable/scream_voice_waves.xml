@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ondas de voz al lado del tanque mientras se escucha (figma Scream Tank) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="80dp"
+    android:height="250dp"
+    android:viewportWidth="80"
+    android:viewportHeight="250">
+    <path
+        android:strokeColor="#F9DEAA"
+        android:strokeAlpha="0.3"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:pathData="M28.4 109.6C32.0128 113.918 33.9924 119.37 33.9924 125C33.9924 130.63 32.0128 136.082 28.4 140.4" />
+    <path
+        android:strokeColor="#F9DEAA"
+        android:strokeAlpha="0.5"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:pathData="M42.2 98C48.5486 105.565 52.0286 115.124 52.0286 125C52.0286 134.876 48.5486 144.435 42.2 152" />
+    <path
+        android:strokeColor="#F9DEAA"
+        android:strokeAlpha="0.7"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:pathData="M56 86.4C65.0844 97.2107 70.0648 110.879 70.0648 125C70.0648 139.121 65.0844 152.789 56 163.6" />
+</vector>

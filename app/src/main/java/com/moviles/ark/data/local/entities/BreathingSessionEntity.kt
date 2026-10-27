@@ -5,7 +5,7 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 import com.moviles.ark.domain.models.BreathingSession
 
-//tabla de sesiones de respiracion terminadas (#82): una fila cada vez que el usuario termina Custom breathing
+//tabla de sesiones de respiracion terminadas: una fila cada vez que el usuario termina Custom breathing
 //se guarda en el telefono, asi que funciona sin internet
 @Entity(tableName = "breathing_sessions")
 data class BreathingSessionEntity(

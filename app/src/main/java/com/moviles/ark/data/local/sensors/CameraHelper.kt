@@ -9,7 +9,7 @@ import androidx.core.content.FileProvider
 import com.moviles.ark.data.remote.CrashlyticsHelper
 import java.io.File
 
-//helper de la camara para validar permisos y generar uris seguras para captura de fotos (#31, #146)
+//helper de la camara para validar permisos y generar uris seguras para captura de fotos
 class CameraHelper(private val context: Context) {
 
     //verifica si el usuario ya otorgo el permiso de camara en el telefono
@@ -20,7 +20,7 @@ class CameraHelper(private val context: Context) {
         ) == PackageManager.PERMISSION_GRANTED
     }
 
-    //crea un archivo seguro apuntando a filesDir/photos/ para la captura de fotos con FileProvider (#146)
+    //crea un archivo seguro apuntando a filesDir/photos/ para la captura de fotos con FileProvider
     fun createPictureUri(): Uri? {
         return try {
             val photosDir = File(context.filesDir, "photos").apply {

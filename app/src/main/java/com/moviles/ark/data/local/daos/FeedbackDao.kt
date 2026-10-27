@@ -8,7 +8,7 @@ import com.moviles.ark.data.remote.CrashlyticsHelper
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 
-//consultas de la tabla tool_feedback (#21)
+//consultas de la tabla tool_feedback
 @Dao
 interface FeedbackDao {
 
@@ -62,7 +62,7 @@ interface FeedbackDao {
         }
     }
 
-    //las que faltan por subir a firestore (#33)
+    //las que faltan por subir a firestore
     @Query("SELECT * FROM tool_feedback WHERE isSynced = 0")
     suspend fun getUnsyncedFeedbackRaw(): List<FeedbackEntity>
 

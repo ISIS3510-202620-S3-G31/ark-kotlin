@@ -1,6 +1,6 @@
 package com.moviles.ark.domain.models
 
-//sugerencia segun el clima de afuera (#134); es una funcionalidad aparte de las estrategias de recomendacion
+//sugerencia segun el clima de afuera; es una funcionalidad aparte de las estrategias de recomendacion
 //(mood, frecuencia, default): no cambia el orden del catalogo, solo llena la tarjeta del clima del home
 //frio o lluvia -> respiracion para calmarse adentro; despejado y de dia -> foto del dia
 class WeatherSuggestionEngine(
@@ -25,7 +25,6 @@ class WeatherSuggestionEngine(
     private fun toolFor(condition: WeatherCondition): String = when (condition) {
         WeatherCondition.RAINY, WeatherCondition.COLD -> CALM_TOOL_ID
         WeatherCondition.SUNNY -> SUNNY_TOOL_ID
-        WeatherCondition.NEUTRAL -> CALM_TOOL_ID
     }
 
     //texto corto de la tarjeta del home
@@ -35,31 +34,11 @@ class WeatherSuggestionEngine(
             WeatherCondition.RAINY -> "Rainy and $degrees outside"
             WeatherCondition.COLD -> "Cold day, $degrees outside"
             WeatherCondition.SUNNY -> "Sunny and $degrees outside"
-            WeatherCondition.NEUTRAL -> "Tune your practice to today's climate and rhythm."
         }
     }
 
     companion object {
         const val CALM_TOOL_ID = "custom_breathing"
         const val SUNNY_TOOL_ID = "photo_of_the_day"
-
-        //tarjeta de recomendacion neutral por defecto (#153): se usa si expiro o no hay conexion/cache
-        fun defaultNeutralSuggestion(tools: List<Tool>): WeatherSuggestion {
-            val tool = tools.firstOrNull { it.id == CALM_TOOL_ID }
-                ?: tools.firstOrNull()
-                ?: Tool(
-                    id = CALM_TOOL_ID,
-                    name = "Custom breathing",
-                    description = "Build the rhythm that fits you.",
-                    categoryString = "calm_down",
-                    format = "touch",
-                    iconName = "ic_tool_custom_breathing"
-                )
-            return WeatherSuggestion(
-                tool = tool,
-                condition = WeatherCondition.NEUTRAL,
-                reason = "Tune your practice to today's climate and rhythm."
-            )
-        }
     }
 }

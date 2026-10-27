@@ -158,8 +158,8 @@ class UserRepositoryImpl(
 
     //las reglas de firestore aceptan name, birthDate, age y email en users/{uid}: la racha y el avatar se quedan en room
     private suspend fun pushProfile(uid: String, name: String, birthDate: String) {
-        val dummy = com.moviles.ark.domain.models.UserModel(name = name, birthDate = birthDate, email = "", password = "")
-        val calculatedAge = dummy.getCalculatedAge()
+        //la edad la calcula el modelo a partir de la fecha
+        val calculatedAge = com.moviles.ark.domain.models.UserModel.ageOf(birthDate) ?: 0
         val updates = if (calculatedAge > 0) {
             mapOf("name" to name, "birthDate" to birthDate, "age" to calculatedAge)
         } else {
