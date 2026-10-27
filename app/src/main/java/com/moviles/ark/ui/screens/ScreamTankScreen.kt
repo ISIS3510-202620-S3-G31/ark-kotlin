@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -53,6 +52,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -83,12 +83,14 @@ import com.moviles.ark.ui.viewmodels.MicPermissionState
 import com.moviles.ark.ui.viewmodels.ScreamTankUiState
 import com.moviles.ark.ui.viewmodels.ScreamTankViewModel
 
-//disenio del figma "Mockups - Moviles" (Scream Tank): escenario oscuro con el tanque, medidor de 12 segmentos y tres botones
+//disenio del figma "Mockups - Moviles" (Scream Tank), sin el escenario oscuro: el tanque grande sobre el fondo, medidor de 12 segmentos y tres botones
 //solo colores de la paleta (ms6) y estilos del tema: titulo en Sorean, el resto Figtree
 
-//medidas del tanque en el figma; si el escenario es mas angosto el dibujo se achica completo
-private val TankWidth = 294.dp
+//medidas del tanque en el figma (el ancho llega hasta el porcentaje, sin el espacio vacio de la derecha)
+private val TankWidth = 266.dp
 private val TankHeight = 250.dp
+//cuanto puede crecer el tanque sobre su medida del figma
+private const val MAX_TANK_SCALE = 1.6f
 
 //el medidor de abajo tiene 12 segmentos y el del tanque 10 celdas
 private const val METER_SEGMENTS = 12
@@ -210,7 +212,7 @@ private fun ScreamHeader(onBack: () -> Unit) {
     }
 }
 
-//escenario oscuro: aviso de estado arriba a la izquierda, el tanque en el centro y una frase debajo
+//escenario: aviso de estado arriba a la izquierda, el tanque en el centro y una frase debajo
 @Composable
 private fun ScreamStage(
     uiState: ScreamTankUiState,
@@ -221,14 +223,11 @@ private fun ScreamStage(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(max = 480.dp)
-            .clip(RoundedCornerShape(32.dp))
-            .background(TextColor)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(start = 24.dp, end = 24.dp, top = 48.dp, bottom = 24.dp),
+                .padding(top = 48.dp, bottom = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically)
         ) {
@@ -241,7 +240,7 @@ private fun ScreamStage(
             Text(
                 text = stageMessage(uiState),
                 style = MaterialTheme.typography.headlineSmall,
-                color = BackgroundColor,
+                color = TextColor,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.width(270.dp)
             )
@@ -287,7 +286,7 @@ private fun StatusPill(uiState: ScreamTankUiState, modifier: Modifier = Modifier
     Row(
         modifier = modifier
             .clip(RoundedCornerShape(100.dp))
-            .background(BackgroundColor)
+            .background(TextColor.copy(alpha = 0.06f))
             .padding(start = 12.dp, end = 14.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -307,8 +306,8 @@ private fun StatusPill(uiState: ScreamTankUiState, modifier: Modifier = Modifier
 @Composable
 private fun TankIllustration(level: Int, peakLevel: Int, isListening: Boolean, modifier: Modifier = Modifier) {
     BoxWithConstraints(modifier = modifier, contentAlignment = Alignment.Center) {
-        //si no cabe (pantallas angostas o bajas) se achica todo el dibujo sin deformarlo
-        val scale = minOf(1f, maxWidth / TankWidth, if (maxHeight == Dp.Infinity) 1f else maxHeight / TankHeight)
+        //el dibujo crece hasta llenar el espacio libre (con tope) y se achica si no cabe, sin deformarse
+        val scale = minOf(MAX_TANK_SCALE, maxWidth / TankWidth, if (maxHeight == Dp.Infinity) 1f else maxHeight / TankHeight)
         Box(
             modifier = Modifier
                 .size(TankWidth * scale, TankHeight * scale)
@@ -323,6 +322,8 @@ private fun TankIllustration(level: Int, peakLevel: Int, isListening: Boolean, m
                 Image(
                     painter = painterResource(R.drawable.scream_voice_waves),
                     contentDescription = null,
+                    //las ondas eran claras sobre el escenario oscuro; sobre el fondo de la app van en el color del texto
+                    colorFilter = ColorFilter.tint(TextColor),
                     modifier = Modifier
                         .size(80.dp, 250.dp)
                         .alpha(if (isListening) 1f else 0f)
@@ -331,7 +332,7 @@ private fun TankIllustration(level: Int, peakLevel: Int, isListening: Boolean, m
                 Text(
                     text = "$level%",
                     style = MaterialTheme.typography.bodyLarge,
-                    color = BackgroundColor,
+                    color = TextColor,
                     modifier = Modifier.offset(x = 228.dp)
                 )
             }
