@@ -69,15 +69,19 @@ import com.moviles.ark.ui.viewmodels.FeedbackViewModel
 @Composable
 fun PostToolFeedbackRoute(
     toolId: String = "",
+    durationSeconds: Int = 0,
     viewModel: FeedbackViewModel = viewModel(factory = FeedbackViewModel.Factory),
     onFeedbackSubmitted: () -> Unit = {},
     onDismiss: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    LaunchedEffect(toolId) {
+    LaunchedEffect(toolId, durationSeconds) {
         if (toolId.isNotBlank()) {
             viewModel.setToolId(toolId)
+        }
+        if (durationSeconds > 0) {
+            viewModel.setDuration(durationSeconds)
         }
     }
 

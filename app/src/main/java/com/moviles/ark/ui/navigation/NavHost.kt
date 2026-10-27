@@ -202,12 +202,20 @@ fun AppNavigation(
             }
             //pantalla de retroalimentacion post-herramienta
             composable(
-                route = "post_tool_feedback/{toolId}",
-                arguments = listOf(navArgument("toolId") { type = NavType.StringType })
+                route = "post_tool_feedback/{toolId}?duration={duration}",
+                arguments = listOf(
+                    navArgument("toolId") { type = NavType.StringType },
+                    navArgument("duration") {
+                        type = NavType.IntType
+                        defaultValue = 0
+                    }
+                )
             ) { backStackEntry ->
                 val toolId = backStackEntry.arguments?.getString("toolId") ?: ""
+                val duration = backStackEntry.arguments?.getInt("duration") ?: 0
                 PostToolFeedbackRoute(
                     toolId = toolId,
+                    durationSeconds = duration,
                     onFeedbackSubmitted = {
                         navController.popBackStack("home_screen", inclusive = false)
                     },
