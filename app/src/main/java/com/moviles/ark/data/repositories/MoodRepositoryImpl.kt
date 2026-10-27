@@ -81,7 +81,7 @@ class MoodRepositoryImpl(
             .whereGreaterThanOrEqualTo("timestamp", fromMillis)
             .get()
             .await()
-        snapshot.documents.mapNotNull { it.getLong("timestamp") }
+        snapshot.documents.mapNotNull { it.toObject(MoodCheckInDto::class.java)?.timestamp }
     }.onFailure { error ->
         CrashlyticsHelper.logNonFatal(
             componentName = "MoodRepository",

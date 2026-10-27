@@ -33,3 +33,12 @@ fun UserDto.toProfile(memberSince: Long): UserProfile {
         age = age
     )
 }
+
+//campos que se escriben al editar el perfil: nombre y la fecha (o la edad, en perfiles viejos que solo tienen edad)
+//la edad solo va si se conoce, para no borrar la que ya estaba en firestore
+fun UserDto.editableFields(): List<String> {
+    val fields = mutableListOf("name")
+    if (birthDate.isNotBlank()) fields.add("birthDate")
+    if (age > 0) fields.add("age")
+    return fields
+}
