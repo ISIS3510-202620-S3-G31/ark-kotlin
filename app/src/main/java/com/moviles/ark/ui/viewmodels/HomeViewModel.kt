@@ -7,6 +7,9 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
+import com.moviles.ark.data.local.AvatarPreferences
+import com.moviles.ark.data.local.ProfilePreferences
+import com.moviles.ark.data.repositories.ToolRepositoryImpl
 import com.moviles.ark.domain.repositories.AvatarRepository
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.first
@@ -90,7 +93,7 @@ class HomeViewModel(
         checkTodayStatus()
         loadTools()
         loadWeatherSuggestion()
-        observeAvatar()
+        observeProfilePreferences()
     }
 
     //el clima va aparte del resolver de estrategias: no cambia el orden del catalogo, solo llena su propia tarjeta
@@ -115,6 +118,13 @@ class HomeViewModel(
         }
     }
 
+    private fun observeProfilePreferences() {
+        viewModelScope.launch {
+            ProfilePreferences.userProfile.collect { profile ->
+                _uiState.value = _uiState.value.copy(
+                    avatarId = profile.avatarId,
+                    userName = profile.name
+                )
     private fun observeAvatar() {
         val repository = avatarRepository ?: return
         viewModelScope.launch {

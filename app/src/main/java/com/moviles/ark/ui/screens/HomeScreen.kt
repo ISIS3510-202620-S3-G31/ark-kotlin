@@ -273,8 +273,10 @@ fun HomeScreen(
                         }
                     }
                     Spacer(modifier = Modifier.height(8.dp))
+                    val firstName = uiState.userName.trim().split(" ").firstOrNull { it.isNotBlank() }
+                    val greeting = if (!firstName.isNullOrBlank()) "Welcome back, $firstName!" else "Welcome back!"
                     Text(
-                        text = "Welcome back!",
+                        text = greeting,
                         style = MaterialTheme.typography.headlineMedium,
                         fontFamily = SoreanFontFamily,
                         color = TextColor

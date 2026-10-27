@@ -27,5 +27,7 @@ data class HomeUiState(
     val errorMessage: String? = null,
     //tarjeta aparte segun el clima de afuera; null sin internet, sin ubicacion o si el clima no sugiere nada
     val weatherSuggestion: WeatherSuggestion? = null,
+    val avatarId: String = AvatarPreferences.DEFAULT_AVATAR_ID,
+    val userName: String = ""
     val avatarId: String = Avatar.DEFAULT_ID
 )

@@ -6,7 +6,7 @@ import com.bumptech.glide.GlideBuilder
 import com.bumptech.glide.load.engine.cache.InternalCacheDiskCacheFactory
 import com.moviles.ark.data.AppContainer
 import com.moviles.ark.data.DefaultAppContainer
-import com.moviles.ark.data.local.AvatarPreferences
+import com.moviles.ark.data.local.ProfilePreferences
 import com.moviles.ark.data.remote.ToolsCatalogMessagingService
 
 class ArkApplication : Application() {
@@ -22,6 +22,8 @@ class ArkApplication : Application() {
             GlideBuilder().setDiskCache(InternalCacheDiskCacheFactory(this, GLIDE_CACHE_DIR, GLIDE_CACHE_BYTES))
         )
         container = DefaultAppContainer(this)
+        //inicializa las preferencias locales del usuario (offline-first)
+        ProfilePreferences.init(this)
         AvatarPreferences.init(this)
         //iniciar el observador de sincronizacion automatica offline
         container.syncManager.startMonitoring()
