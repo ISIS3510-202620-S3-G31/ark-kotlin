@@ -20,9 +20,9 @@ import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 
-//catalogo de herramientas con room como unica fuente de verdad (#132)
+//catalogo de herramientas con room como unica fuente de verdad
 //la ui solo escucha la tabla tools; firestore solo se usa en refreshTools para traer lo nuevo y guardarlo en room
-//filesDir/tools.json guarda la misma copia para no perder el catalogo sin internet (#145)
+//filesDir/tools.json guarda la misma copia para no perder el catalogo sin internet
 class ToolRepositoryImpl(
     private val toolDao: ToolDao,
     private val firestore: FirebaseFirestore,
@@ -35,6 +35,18 @@ class ToolRepositoryImpl(
             .onStart { seedIfEmpty() }
             .map { entities -> entities.map { it.toDomain() } }
             .flowOn(Dispatchers.IO)
+    }
+
+    //"Surprise me" lo usa sin red; si falla se reporta a crashlytics y el home abre la herramienta de respaldo
+    override suspend fun getLocalTools(): Result<List<Tool>> = runCatching {
+        getTools().first()
+    }.onFailure { error ->
+        if (error is kotlinx.coroutines.CancellationException) throw error
+        com.moviles.ark.data.remote.CrashlyticsHelper.logNonFatal(
+            componentName = "ToolRepository",
+            action = "getLocalTools",
+            throwable = error
+        )
     }
 
     override suspend fun getToolById(id: String): Tool? = withContext(Dispatchers.IO) {
@@ -81,7 +93,7 @@ class ToolRepositoryImpl(
         catalogFileStore.writeCatalog(tools)
     }
 
-    //room se llena desde filesDir/tools.json (o assets/tools.json si el archivo falta o esta danado) (#145)
+    //room se llena desde filesDir/tools.json (o assets/tools.json si el archivo falta o esta danado)
     //insertTools usa REPLACE, asi que si dos pantallas siembran a la vez no se duplica nada
     private suspend fun seedIfEmpty() {
         if (toolDao.getTools().first().isEmpty()) {
@@ -92,15 +104,7 @@ class ToolRepositoryImpl(
     companion object {
         private const val TOOLS_COLLECTION = "tools"
 
-        //catalogo por defecto del tool hub (frontend-kotlin), el mismo de assets/tools.json; lo usan los previews y el home al abrir
-        val sampleTools = listOf(
-            Tool("custom_breathing", "Custom breathing", "Build the rhythm that fits you.", "calm_down", "touch", "ic_tool_custom_breathing"),
-            Tool("blow_it_out", "Blow it out", "Blow out the tension, one breath at a time.", "release", "voice", "ic_tool_blow_it_out"),
-            Tool("scream_tank", "Scream tank", "Let it out. Nobody is listening but you.", "release", "voice", "ic_tool_scream_tank"),
-            Tool("body_mapping", "Body mapping", "Mark where the feeling lives.", "reflect", "touch", "ic_tool_body_mapping"),
-            Tool("emotion_detective", "Emotion detective", "Not sure what you feel? Let's find out.", "reflect", "text", "ic_tool_emotion_detective"),
-            Tool("achievement_jar", "Achievement jar", "Save the good stuff. Read it when you need it.", "celebrate", "text", "ic_tool_achievement_jar"),
-            Tool("photo_of_the_day", "Photo of the day", "One photo a day, one new memory.", "celebrate", "photo", "ic_tool_photo_of_the_day")
-        )
+        //el catalogo por defecto es del dominio (Tool.DEFAULT_CATALOG); este nombre se deja para el codigo de datos que ya lo usa
+        val sampleTools = Tool.DEFAULT_CATALOG
     }
 }

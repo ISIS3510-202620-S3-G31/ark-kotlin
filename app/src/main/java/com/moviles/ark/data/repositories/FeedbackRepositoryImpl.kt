@@ -17,7 +17,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 
-// Implementacion del repositorio de feedback usando Room (FeedbackDao) y Firestore (FeedbackDto) (#166)
+// Implementacion del repositorio de feedback usando Room (FeedbackDao) y Firestore (FeedbackDto)
 // Garantiza funcionamiento 100% offline y sincronizacion bidireccional con Firestore
 class FeedbackRepositoryImpl(
     private val feedbackDao: FeedbackDao,

@@ -22,10 +22,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.max
 
-//viewmodel del scream tank (#157): medidor en tiempo real, permiso del microfono y guardado de la sesion
+//viewmodel del scream tank: medidor en tiempo real, permiso del microfono y guardado de la sesion
 class ScreamTankViewModel(
     private val screamTankRepository: ScreamTankRepository? = null,
-    //cierra la medicion de latencia que empezo con el toque en el home (#8)
+    //cierra la medicion de latencia que empezo con el toque en el home
     private val toolLatencyTracker: ToolLatencyTracker? = null,
     //reloj monotono en nanosegundos; se puede cambiar para fijar el tiempo
     private val nanoTime: () -> Long = { System.nanoTime() }
@@ -50,7 +50,7 @@ class ScreamTankViewModel(
         }
     }
 
-    //la pantalla termino su primer dibujo: se cierra la medicion de latencia que empezo con el toque (#8)
+    //la pantalla termino su primer dibujo: se cierra la medicion de latencia que empezo con el toque
     fun onScreenRendered() {
         toolLatencyTracker?.onToolRendered(ScreamSession.TOOL_ID)
     }
@@ -145,7 +145,23 @@ class ScreamTankViewModel(
         }
     }
 
-    //el usuario termina o sale de la herramienta: si el microfono alcanzo a escuchar, se guarda la sesion (#157)
+    //boton de reiniciar: suelta el microfono y empieza de cero sin guardar lo anterior
+    fun restartSession() {
+        pauseListening()
+        listenedNanos = 0L
+        _uiState.update {
+            it.copy(
+                hasStarted = false,
+                peakLevel = 0,
+                elapsedSeconds = 0,
+                currentLevel = 0,
+                currentDbfs = DecibelMeter.MIN_DBFS,
+                errorMessage = null
+            )
+        }
+    }
+
+    //el usuario termina o sale de la herramienta: si el microfono alcanzo a escuchar, se guarda la sesion
     fun finishSession(): Boolean {
         pauseListening()
         val session = ScreamSession(

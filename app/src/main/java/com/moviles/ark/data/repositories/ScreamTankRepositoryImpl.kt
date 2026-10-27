@@ -11,7 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 
-//scream tank (#157): el volumen sale del microfono en memoria y la sesion se guarda en room como ToolInteraction
+//scream tank: el volumen sale del microfono en memoria y la sesion se guarda en room como ToolInteraction
 class ScreamTankRepositoryImpl(
     private val microphoneLevelMeter: MicrophoneLevelMeter,
     private val toolRecordDao: ToolRecordDao,
@@ -24,7 +24,7 @@ class ScreamTankRepositoryImpl(
 
     override suspend fun saveSession(session: ScreamSession): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            //queda con isSynced = false y el SyncManager la sube a firestore cuando vuelva el internet (#33)
+            //queda con isSynced = false y el SyncManager la sube a firestore cuando vuelva el internet
             val userId = auth.currentUser?.uid ?: "anonymous"
             toolRecordDao.insertInteraction(session.toInteraction(userId).toEntity())
             Unit

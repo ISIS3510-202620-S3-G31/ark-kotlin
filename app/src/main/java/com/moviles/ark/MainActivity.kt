@@ -11,10 +11,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val appContainer = (application as ArkApplication).container
         setContent {
             AppTheme({
-                AppNavigation(authRepository = appContainer.authRepository)
+                AppNavigation()
             })
         }
     }

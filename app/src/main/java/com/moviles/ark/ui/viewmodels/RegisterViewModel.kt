@@ -5,10 +5,9 @@ import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.AP
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import com.google.firebase.FirebaseNetworkException
-import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
-import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.moviles.ark.ArkApplication
+import com.moviles.ark.domain.exceptions.EmailAlreadyRegisteredException
+import com.moviles.ark.domain.exceptions.InvalidCredentialsException
 import com.moviles.ark.domain.exceptions.NetworkUnavailableException
 import com.moviles.ark.domain.models.UserModel
 import com.moviles.ark.domain.repositories.AuthRepository
@@ -23,87 +22,53 @@ class RegisterViewModel(private val authRepository: AuthRepository) : ViewModel(
     //contenedor reactivo expuesto a la vista de solo lectura
     val uiState: StateFlow<RegisterUiState> = privateUiState.asStateFlow()
 
-    //actualizar el estado reactivamente y calcular validacion inline en tiempo real
+    //cada campo le pregunta al modelo UserModel si cumple; el viewmodel solo guarda el resultado en el estado
     fun onNameChange(newName: String) {
-        val current = privateUiState.value
-        val dummy = UserModel(name = newName, birthDate = current.birthDate, email = current.email, password = current.password)
-        val error = when {
-            newName.isNotBlank() && !dummy.isValidName() -> {
-                val trimmed = newName.trim()
-                if (trimmed.length < UserModel.MIN_NAME_LENGTH) "Name must be at least 2 characters"
-                else if (trimmed.length > UserModel.MAX_NAME_LENGTH) "Name cannot exceed 100 characters"
-                else "Name can only contain letters and spaces"
-            }
-            else -> null
-        }
-        val updated = current.copy(name = newName, nameError = error, errorMessage = null)
-        privateUiState.value = updated.copy(isFormValid = checkFormValidity(updated))
+        updateForm(privateUiState.value.copy(name = newName, nameError = UserModel.nameErrorWhileTyping(newName)))
     }
 
     fun onBirthDateChange(newBirthDate: String) {
-        val current = privateUiState.value
-        val dummy = UserModel(name = current.name, birthDate = newBirthDate, email = current.email, password = current.password)
-        val error = when {
-            newBirthDate.length >= 10 && !dummy.isValidBirthDate() -> "Must be a valid date and at least 13 years old (YYYY-MM-DD)"
-            else -> null
-        }
-        val updated = current.copy(birthDate = newBirthDate, birthDateError = error, errorMessage = null)
-        privateUiState.value = updated.copy(isFormValid = checkFormValidity(updated))
+        updateForm(privateUiState.value.copy(birthDate = newBirthDate, birthDateError = UserModel.birthDateErrorWhileTyping(newBirthDate)))
     }
 
     fun onEmailChange(newEmail: String) {
-        val current = privateUiState.value
-        val dummy = UserModel(name = current.name, birthDate = current.birthDate, email = newEmail, password = current.password)
-        val error = when {
-            newEmail.isNotBlank() && (newEmail.contains("@") && newEmail.contains(".")) && !dummy.isValidEmail() -> "Please enter a valid email address"
-            newEmail.length >= 6 && !newEmail.contains("@") -> "Email must contain @"
-            else -> null
-        }
-        val updated = current.copy(email = newEmail, emailError = error, errorMessage = null)
-        privateUiState.value = updated.copy(isFormValid = checkFormValidity(updated))
+        updateForm(privateUiState.value.copy(email = newEmail, emailError = UserModel.emailErrorWhileTyping(newEmail)))
     }
 
     fun onPasswordChange(newPassword: String) {
         val current = privateUiState.value
-        val dummy = UserModel(name = current.name, birthDate = current.birthDate, email = current.email, password = newPassword)
-        val passError = when {
-            newPassword.isNotBlank() && !dummy.isValidPassword() -> "Must be at least 8 chars, 1 uppercase and 1 number"
-            else -> null
-        }
-        val confirmError = when {
-            current.confirmPassword.isNotBlank() && newPassword != current.confirmPassword -> "Passwords do not match"
-            else -> null
-        }
-        val updated = current.copy(password = newPassword, passwordError = passError, confirmPasswordError = confirmError, errorMessage = null)
-        privateUiState.value = updated.copy(isFormValid = checkFormValidity(updated))
+        updateForm(
+            current.copy(
+                password = newPassword,
+                passwordError = UserModel.passwordErrorWhileTyping(newPassword),
+                confirmPasswordError = UserModel.confirmPasswordErrorWhileTyping(newPassword, current.confirmPassword)
+            )
+        )
     }
 
     fun onConfirmPasswordChange(newConfirmPassword: String) {
         val current = privateUiState.value
-        val error = when {
-            newConfirmPassword.isNotBlank() && newConfirmPassword != current.password -> "Passwords do not match"
-            else -> null
-        }
-        val updated = current.copy(confirmPassword = newConfirmPassword, confirmPasswordError = error, errorMessage = null)
-        privateUiState.value = updated.copy(isFormValid = checkFormValidity(updated))
+        updateForm(
+            current.copy(
+                confirmPassword = newConfirmPassword,
+                confirmPasswordError = UserModel.confirmPasswordErrorWhileTyping(current.password, newConfirmPassword)
+            )
+        )
     }
 
-    //verifica con el modelo de dominio si todo el formulario cumple los requisitos
-    private fun checkFormValidity(state: RegisterUiState): Boolean {
-        if (state.name.isBlank() || state.birthDate.isBlank() || state.email.isBlank() || state.password.isBlank() || state.confirmPassword.isBlank()) {
-            return false
-        }
-        if (state.password != state.confirmPassword) {
-            return false
-        }
-        val user = UserModel(
-            name = state.name,
-            birthDate = state.birthDate,
-            email = state.email,
-            password = state.password
+    private fun updateForm(updated: RegisterUiState) {
+        privateUiState.value = updated.copy(
+            errorMessage = null,
+            isFormValid = userOf(updated).registrationError(updated.confirmPassword) == null
         )
-        return user.isValidName() && user.isValidBirthDate() && user.isValidEmail() && user.isValidPassword()
     }
+
+    private fun userOf(state: RegisterUiState) = UserModel(
+        name = state.name.trim(),
+        birthDate = state.birthDate.trim(),
+        email = state.email.trim(),
+        password = state.password
+    )
 
     fun dismissNoInternetDialog() {
         privateUiState.value = privateUiState.value.copy(showNoInternetDialog = false)
@@ -114,47 +79,18 @@ class RegisterViewModel(private val authRepository: AuthRepository) : ViewModel(
     fun register(onSuccess: () -> Unit) {
         val state = privateUiState.value
 
-        //revisar que no haya ningun campo vacio
-        if (state.name.isBlank() || state.birthDate.isBlank() || state.email.isBlank() || state.password.isBlank() || state.confirmPassword.isBlank()) {
-            privateUiState.value = state.copy(errorMessage = "Please fill in all fields")
-            return
-        }
-
-        //revisar coincidencia de claves
-        if (state.password != state.confirmPassword) {
-            privateUiState.value = state.copy(errorMessage = "Passwords do not match", confirmPasswordError = "Passwords do not match")
-            return
-        }
-
-        val userModel = UserModel(
-            name = state.name.trim(),
-            birthDate = state.birthDate.trim(),
-            email = state.email.trim(),
-            password = state.password
-        )
-
-        //validacion con el modelo de dominio
-        if (!userModel.isValidName()) {
-            val trimmed = userModel.name.trim()
-            val err = if (trimmed.length < UserModel.MIN_NAME_LENGTH) "Name must be at least 2 characters"
-            else if (trimmed.length > UserModel.MAX_NAME_LENGTH) "Name cannot exceed 100 characters"
-            else "Name can only contain letters and spaces"
-            privateUiState.value = state.copy(nameError = err, errorMessage = "Please check highlighted errors")
-            return
-        }
-
-        if (!userModel.isValidBirthDate()) {
-            privateUiState.value = state.copy(birthDateError = "Must be a valid date and at least 13 years old (YYYY-MM-DD)", errorMessage = "Please check highlighted errors")
-            return
-        }
-
-        if (!userModel.isValidEmail()) {
-            privateUiState.value = state.copy(emailError = "Please enter a valid email address", errorMessage = "Please check highlighted errors")
-            return
-        }
-
-        if (!userModel.isValidPassword()) {
-            privateUiState.value = state.copy(passwordError = "Must be at least 8 chars, 1 uppercase and 1 number", errorMessage = "Please check highlighted errors")
+        //el modelo dice el primer error del formulario y el de cada campo
+        val userModel = userOf(state)
+        val formError = userModel.registrationError(state.confirmPassword)
+        if (formError != null) {
+            privateUiState.value = state.copy(
+                errorMessage = formError,
+                nameError = if (formError == UserModel.CHECK_FIELDS_ERROR) UserModel.nameError(userModel.name) else state.nameError,
+                birthDateError = if (formError == UserModel.CHECK_FIELDS_ERROR) UserModel.birthDateError(userModel.birthDate) else state.birthDateError,
+                emailError = if (formError == UserModel.CHECK_FIELDS_ERROR) UserModel.emailError(userModel.email) else state.emailError,
+                passwordError = if (formError == UserModel.CHECK_FIELDS_ERROR) UserModel.passwordError(userModel.password) else state.passwordError,
+                confirmPasswordError = if (formError == UserModel.PASSWORDS_DO_NOT_MATCH_ERROR) formError else state.confirmPasswordError
+            )
             return
         }
 
@@ -172,22 +108,17 @@ class RegisterViewModel(private val authRepository: AuthRepository) : ViewModel(
                 onSuccess()
             }
             result.onFailure { error ->
-                val isNetworkError = error is NetworkUnavailableException ||
-                        error is FirebaseNetworkException ||
-                        (error.cause != null && (error.cause is NetworkUnavailableException || error.cause is FirebaseNetworkException))
-
-                if (isNetworkError) {
-                    val isAirplane = (error as? NetworkUnavailableException)?.isAirplaneMode == true ||
-                            (error.cause as? NetworkUnavailableException)?.isAirplaneMode == true
+                //el repositorio ya traduce los errores de firebase a excepciones del dominio
+                if (error is NetworkUnavailableException) {
                     privateUiState.value = privateUiState.value.copy(
                         showNoInternetDialog = true,
-                        isAirplaneModeError = isAirplane,
+                        isAirplaneModeError = error.isAirplaneMode,
                         errorMessage = null
                     )
                 } else {
                     val message = when (error) {
-                        is FirebaseAuthUserCollisionException -> "This email is already registered"
-                        is FirebaseAuthInvalidCredentialsException -> "Please enter a valid email address"
+                        is EmailAlreadyRegisteredException -> "This email is already registered"
+                        is InvalidCredentialsException -> UserModel.INVALID_EMAIL_ERROR
                         else -> "Could not create the account, try again"
                     }
                     privateUiState.value = privateUiState.value.copy(errorMessage = message)

@@ -1,6 +1,5 @@
 package com.moviles.ark.ui.screens
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -9,12 +8,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Email
@@ -29,8 +29,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -41,27 +39,25 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.R
+import com.moviles.ark.ui.components.AuthButtonShape
 import com.moviles.ark.ui.components.AuthNetworkErrorDialog
+import com.moviles.ark.ui.components.AuthTextField
 import com.moviles.ark.ui.theme.AppTheme
+import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.theme.ErrorColor
-import com.moviles.ark.ui.theme.FigtreeFontFamily
 import com.moviles.ark.ui.theme.PrimaryColor
-import com.moviles.ark.ui.theme.SoreanFontFamily
+import com.moviles.ark.ui.theme.SecondaryColor
 import com.moviles.ark.ui.theme.TextColor
 import com.moviles.ark.ui.viewmodels.LoginUiState
 import com.moviles.ark.ui.viewmodels.LoginViewModel
@@ -85,28 +81,17 @@ fun LoginScreen(
         )
     }
 
-    // Fondo calido oficial (#FFF5E6) acorde al estilo de RegisterScreen y la identidad de Ark
-    val warmBackgroundColor = Color(0xFFFFF5E6)
-
-    // Colores limpios y consistentes para los campos de texto
-    val fieldColors = OutlinedTextFieldDefaults.colors(
-        focusedContainerColor = Color.White,
-        unfocusedContainerColor = Color.White,
-        focusedBorderColor = PrimaryColor,
-        unfocusedBorderColor = TextColor.copy(alpha = 0.2f),
-        focusedLabelColor = PrimaryColor,
-        unfocusedLabelColor = TextColor.copy(alpha = 0.6f),
-        cursorColor = PrimaryColor
-    )
-
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = warmBackgroundColor
+        color = BackgroundColor
     ) {
+        //imePadding achica la columna cuando sale el teclado y el scroll deja ver el campo que se esta llenando
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
+                .navigationBarsPadding()
+                .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -121,11 +106,10 @@ fun LoginScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Titulo con la fuente Sorean (headlineLarge) y subtitulo en Figtree
+            // Titulo en H1 (Sorean) y subtitulo en body (Figtree), como pide el sistema de diseno (ms6)
             Text(
                 text = "Glad you're here",
                 style = MaterialTheme.typography.headlineLarge,
-                fontFamily = SoreanFontFamily,
                 color = TextColor,
                 textAlign = TextAlign.Center
             )
@@ -135,20 +119,18 @@ fun LoginScreen(
             Text(
                 text = "Take a deep breath and enter your calm space.",
                 style = MaterialTheme.typography.bodyLarge,
-                fontFamily = FigtreeFontFamily,
                 color = TextColor.copy(alpha = 0.7f),
                 textAlign = TextAlign.Center
             )
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Contenedor tipo tarjeta redondeada con elevacion sutil para el formulario
+            // Tarjeta redondeada con el mismo relleno suave de las tarjetas del perfil
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                border = BorderStroke(1.dp, PrimaryColor.copy(alpha = 0.12f))
+                colors = CardDefaults.cardColors(containerColor = TextColor.copy(alpha = 0.06f)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
             ) {
                 Column(
                     modifier = Modifier
@@ -157,59 +139,34 @@ fun LoginScreen(
                 ) {
                     Text(
                         text = "Sign In",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontFamily = FigtreeFontFamily,
-                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.headlineSmall,
                         color = TextColor
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Campo Email con icono representativo, validacion reactiva y supportingText unicamente en error
-                    OutlinedTextField(
+                    AuthTextField(
                         value = uiState.email,
                         onValueChange = onEmailChange,
-                        label = { Text("Email Address", fontFamily = FigtreeFontFamily) },
-                        isError = uiState.emailError != null,
-                        supportingText = if (uiState.emailError != null) {
-                            { Text(uiState.emailError, color = MaterialTheme.colorScheme.error) }
-                        } else null,
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.Email,
-                                contentDescription = null,
-                                tint = PrimaryColor,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                        singleLine = true,
-                        shape = RoundedCornerShape(14.dp),
-                        colors = fieldColors,
-                        modifier = Modifier.fillMaxWidth()
+                        label = "Email Address",
+                        error = uiState.emailError,
+                        leadingIcon = Icons.Default.Email,
+                        keyboardType = KeyboardType.Email
                     )
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // Campo Password con alternador visual y supportingText unicamente en error
-                    OutlinedTextField(
+                    // Campo Password con alternador visual
+                    AuthTextField(
                         value = uiState.password,
                         onValueChange = onPasswordChange,
-                        label = { Text("Password", fontFamily = FigtreeFontFamily) },
-                        isError = uiState.passwordError != null,
-                        supportingText = if (uiState.passwordError != null) {
-                            { Text(uiState.passwordError, color = MaterialTheme.colorScheme.error) }
-                        } else null,
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.Lock,
-                                contentDescription = null,
-                                tint = PrimaryColor,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        },
-                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        label = "Password",
+                        error = uiState.passwordError,
+                        leadingIcon = Icons.Default.Lock,
+                        keyboardType = KeyboardType.Password,
+                        imeAction = ImeAction.Done,
+                        isPassword = true,
+                        passwordVisible = passwordVisible,
                         trailingIcon = {
                             IconButton(onClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -218,15 +175,11 @@ fun LoginScreen(
                                 Icon(
                                     imageVector = if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
                                     contentDescription = if (passwordVisible) "Hide password" else "Show password",
-                                    tint = TextColor.copy(alpha = 0.6f),
+                                    tint = TextColor,
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
-                        },
-                        singleLine = true,
-                        shape = RoundedCornerShape(14.dp),
-                        colors = fieldColors,
-                        modifier = Modifier.fillMaxWidth()
+                        }
                     )
 
                     // Mensaje de error si la autenticacion falla
@@ -235,8 +188,7 @@ fun LoginScreen(
                         Text(
                             text = uiState.errorMessage,
                             color = ErrorColor,
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = FigtreeFontFamily
+                            style = MaterialTheme.typography.bodyLarge
                         )
                     }
 
@@ -249,10 +201,12 @@ fun LoginScreen(
                             onLoginClick()
                         },
                         enabled = uiState.isFormValid && !uiState.isLoading,
-                        shape = RoundedCornerShape(16.dp),
+                        shape = AuthButtonShape,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = PrimaryColor,
-                            disabledContainerColor = PrimaryColor.copy(alpha = 0.5f)
+                            contentColor = TextColor,
+                            disabledContainerColor = PrimaryColor.copy(alpha = 0.5f),
+                            disabledContentColor = TextColor.copy(alpha = 0.6f)
                         ),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -261,18 +215,11 @@ fun LoginScreen(
                         if (uiState.isLoading) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(24.dp),
-                                color = Color.White,
+                                color = TextColor,
                                 strokeWidth = 2.5.dp
                             )
                         } else {
-                            Text(
-                                text = "Log In",
-                                style = MaterialTheme.typography.labelLarge,
-                                fontFamily = FigtreeFontFamily,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
-                                color = Color.White
-                            )
+                            Text(text = "Log In", style = MaterialTheme.typography.labelLarge)
                         }
                     }
                 }
@@ -287,8 +234,7 @@ fun LoginScreen(
             ) {
                 Text(
                     text = "Don't have an account?",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontFamily = FigtreeFontFamily,
+                    style = MaterialTheme.typography.bodyLarge,
                     color = TextColor.copy(alpha = 0.75f)
                 )
                 TextButton(
@@ -300,9 +246,7 @@ fun LoginScreen(
                     Text(
                         text = "Sign up",
                         style = MaterialTheme.typography.labelLarge,
-                        fontFamily = FigtreeFontFamily,
-                        fontWeight = FontWeight.Bold,
-                        color = PrimaryColor
+                        color = SecondaryColor
                     )
                 }
             }

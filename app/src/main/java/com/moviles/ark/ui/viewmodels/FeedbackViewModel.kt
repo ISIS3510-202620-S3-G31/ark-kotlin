@@ -8,19 +8,16 @@ import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.AP
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import com.google.firebase.auth.FirebaseAuth
 import com.moviles.ark.ArkApplication
-import com.moviles.ark.data.local.daos.ToolRecordDao
-import com.moviles.ark.data.local.entities.ToolInteractionEntity
-import com.moviles.ark.domain.composite.CompoundMood
 import com.moviles.ark.domain.composite.Emotion
-import com.moviles.ark.domain.composite.MoodComponent
 import com.moviles.ark.domain.composite.SingleEmotion
 import com.moviles.ark.domain.models.CheckInModel
 import com.moviles.ark.domain.models.FeedbackModel
+import com.moviles.ark.domain.models.ToolInteraction
 import com.moviles.ark.domain.repositories.AnalyticsRepository
 import com.moviles.ark.domain.repositories.FeedbackRepository
 import com.moviles.ark.domain.repositories.MoodRepository
+import com.moviles.ark.domain.repositories.ToolInteractionRepository
 import com.moviles.ark.domain.repositories.ToolRepository
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -29,15 +26,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.Date
 
 class FeedbackViewModel(
     private val feedbackRepository: FeedbackRepository? = null,
-    private val toolRecordDao: ToolRecordDao? = null,
+    private val toolInteractionRepository: ToolInteractionRepository? = null,
     private val moodRepository: MoodRepository? = null,
     private val analyticsRepository: AnalyticsRepository? = null,
     private val toolRepository: ToolRepository? = null,
-    private val auth: FirebaseAuth? = null,
     savedStateHandle: SavedStateHandle? = null,
     initialToolId: String = "",
     initialDuration: Int = 0,
@@ -92,25 +87,20 @@ class FeedbackViewModel(
         privateUiState.value = privateUiState.value.copy(
             selectedEmotions = newEmotions,
             activeEmotion = newActive,
-            intensity = if (isAdding) 3f else privateUiState.value.intensity,
+            intensity = if (isAdding) SingleEmotion.DEFAULT_INTENSITY.toFloat() else privateUiState.value.intensity,
             errorMessage = null
         )
     }
 
-    fun onIntensityChange(newIntensity: Float) {
-        privateUiState.value = privateUiState.value.copy(
-            intensity = newIntensity,
-            errorMessage = null
-        )
-    }
-
-    // Persiste en Room SQLite y sincroniza a Firestore desacoplado via FeedbackRepository (#166)
+    // Persiste en Room SQLite y sincroniza a Firestore desacoplado via FeedbackRepository
     // Vincula la calificacion tanto a toolId como a interactionId
     fun saveFeedback(onSavedCallback: () -> Unit = {}) {
         val state = privateUiState.value
 
-        if (state.rating < 1 || state.rating > 5) {
-            privateUiState.value = state.copy(errorMessage = "Please select a rating from 1 to 5 stars")
+        //la regla de la calificacion vive en el modelo
+        val ratingError = FeedbackModel.ratingError(state.rating)
+        if (ratingError != null) {
+            privateUiState.value = state.copy(errorMessage = ratingError)
             return
         }
 
@@ -119,52 +109,31 @@ class FeedbackViewModel(
         viewModelScope.launch(ioDispatcher) {
             try {
                 val nowMillis = System.currentTimeMillis()
-                val userId = auth?.currentUser?.uid ?: "anonymous"
-                val format = toolRepository?.getToolById(state.toolId)?.format ?: "touch"
-                val durationSeconds = if (state.duration > 0) state.duration else 60
+                val format = toolRepository?.getToolById(state.toolId)?.format ?: ToolInteraction.DEFAULT_INTERACTION_TYPE
+                val durationSeconds = if (state.duration > 0) state.duration else ToolInteraction.DEFAULT_DURATION_SECONDS
 
-                // 1. Grabar la interaccion en Room SQLite para obtener el interactionId generado (#154)
-                val interactionId = toolRecordDao?.insertInteraction(
-                    ToolInteractionEntity(
-                        userId = userId,
+                // 1. Grabar la interaccion para obtener el interactionId generado
+                val interactionId = toolInteractionRepository
+                    ?.recordCompletion(state.toolId, durationSeconds, format, nowMillis)
+                    ?.getOrThrow()
+
+                // 2. Persistir la calificacion y el comentario vinculados a toolId e interactionId
+                feedbackRepository?.saveFeedback(
+                    FeedbackModel(
                         toolId = state.toolId,
-                        duration = durationSeconds,
-                        interactionType = format,
-                        complete = true,
-                        timestamp = Date(nowMillis),
-                        isSynced = false
+                        rating = state.rating,
+                        comment = state.comment.trim(),
+                        createdAt = nowMillis,
+                        interactionId = interactionId
                     )
                 )
 
-                // 2. Persistir ratings (1 a 5 estrellas) y comentarios en Room vinculados a toolId e interactionId, sincronizando a Firestore (#166)
-                val feedbackModel = FeedbackModel(
-                    toolId = state.toolId,
-                    rating = state.rating,
-                    comment = state.comment.trim(),
-                    createdAt = nowMillis,
-                    interactionId = interactionId
-                )
-                feedbackRepository?.saveFeedback(feedbackModel)
-
-                // 3. Guardar el post-tool emotion check-in si se seleccionaron emociones
+                // 3. Guardar el check-in de emociones si se eligio alguna; el modelo arma el animo
                 if (state.selectedEmotions.isNotEmpty() && moodRepository != null) {
-                    val moodResult: MoodComponent = if (state.selectedEmotions.size == 1) {
-                        SingleEmotion(state.selectedEmotions.first(), state.intensity.toInt())
-                    } else {
-                        val compound = CompoundMood()
-                        for (emotion in state.selectedEmotions) {
-                            compound.add(SingleEmotion(emotion, state.intensity.toInt()))
-                        }
-                        compound
-                    }
-                    val checkIn = CheckInModel(
-                        mood = moodResult,
-                        note = if (state.comment.isNotBlank()) "Post-tool feedback: ${state.comment}" else "Post-tool feedback"
-                    )
-                    moodRepository.saveCheckIn(checkIn)
+                    moodRepository.saveCheckIn(CheckInModel.afterTool(state.selectedEmotions, state.intensity.toInt(), state.comment))
                 }
 
-                // 4. Registrar evento de finalizacion de herramienta en Firebase Analytics (#34)
+                // 4. Registrar evento de finalizacion de herramienta en Firebase Analytics
                 analyticsRepository?.logToolEntryCompleted(
                     toolId = state.toolId.ifBlank { "custom_breathing" },
                     toolFormat = format
@@ -194,11 +163,10 @@ class FeedbackViewModel(
                 val app = this[APPLICATION_KEY] as ArkApplication
                 FeedbackViewModel(
                     feedbackRepository = app.container.feedbackRepository,
-                    toolRecordDao = app.container.toolRecordDao,
+                    toolInteractionRepository = app.container.toolInteractionRepository,
                     moodRepository = app.container.moodRepository,
                     analyticsRepository = app.container.analyticsRepository,
-                    toolRepository = app.container.toolRepository,
-                    auth = app.container.auth
+                    toolRepository = app.container.toolRepository
                 )
             }
         }

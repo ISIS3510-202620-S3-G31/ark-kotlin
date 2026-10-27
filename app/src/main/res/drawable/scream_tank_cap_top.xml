@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- tapa del tanque del scream tank (figma Mockups - Moviles, Scream Tank) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="115.826dp"
+    android:height="47.5dp"
+    android:viewportWidth="115.826"
+    android:viewportHeight="47.5">
+    <path
+        android:fillColor="#46423E"
+        android:pathData="M6.9007 0.5L1.4007 6H113.901L105.901 0.5H6.9007Z" />
+    <path
+        android:fillColor="#46423E"
+        android:pathData="M6.4007 36.016C6.24159 35.9175 5.11734 35.0409 1.4007 32H114.401L109.401 36V43L114.401 47H1.4007L6.4007 42.5V36.016Z" />
+    <path
+        android:strokeColor="#000000"
+        android:strokeWidth="1"
+        android:pathData="M6.4007 36.016C6.24159 35.9175 5.11734 35.0409 1.4007 32H114.401L109.401 36M6.4007 36.016C6.42996 36.0341 6.42659 36.0259 6.4007 36M109.401 36H6.4007V36.016M6.4007 36.016V42.5M6.4007 42.5L1.4007 47H114.401L109.401 43M6.4007 42.5C28.5674 42.5 80.2007 42.6 109.401 43M109.401 43V36M1.4007 6L6.9007 0.5H105.901L113.901 6H1.4007Z" />
+</vector>

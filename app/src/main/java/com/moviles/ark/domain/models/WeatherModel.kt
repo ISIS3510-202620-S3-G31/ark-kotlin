@@ -2,7 +2,7 @@ package com.moviles.ark.domain.models
 
 import kotlin.math.roundToInt
 
-//clima actual donde esta el usuario (#134); no importa de que api venga
+//clima actual donde esta el usuario; no importa de que api venga
 data class WeatherModel(
     val temperatureC: Double,
     //lluvia de la ultima hora en milimetros
@@ -28,10 +28,10 @@ data class WeatherModel(
     }
 }
 
-//que tiene el clima de especial; el home lo usa para el icono de la tarjeta (#153)
-enum class WeatherCondition { RAINY, COLD, SUNNY, NEUTRAL }
+//que tiene el clima de especial; el home lo usa para el icono de la tarjeta
+enum class WeatherCondition { RAINY, COLD, SUNNY }
 
-//herramienta que sugiere el clima y el motivo que se muestra en el home (#134, #153)
+//herramienta que sugiere el clima y el motivo que se muestra en el home
 data class WeatherSuggestion(
     val tool: Tool,
     val condition: WeatherCondition,

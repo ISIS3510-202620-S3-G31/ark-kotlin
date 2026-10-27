@@ -25,7 +25,7 @@ import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.theme.TextColor
 
 //pantalla provisional para las pestanas que aun no tienen su pantalla real
-//stats la reemplaza el #15 y profile el #6; cuando ninguna la use, se puede borrar
+//pantalla provisional para rutas sin vista propia; cuando ninguna la use, se puede borrar
 @Composable
 fun PlaceholderScreen(title: String, message: String) {
     Surface(modifier = Modifier.fillMaxSize(), color = BackgroundColor) {

@@ -36,7 +36,7 @@ import com.moviles.ark.ui.theme.PrimaryColor
 import com.moviles.ark.ui.theme.SecondaryColor
 import com.moviles.ark.ui.theme.TextColor
 
-//tarjeta compacta y horizontal del hallazgo util: 3 lineas de 20 sp + 20 dp de margen, menos de 90 dp (#29, #135)
+//tarjeta compacta y horizontal del hallazgo util: 3 lineas de 20 sp + 20 dp de margen, menos de 90 dp
 //toda la tarjeta es tocable: abre el catalogo filtrado con la categoria de la emocion detectada
 @Composable
 fun UsefulInsightComponent(

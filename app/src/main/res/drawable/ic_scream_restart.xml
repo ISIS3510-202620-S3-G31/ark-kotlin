@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- reiniciar la sesion (figma Scream Tank) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="22dp"
+    android:height="22dp"
+    android:viewportWidth="22"
+    android:viewportHeight="22">
+    <path
+        android:strokeColor="#221100"
+        android:strokeWidth="2.38333"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M4.125 11C4.125 14.7583 7.24167 17.875 11 17.875C14.7583 17.875 17.875 14.7583 17.875 11C17.875 7.24167 14.7583 4.125 11 4.125C8.8 4.125 6.875 5.13333 5.59167 6.78333M5.04167 2.75V7.15H9.44167" />
+</vector>

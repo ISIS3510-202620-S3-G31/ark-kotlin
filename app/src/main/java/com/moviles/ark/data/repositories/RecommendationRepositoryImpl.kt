@@ -9,7 +9,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-//guarda la ultima recomendacion en cacheDir/last_recommendation.json (#159)
+//guarda la ultima recomendacion en cacheDir/last_recommendation.json
 //es cache: si android borra el archivo para liberar espacio no pasa nada, el home la vuelve a calcular
 class RecommendationRepositoryImpl(
     cacheDir: File
