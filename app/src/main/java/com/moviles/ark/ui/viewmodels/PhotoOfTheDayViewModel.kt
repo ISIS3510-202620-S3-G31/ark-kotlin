@@ -43,6 +43,11 @@ class PhotoOfTheDayViewModel(
     //escucha las fotos de los ultimos 7 dias; cada vez que se guarda una, la tira y la foto de hoy se actualizan solas
     private fun observeWeek() {
         val starts = PhotoWeek.dayStarts(now(), zone)
+        //las de dias pasados que falten en el telefono se traen de la nube; llegan solas por el flow de room
+        //hoy no se trae: la de hoy se puede borrar o repetir y la nube podria devolver una ya borrada
+        viewModelScope.launch {
+            photoRepository.refreshFromCloud(starts.first(), starts[starts.size - 2])
+        }
         viewModelScope.launch {
             photoRepository.getPhotosBetween(starts.first(), starts.last())
                 .catch {

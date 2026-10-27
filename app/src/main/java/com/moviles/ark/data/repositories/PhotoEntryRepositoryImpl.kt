@@ -7,15 +7,19 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.storage.FirebaseStorage
 import com.moviles.ark.data.local.daos.PhotoEntryDao
 import com.moviles.ark.data.local.entities.PhotoEntryEntity
 import com.moviles.ark.data.remote.CrashlyticsHelper
+import com.moviles.ark.data.remote.dtos.PhotoEntryDto
 import com.moviles.ark.domain.models.PhotoEntryModel
 import com.moviles.ark.domain.repositories.PhotoEntryRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileInputStream
@@ -25,10 +29,13 @@ import java.util.UUID
 
 //fotos por usuario: cada fila de room lleva el uid y la pantalla solo lee las del usuario con sesion
 //el jpg se guarda una sola vez en la galeria publica (MediaStore, Pictures/Ark/User_<uid>) y room guarda su direccion content://
+//el sync sube una copia a firebase storage; las fotos de dias pasados que falten en el telefono se traen de ahi
 class PhotoEntryRepositoryImpl(
     private val context: Context,
     private val auth: FirebaseAuth,
-    private val photoEntryDao: PhotoEntryDao
+    private val photoEntryDao: PhotoEntryDao,
+    private val firestore: FirebaseFirestore? = null,
+    private val storage: FirebaseStorage? = null
 ) : PhotoEntryRepository {
 
     override fun getPhotosBetween(fromMillis: Long, toMillis: Long): Flow<List<PhotoEntryModel>> {
@@ -40,10 +47,47 @@ class PhotoEntryRepositoryImpl(
                     id = entity.id,
                     localFilePath = entity.localFilePath,
                     caption = entity.caption,
-                    takenAt = entity.takenAt
+                    takenAt = entity.takenAt,
+                    remoteUrl = entity.remoteUrl?.takeIf { it.startsWith("https://") }
                 )
             }
         }
+    }
+
+    override suspend fun refreshFromCloud(fromMillis: Long, toMillis: Long) = withContext(Dispatchers.IO) {
+        val userId = auth.currentUser?.uid ?: return@withContext
+        val remote = firestore ?: return@withContext
+        runCatching {
+            val documents = remote.collection("users").document(userId).collection("photos")
+                .whereGreaterThanOrEqualTo("takenAt", fromMillis)
+                .whereLessThan("takenAt", toMillis)
+                .get()
+                .await()
+            for (document in documents) {
+                val dto = document.toObject(PhotoEntryDto::class.java)
+                //solo sirven las que ya tienen copia en storage; las viejas solo guardaban la ruta del otro telefono
+                if (!dto.remoteUrl.startsWith("https://")) continue
+                if (photoEntryDao.getPhotoByTakenAt(userId, dto.takenAt) != null) continue
+                photoEntryDao.insertPhoto(
+                    PhotoEntryEntity(
+                        userId = userId,
+                        //no hay archivo en este telefono: la pantalla la carga desde remoteUrl
+                        localFilePath = "",
+                        caption = dto.caption,
+                        takenAt = dto.takenAt,
+                        remoteUrl = dto.remoteUrl,
+                        isSynced = true
+                    )
+                )
+            }
+        }.onFailure { error ->
+            CrashlyticsHelper.logNonFatal(
+                componentName = "PhotoEntryRepository",
+                action = "refreshFromCloud",
+                throwable = error
+            )
+        }
+        Unit
     }
 
     override suspend fun savePhoto(sourceUri: String, caption: String, takenAt: Long): Result<PhotoEntryModel> = withContext(Dispatchers.IO) {
@@ -90,6 +134,15 @@ class PhotoEntryRepositoryImpl(
                 }
                 //elimina el registro en room
                 photoEntryDao.deletePhoto(photoId, userId)
+                //y la copia en la nube si ya se habia subido; sin red queda alla, pero solo se borra la de hoy
+                //y la descarga solo trae dias pasados, asi que no vuelve a aparecer
+                if (entity.isSynced) {
+                    runCatching { storage?.reference?.child(storagePath(userId, entity.takenAt))?.delete()?.await() }
+                    runCatching {
+                        firestore?.collection("users")?.document(userId)?.collection("photos")
+                            ?.document(entity.takenAt.toString())?.delete()?.await()
+                    }
+                }
             }
             Unit
         }.onFailure { error ->
@@ -154,6 +207,9 @@ class PhotoEntryRepositoryImpl(
     }
 
     companion object {
+        //donde queda el jpg en firebase storage; el nombre es el momento de la foto, igual que el id del documento en firestore
+        fun storagePath(userId: String, takenAt: Long): String = "users/$userId/photos/$takenAt.jpg"
+
         //carpeta raiz de las fotos dentro de filesDir; file_paths.xml ya la expone con sus subcarpetas
         const val PHOTOS_DIR = "photos"
 

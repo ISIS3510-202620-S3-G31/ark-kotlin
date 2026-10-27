@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.net.Uri
 import com.bumptech.glide.Glide
+import com.bumptech.glide.load.engine.DiskCacheStrategy
 import java.io.File
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -320,6 +321,7 @@ private fun PhotoCarousel(photoDays: List<PhotoDay>, pagerState: PagerState, mod
             day.photo?.let { photo ->
                 PhotoThumbnail(
                     path = photo.localFilePath,
+                    remoteUrl = photo.remoteUrl,
                     description = if (day.isToday) "Today's photo" else "Photo from ${day.name}",
                     modifier = Modifier.fillMaxWidth().aspectRatio(3f / 4f)
                 )
@@ -557,11 +559,20 @@ private fun DeletePhotoDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
 
 //miniatura de la foto: se lee en segundo plano y reducida, para no trabar la pantalla ni gastar memoria
 @Composable
-private fun PhotoThumbnail(path: String, modifier: Modifier = Modifier, description: String = "Photo of the day") {
+private fun PhotoThumbnail(
+    path: String,
+    modifier: Modifier = Modifier,
+    description: String = "Photo of the day",
+    remoteUrl: String? = null
+) {
     val context = LocalContext.current
     //null mientras carga; despues trae la imagen o el error
-    val result by produceState<Result<ImageBitmap>?>(initialValue = null, path) {
-        value = withContext(Dispatchers.IO) { runCatching { decodeThumbnail(context, path) } }
+    //primero el archivo del telefono; si no esta (otro telefono, la borraron de la galeria) la copia de storage
+    val result by produceState<Result<ImageBitmap>?>(initialValue = null, path, remoteUrl) {
+        value = withContext(Dispatchers.IO) {
+            runCatching { if (path.isBlank() && remoteUrl != null) decodeRemote(context, remoteUrl) else decodeThumbnail(context, path) }
+                .recoverCatching { error -> if (remoteUrl != null) decodeRemote(context, remoteUrl) else throw error }
+        }
     }
     Box(
         modifier = modifier.clip(RoundedCornerShape(24.dp)).background(CardFill),
@@ -585,6 +596,18 @@ private fun decodeThumbnail(context: Context, path: String): ImageBitmap {
         .override(MAX_THUMBNAIL_SIZE)
         .submit()
         .get() ?: error("Could not decode $path")
+    return bitmap.asImageBitmap()
+}
+
+//glide baja la foto de storage una sola vez: queda en su cache en disco (50 MB) y despues se ve sin red
+private fun decodeRemote(context: Context, url: String): ImageBitmap {
+    val bitmap = Glide.with(context)
+        .asBitmap()
+        .load(url)
+        .diskCacheStrategy(DiskCacheStrategy.DATA)
+        .override(MAX_THUMBNAIL_SIZE)
+        .submit()
+        .get() ?: error("Could not download $url")
     return bitmap.asImageBitmap()
 }
 

@@ -14,4 +14,7 @@ interface PhotoEntryRepository {
     suspend fun savePhoto(sourceUri: String, caption: String, takenAt: Long): Result<PhotoEntryModel>
     //elimina la foto del almacenamiento local y de la base de datos
     suspend fun deletePhoto(photoId: Long): Result<Unit>
+    //trae de firestore las fotos de ese rango que no esten en el telefono (otro telefono o app reinstalada)
+    //sin red no hace nada: se queda con lo que ya hay en room
+    suspend fun refreshFromCloud(fromMillis: Long, toMillis: Long)
 }

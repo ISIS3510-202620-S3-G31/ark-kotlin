@@ -8,6 +8,8 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.firestore
+import com.google.firebase.storage.FirebaseStorage
+import com.google.firebase.storage.storage
 import com.moviles.ark.R
 import com.moviles.ark.data.local.ArkDatabase
 import com.moviles.ark.data.local.daos.FeedbackDao
@@ -84,6 +86,8 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     //adapter de firebase auth para que el repositorio de login no dependa de firebase
     private val authServiceAdapter: com.moviles.ark.domain.adapters.AuthServiceAdapter by lazy { com.moviles.ark.data.remote.apis.FirebaseAuthAdapterImpl(auth) }
     override val firestore: FirebaseFirestore by lazy { Firebase.firestore }
+    // copia en la nube de los jpg de la foto del dia
+    private val storage: FirebaseStorage by lazy { Firebase.storage }
     override val authRepository: AuthRepository by lazy { AuthRepositoryImpl(authServiceAdapter, firestore, networkConnectivityObserver) }
     // perfil guardado en room para verlo sin internet, con nombre y fecha sincronizados con firestore
     override val userRepository: UserRepository by lazy { UserRepositoryImpl(context, auth, firestore, database.userDao()) }
@@ -102,7 +106,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     // real photo repository with Room persistence and the public gallery (MediaStore) for the jpg files
     override val photoRepository: PhotoEntryRepository by lazy {
         //cada usuario solo ve sus fotos; sus archivos van en Pictures/Ark/User_<uid>
-        PhotoEntryRepositoryImpl(context, auth, database.photoEntryDao())
+        PhotoEntryRepositoryImpl(context, auth, database.photoEntryDao(), firestore, storage)
     }
     override val analyticsRepository: AnalyticsRepository by lazy { AnalyticsRepositoryImpl(Firebase.analytics) }
     // one tracker for the whole app: the tap on a tool and its screen live in different places
@@ -157,8 +161,10 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     // repositorio y gestor de resincronizacion de datos offline
     override val syncRepository: SyncRepository by lazy {
         SyncRepositoryImpl(
+            context = context,
             auth = auth,
             firestore = firestore,
+            storage = storage,
             photoEntryDao = database.photoEntryDao(),
             toolRecordDao = database.toolRecordDao(),
             emotionCheckInDao = database.emotionCheckInDao(),

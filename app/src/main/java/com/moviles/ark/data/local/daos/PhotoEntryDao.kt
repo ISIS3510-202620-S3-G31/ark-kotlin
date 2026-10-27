@@ -61,6 +61,10 @@ interface PhotoEntryDao {
         }
     }
 
+    //la foto de un usuario tomada en ese momento exacto; sirve para no traer de la nube una que ya esta en el telefono
+    @Query("SELECT * FROM photo_entries WHERE userId = :currentUserId AND takenAt = :takenAt LIMIT 1")
+    suspend fun getPhotoByTakenAt(currentUserId: String, takenAt: Long): PhotoEntryEntity?
+
     //las de un usuario que faltan por subir a firebase
     @Query("SELECT * FROM photo_entries WHERE userId = :currentUserId AND isSynced = 0")
     suspend fun getUnsyncedPhotosRaw(currentUserId: String): List<PhotoEntryEntity>

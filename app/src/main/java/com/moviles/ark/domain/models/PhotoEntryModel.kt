@@ -8,7 +8,9 @@ data class PhotoEntryModel(
     //nota opcional que el usuario escribe sobre la foto
     val caption: String = "",
     //cuando se tomo, en milisegundos
-    val takenAt: Long
+    val takenAt: Long,
+    //url de descarga de la copia en firebase storage; null si aun no se ha subido
+    val remoteUrl: String? = null
 ) {
     //reglas de negocio
     fun isValidCaption(): Boolean {
