@@ -125,7 +125,8 @@ class StatsDiskCache(cacheDir: File) {
                 toolUsagePercentages = toolUsage,
                 currentInsight = json.optJSONObject("currentInsight")?.let { insightFromJson(it) },
                 allInsights = allInsights,
-                emotionFrequencies = emotionFrequencies
+                emotionFrequencies = emotionFrequencies,
+                lastUpdated = lastUpdated
             )
         }
 

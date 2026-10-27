@@ -1,6 +1,7 @@
 package com.moviles.ark.data.remote.dtos
 
 import com.moviles.ark.data.local.entities.FeedbackEntity
+import com.moviles.ark.domain.models.FeedbackModel
 
 //dto del documento users/{uid}/tool_feedback/{id} en firestore (#163)
 //la calificacion que deja el usuario al terminar una herramienta (#21)
@@ -37,5 +38,30 @@ fun FeedbackDto.toEntity(): FeedbackEntity {
         comment = comment,
         createdAt = createdAt,
         isSynced = true
+    )
+}
+
+//de modelo de dominio a dto para Firestore (#166)
+fun FeedbackModel.toDto(userId: String): FeedbackDto {
+    return FeedbackDto(
+        userId = userId,
+        toolId = toolId,
+        rating = rating,
+        comment = comment,
+        createdAt = createdAt,
+        interactionId = interactionId
+    )
+}
+
+//de dto de Firestore a modelo de dominio (#166)
+fun FeedbackDto.toDomain(id: Long = 0L, isSynced: Boolean = true): FeedbackModel {
+    return FeedbackModel(
+        id = id,
+        interactionId = interactionId,
+        toolId = toolId,
+        rating = rating,
+        comment = comment,
+        createdAt = createdAt,
+        isSynced = isSynced
     )
 }
