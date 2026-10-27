@@ -110,7 +110,7 @@ class UserRepositoryImpl(
             ProfilePreferences.saveProfile(
                 name = name.trim(),
                 email = auth.currentUser?.email.orEmpty(),
-                age = 0
+                age = com.moviles.ark.domain.models.UserModel.ageOf(birthDate) ?: 0
             )
             pushProfile(uid, name.trim(), birthDate)
         }.onFailure { error ->
@@ -166,6 +166,19 @@ class UserRepositoryImpl(
                 throwable = error
             )
         }
+    }
+
+    //copia en sharedpreferences para mostrar el perfil y el saludo al instante
+    override fun cachedProfile(): UserProfile? {
+        val cached = ProfilePreferences.getScalarProfile()
+        if (cached.name.isBlank() && cached.email.isBlank()) return null
+        return UserProfile(name = cached.name, email = cached.email, memberSince = 0L, age = cached.age)
+    }
+
+    override fun observeCachedName(): Flow<String> = ProfilePreferences.userProfile.map { it.name }
+
+    override suspend fun clearCachedProfile() {
+        ProfilePreferences.clear()
     }
 
     override suspend fun saveStreak(streakDays: Int, lastCheckInAt: Long?): Result<Unit> = withContext(Dispatchers.IO) {

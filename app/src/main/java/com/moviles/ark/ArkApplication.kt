@@ -22,9 +22,8 @@ class ArkApplication : Application() {
             GlideBuilder().setDiskCache(InternalCacheDiskCacheFactory(this, GLIDE_CACHE_DIR, GLIDE_CACHE_BYTES))
         )
         container = DefaultAppContainer(this)
-        //inicializa las preferencias locales del usuario (offline-first)
+        //inicializa las preferencias locales del usuario (perfil y avatar) para cargarlas al instante y sin red
         ProfilePreferences.init(this)
-        AvatarPreferences.init(this)
         //iniciar el observador de sincronizacion automatica offline
         container.syncManager.startMonitoring()
         //precargar y verificar el soporte del modelo de reconocimiento de voz offline
