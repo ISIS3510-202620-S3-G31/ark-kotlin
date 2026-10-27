@@ -2,12 +2,8 @@ package com.moviles.ark.data.local.entities
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
-import com.moviles.ark.domain.composite.CompoundMood
-import com.moviles.ark.domain.composite.Emotion
-import com.moviles.ark.domain.composite.MoodComponent
 import com.moviles.ark.domain.composite.MoodFactory
-import com.moviles.ark.domain.composite.SingleEmotion
-import com.moviles.ark.domain.models.CheckInModel
+import com.moviles.ark.domain.models.MoodCheckInModel
 import java.util.UUID
 
 //tabla de check-ins emocionales guardados en el telefono
@@ -37,7 +33,7 @@ data class CheckInEntity(
 )
 
 //de modelo de dominio a fila de la tabla
-fun CheckInModel.toEntity(userId: String = ""): CheckInEntity {
+fun MoodCheckInModel.toEntity(userId: String = ""): CheckInEntity {
     return CheckInEntity(
         userId = userId,
         moodName = mood.getName(),
@@ -51,11 +47,11 @@ fun CheckInModel.toEntity(userId: String = ""): CheckInEntity {
 }
 
 //de fila de la tabla a modelo de dominio: una emocion es SingleEmotion, varias son CompoundMood
-fun CheckInEntity.toDomain(): CheckInModel {
+fun CheckInEntity.toDomain(): MoodCheckInModel {
     //si llega un nombre que ya no existe en el enum, se ignora en vez de cerrar la app
     val emotionList = emotions.mapNotNull { MoodFactory.emotionFromName(it) }
     val mood = MoodFactory.fromEmotions(emotionList, intensity, moodName)
-    return CheckInModel(
+    return MoodCheckInModel(
         mood = mood,
         note = note,
         latitude = latitude,

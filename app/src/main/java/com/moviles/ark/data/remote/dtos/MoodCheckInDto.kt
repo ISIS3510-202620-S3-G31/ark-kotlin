@@ -6,7 +6,7 @@ import com.moviles.ark.domain.composite.Emotion
 import com.moviles.ark.domain.composite.MoodComponent
 import com.moviles.ark.domain.composite.MoodFactory
 import com.moviles.ark.domain.composite.SingleEmotion
-import com.moviles.ark.domain.models.CheckInModel
+import com.moviles.ark.domain.models.MoodCheckInModel
 
 //dto para serializar cada emocion con su respectiva intensidad
 data class EmotionDto(
@@ -42,7 +42,7 @@ fun CheckInEntity.toDto(userId: String): MoodCheckInDto {
 }
 
 //de modelo de dominio a dto, para guardar el check-in directo en firestore
-fun CheckInModel.toDto(userId: String): MoodCheckInDto {
+fun MoodCheckInModel.toDto(userId: String): MoodCheckInDto {
     val intensity = mood.getIntensity().toInt()
     return MoodCheckInDto(
         userId = userId,
@@ -57,13 +57,13 @@ fun CheckInModel.toDto(userId: String): MoodCheckInDto {
 
 //de dto a modelo de dominio: una emocion es SingleEmotion, varias son CompoundMood
 //si llega un nombre que ya no existe en el enum, se ignora en vez de cerrar la app
-fun MoodCheckInDto.toDomain(): CheckInModel {
+fun MoodCheckInDto.toDomain(): MoodCheckInModel {
     val parsedEmotions = emotions.mapNotNull { dto ->
         val emotion = MoodFactory.emotionFromName(dto.name) ?: return@mapNotNull null
         SingleEmotion(emotion, dto.intensity)
     }
     val mood = if (parsedEmotions.isEmpty()) MoodFactory.default() else MoodFactory.fromParts(parsedEmotions, moodName)
-    return CheckInModel(
+    return MoodCheckInModel(
         mood = mood,
         note = note,
         latitude = latitude,

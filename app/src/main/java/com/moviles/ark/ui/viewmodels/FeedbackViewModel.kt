@@ -11,9 +11,9 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
 import com.moviles.ark.domain.composite.Emotion
 import com.moviles.ark.domain.composite.SingleEmotion
-import com.moviles.ark.domain.models.CheckInModel
+import com.moviles.ark.domain.models.MoodCheckInModel
 import com.moviles.ark.domain.models.FeedbackModel
-import com.moviles.ark.domain.models.ToolInteraction
+import com.moviles.ark.domain.models.ToolInteractionModel
 import com.moviles.ark.domain.repositories.AnalyticsRepository
 import com.moviles.ark.domain.repositories.FeedbackRepository
 import com.moviles.ark.domain.repositories.MoodRepository
@@ -109,8 +109,8 @@ class FeedbackViewModel(
         viewModelScope.launch(ioDispatcher) {
             try {
                 val nowMillis = System.currentTimeMillis()
-                val format = toolRepository?.getToolById(state.toolId)?.format ?: ToolInteraction.DEFAULT_INTERACTION_TYPE
-                val durationSeconds = if (state.duration > 0) state.duration else ToolInteraction.DEFAULT_DURATION_SECONDS
+                val format = toolRepository?.getToolById(state.toolId)?.format ?: ToolInteractionModel.DEFAULT_INTERACTION_TYPE
+                val durationSeconds = if (state.duration > 0) state.duration else ToolInteractionModel.DEFAULT_DURATION_SECONDS
 
                 // 1. Grabar la interaccion para obtener el interactionId generado
                 val interactionId = toolInteractionRepository
@@ -130,7 +130,7 @@ class FeedbackViewModel(
 
                 // 3. Guardar el check-in de emociones si se eligio alguna; el modelo arma el animo
                 if (state.selectedEmotions.isNotEmpty() && moodRepository != null) {
-                    moodRepository.saveCheckIn(CheckInModel.afterTool(state.selectedEmotions, state.intensity.toInt(), state.comment))
+                    moodRepository.saveCheckIn(MoodCheckInModel.afterTool(state.selectedEmotions, state.intensity.toInt(), state.comment))
                 }
 
                 // 4. Registrar evento de finalizacion de herramienta en Firebase Analytics

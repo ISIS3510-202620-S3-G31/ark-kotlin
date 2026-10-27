@@ -2,7 +2,7 @@ package com.moviles.ark.domain.models
 
 // Herramienta del catálogo (toolbox) tal como la ve la app.
 // Clase base de la cual heredan las herramientas específicas del catálogo.
-open class Tool(
+open class ToolModel(
     open val id: String,
     open val name: String,
     open val description: String,
@@ -37,7 +37,7 @@ open class Tool(
 
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
-        if (other !is Tool) return false
+        if (other !is ToolModel) return false
         return (id == other.id) &&
                 (name == other.name) &&
                 (description == other.description) &&
@@ -69,27 +69,27 @@ open class Tool(
 
         //catalogo por defecto del tool hub, el mismo de assets/tools.json; lo usan los previews y el home al abrir
         val DEFAULT_CATALOG = listOf(
-            Tool("custom_breathing", "Custom breathing", "Build the rhythm that fits you.", "calm_down", "touch", "ic_tool_custom_breathing"),
-            Tool("blow_it_out", "Blow it out", "Blow out the tension, one breath at a time.", "release", "voice", "ic_tool_blow_it_out"),
-            Tool("scream_tank", "Scream tank", "Let it out. Nobody is listening but you.", "release", "voice", "ic_tool_scream_tank"),
-            Tool("body_mapping", "Body mapping", "Mark where the feeling lives.", "reflect", "touch", "ic_tool_body_mapping"),
-            Tool("emotion_detective", "Emotion detective", "Not sure what you feel? Let's find out.", "reflect", "text", "ic_tool_emotion_detective"),
-            Tool("achievement_jar", "Achievement jar", "Save the good stuff. Read it when you need it.", "celebrate", "text", "ic_tool_achievement_jar"),
-            Tool("photo_of_the_day", "Photo of the day", "One photo a day, one new memory.", "celebrate", "photo", "ic_tool_photo_of_the_day")
+            ToolModel("custom_breathing", "Custom breathing", "Build the rhythm that fits you.", "calm_down", "touch", "ic_tool_custom_breathing"),
+            ToolModel("blow_it_out", "Blow it out", "Blow out the tension, one breath at a time.", "release", "voice", "ic_tool_blow_it_out"),
+            ToolModel("scream_tank", "Scream tank", "Let it out. Nobody is listening but you.", "release", "voice", "ic_tool_scream_tank"),
+            ToolModel("body_mapping", "Body mapping", "Mark where the feeling lives.", "reflect", "touch", "ic_tool_body_mapping"),
+            ToolModel("emotion_detective", "Emotion detective", "Not sure what you feel? Let's find out.", "reflect", "text", "ic_tool_emotion_detective"),
+            ToolModel("achievement_jar", "Achievement jar", "Save the good stuff. Read it when you need it.", "celebrate", "text", "ic_tool_achievement_jar"),
+            ToolModel("photo_of_the_day", "Photo of the day", "One photo a day, one new memory.", "celebrate", "photo", "ic_tool_photo_of_the_day")
         )
 
         //solo las que ya tienen pantalla
-        fun implemented(tools: List<Tool>): List<Tool> = tools.filter { it.isImplemented }
+        fun implemented(toolModels: List<ToolModel>): List<ToolModel> = toolModels.filter { it.isImplemented }
 
         //las de una categoria; null es "todas"
-        fun inCategory(tools: List<Tool>, category: ToolCategory?): List<Tool> =
-            if (category == null) tools else tools.filter { it.category == category }
+        fun inCategory(toolModels: List<ToolModel>, category: ToolCategory?): List<ToolModel> =
+            if (category == null) toolModels else toolModels.filter { it.category == category }
 
         //categorias que tienen alguna herramienta; la elegida se deja para poder quitar el filtro
-        fun availableCategories(tools: List<Tool>, selected: ToolCategory?): List<ToolCategory> =
-            ToolCategory.entries.filter { category -> category == selected || tools.any { it.category == category } }
+        fun availableCategories(toolModels: List<ToolModel>, selected: ToolCategory?): List<ToolCategory> =
+            ToolCategory.entries.filter { category -> category == selected || toolModels.any { it.category == category } }
 
         //"Surprise me": una al azar entre las que ya tienen pantalla; null si no hay ninguna
-        fun surprisePick(tools: List<Tool>): Tool? = implemented(tools).randomOrNull()
+        fun surprisePick(toolModels: List<ToolModel>): ToolModel? = implemented(toolModels).randomOrNull()
     }
 }

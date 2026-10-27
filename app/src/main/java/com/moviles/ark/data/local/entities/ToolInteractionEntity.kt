@@ -2,7 +2,7 @@ package com.moviles.ark.data.local.entities
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
-import com.moviles.ark.domain.models.ToolInteraction
+import com.moviles.ark.domain.models.ToolInteractionModel
 import java.util.Date
 
 //tabla de interacciones con herramientas: una fila cada vez que el usuario usa una herramienta
@@ -35,8 +35,8 @@ data class ToolInteractionEntity(
 )
 
 //de fila de la tabla a modelo de dominio
-fun ToolInteractionEntity.toDomain(): ToolInteraction {
-    return ToolInteraction(
+fun ToolInteractionEntity.toDomain(): ToolInteractionModel {
+    return ToolInteractionModel(
         userId = userId,
         toolId = toolId,
         duration = duration,
@@ -50,7 +50,7 @@ fun ToolInteractionEntity.toDomain(): ToolInteraction {
 }
 
 //de modelo de dominio a fila de la tabla
-fun ToolInteraction.toEntity(): ToolInteractionEntity {
+fun ToolInteractionModel.toEntity(): ToolInteractionEntity {
     return ToolInteractionEntity(
         userId = userId,
         toolId = toolId,

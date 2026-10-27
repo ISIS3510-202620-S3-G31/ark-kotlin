@@ -26,12 +26,12 @@ class UsefulInsightsEngine(
 
     //devuelve los hallazgos del mas util al menos util
     fun generateInsights(
-        checkIns: List<CheckInModel>,
-        interactions: List<ToolInteraction> = emptyList(),
-        tools: List<Tool> = emptyList()
+        checkIns: List<MoodCheckInModel>,
+        interactions: List<ToolInteractionModel> = emptyList(),
+        toolModels: List<ToolModel> = emptyList()
     ): List<InsightModel> {
         val today = dayOf(now())
-        val toolNames = tools.associate { it.id to it.name }
+        val toolNames = toolModels.associate { it.id to it.name }
         return listOfNotNull(
             toolMoodCorrelation(checkIns, interactions, today, toolNames),
             moodTrend(checkIns, today),
@@ -43,8 +43,8 @@ class UsefulInsightsEngine(
 
     //compara el malestar de los dias en que se uso una herramienta contra los dias en que no
     private fun toolMoodCorrelation(
-        checkIns: List<CheckInModel>,
-        interactions: List<ToolInteraction>,
+        checkIns: List<MoodCheckInModel>,
+        interactions: List<ToolInteractionModel>,
         today: Long,
         toolNames: Map<String, String>
     ): InsightModel? {
@@ -87,7 +87,7 @@ class UsefulInsightsEngine(
     }
 
     //compara esta semana (ultimos 7 dias) con la anterior
-    private fun moodTrend(checkIns: List<CheckInModel>, today: Long): InsightModel? {
+    private fun moodTrend(checkIns: List<MoodCheckInModel>, today: Long): InsightModel? {
         val thisWeek = checkIns.filter { today - dayOf(it.timestamp) in 0 until 7 }
         val lastWeek = checkIns.filter { today - dayOf(it.timestamp) in 7 until 14 }
         if (thisWeek.size < MIN_CHECK_INS_PER_WEEK || lastWeek.size < MIN_CHECK_INS_PER_WEEK) return null
@@ -117,7 +117,7 @@ class UsefulInsightsEngine(
     }
 
     //busca si los check-ins dificiles se concentran en un momento del dia
-    private fun timeOfDayPattern(checkIns: List<CheckInModel>, today: Long): InsightModel? {
+    private fun timeOfDayPattern(checkIns: List<MoodCheckInModel>, today: Long): InsightModel? {
         val difficult = checkIns.filter { today - dayOf(it.timestamp) in 0 until LONG_WINDOW_DAYS && isDifficult(it) }
         if (difficult.size < MIN_DIFFICULT_CHECK_INS) return null
 
@@ -138,7 +138,7 @@ class UsefulInsightsEngine(
     }
 
     //la emocion que mas aparecio en los check-ins de la semana
-    private fun frequentEmotion(checkIns: List<CheckInModel>, today: Long): InsightModel? {
+    private fun frequentEmotion(checkIns: List<MoodCheckInModel>, today: Long): InsightModel? {
         val thisWeek = checkIns.filter { today - dayOf(it.timestamp) in 0 until 7 }
         if (thisWeek.size < MIN_CHECK_INS_FOR_EMOTION) return null
 
@@ -170,7 +170,7 @@ class UsefulInsightsEngine(
     }
 
     //la herramienta que mas uso en el ultimo mes
-    private fun favoriteTool(interactions: List<ToolInteraction>, today: Long, toolNames: Map<String, String>): InsightModel? {
+    private fun favoriteTool(interactions: List<ToolInteractionModel>, today: Long, toolNames: Map<String, String>): InsightModel? {
         val recent = interactions.filter { today - dayOf(it.timestamp.time) in 0 until LONG_WINDOW_DAYS }
         if (recent.size < MIN_SESSIONS) return null
 
@@ -191,7 +191,7 @@ class UsefulInsightsEngine(
     }
 
     //emocion que mas se repite en los check-ins dados; la usa la tarjeta para filtrar el catalogo
-    private fun dominantEmotion(checkIns: List<CheckInModel>, onlyDifficult: Boolean): Emotion? {
+    private fun dominantEmotion(checkIns: List<MoodCheckInModel>, onlyDifficult: Boolean): Emotion? {
         val emotions = checkIns.flatMap { it.mood.getEmotions().distinct() }
             .filter { !onlyDifficult || it in DIFFICULT_EMOTIONS }
         return emotions.groupingBy { it }.eachCount().entries
@@ -207,10 +207,10 @@ class UsefulInsightsEngine(
         return calendar.get(Calendar.HOUR_OF_DAY)
     }
 
-    private fun isDifficult(checkIn: CheckInModel): Boolean =
+    private fun isDifficult(checkIn: MoodCheckInModel): Boolean =
         checkIn.mood.getEmotions().any { it in DIFFICULT_EMOTIONS }
 
-    private fun distressOf(checkIn: CheckInModel): Float =
+    private fun distressOf(checkIn: MoodCheckInModel): Float =
         if (isDifficult(checkIn)) checkIn.mood.getIntensity() else 0f
 
     private fun toolName(toolId: String, toolNames: Map<String, String>): String =

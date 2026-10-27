@@ -8,15 +8,13 @@ import com.moviles.ark.data.local.StatsDiskCache
 import com.moviles.ark.data.local.daos.EmotionCheckInDao
 import com.moviles.ark.data.local.daos.ToolRecordDao
 import com.moviles.ark.data.local.entities.toDomain
-import com.moviles.ark.domain.composite.CompoundMood
 import com.moviles.ark.domain.composite.Emotion
 import com.moviles.ark.domain.composite.MoodFactory
 import com.moviles.ark.domain.composite.SingleEmotion
-import com.moviles.ark.domain.models.CheckInModel
 import com.moviles.ark.domain.models.InsightModel
 import com.moviles.ark.domain.models.StatsCalculator
 import com.moviles.ark.domain.models.StatsModel
-import com.moviles.ark.domain.models.ToolInteraction
+import com.moviles.ark.domain.models.ToolInteractionModel
 import com.moviles.ark.domain.repositories.StatsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -205,21 +203,21 @@ class StatsRepositoryImpl(
             )
         }
 
-        val toolInteractions = mutableListOf<ToolInteraction>()
+        val toolInteractions = mutableListOf<ToolInteractionModel>()
         for (doc in toolDocs) {
-            val toolId = doc.getString("toolId") ?: ToolInteraction.LEGACY_TOOL_ID
+            val toolId = doc.getString("toolId") ?: ToolInteractionModel.LEGACY_TOOL_ID
             val timestampDate = doc.getDate("timestamp")
                 ?: doc.getLong("timestamp")?.let { Date(it) }
                 ?: Date()
-            val duration = doc.getLong("duration")?.toInt() ?: ToolInteraction.DEFAULT_DURATION_SECONDS
-            val interactionType = doc.getString("interactionType") ?: ToolInteraction.DEFAULT_INTERACTION_TYPE
+            val duration = doc.getLong("duration")?.toInt() ?: ToolInteractionModel.DEFAULT_DURATION_SECONDS
+            val interactionType = doc.getString("interactionType") ?: ToolInteractionModel.DEFAULT_INTERACTION_TYPE
             val intensity = (doc.getLong("intensity") ?: 0L).toInt()
             val complete = doc.getBoolean("complete") ?: true
             val value = (doc.getLong("value") ?: 0L).toInt()
             val description = doc.getString("description") ?: ""
 
             toolInteractions.add(
-                ToolInteraction(
+                ToolInteractionModel(
                     userId = currentUserId,
                     toolId = toolId,
                     duration = duration,

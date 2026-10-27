@@ -9,7 +9,7 @@ import com.moviles.ark.data.remote.CrashlyticsHelper
 import com.moviles.ark.data.remote.dtos.ToolDto
 import com.moviles.ark.data.remote.dtos.toDto
 import com.moviles.ark.data.remote.dtos.toEntity
-import com.moviles.ark.domain.models.Tool
+import com.moviles.ark.domain.models.ToolModel
 import com.moviles.ark.domain.repositories.ToolRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -29,7 +29,7 @@ class ToolRepositoryImpl(
     private val catalogFileStore: ToolCatalogFileStore
 ) : ToolRepository {
 
-    override fun getTools(): Flow<List<Tool>> {
+    override fun getTools(): Flow<List<ToolModel>> {
         return toolDao.getTools()
             //la primera vez la tabla esta vacia: se llena con el catalogo del archivo interno antes de emitir
             .onStart { seedIfEmpty() }
@@ -38,7 +38,7 @@ class ToolRepositoryImpl(
     }
 
     //"Surprise me" lo usa sin red; si falla se reporta a crashlytics y el home abre la herramienta de respaldo
-    override suspend fun getLocalTools(): Result<List<Tool>> = runCatching {
+    override suspend fun getLocalTools(): Result<List<ToolModel>> = runCatching {
         getTools().first()
     }.onFailure { error ->
         if (error is kotlinx.coroutines.CancellationException) throw error
@@ -49,7 +49,7 @@ class ToolRepositoryImpl(
         )
     }
 
-    override suspend fun getToolById(id: String): Tool? = withContext(Dispatchers.IO) {
+    override suspend fun getToolById(id: String): ToolModel? = withContext(Dispatchers.IO) {
         seedIfEmpty()
         toolDao.getToolById(id)?.toDomain()
     }
@@ -73,7 +73,7 @@ class ToolRepositoryImpl(
         }
     }
 
-    override suspend fun saveCatalog(tools: List<Tool>): Result<Unit> = withContext(Dispatchers.IO) {
+    override suspend fun saveCatalog(tools: List<ToolModel>): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             if (tools.isEmpty()) error("The tools catalog is empty")
             storeCatalog(tools.map { it.toDto() })
@@ -105,6 +105,6 @@ class ToolRepositoryImpl(
         private const val TOOLS_COLLECTION = "tools"
 
         //el catalogo por defecto es del dominio (Tool.DEFAULT_CATALOG); este nombre se deja para el codigo de datos que ya lo usa
-        val sampleTools = Tool.DEFAULT_CATALOG
+        val sampleTools = ToolModel.DEFAULT_CATALOG
     }
 }

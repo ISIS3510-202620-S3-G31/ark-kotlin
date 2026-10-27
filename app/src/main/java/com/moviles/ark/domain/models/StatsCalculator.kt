@@ -13,8 +13,8 @@ class StatsCalculator(
 
     //calcula el modelo completo de estadisticas a partir de check-ins e interacciones
     fun calculateStats(
-        checkIns: List<CheckInModel>,
-        interactions: List<ToolInteraction>,
+        checkIns: List<MoodCheckInModel>,
+        interactions: List<ToolInteractionModel>,
         toolPercentages: Map<String, Float> = emptyMap()
     ): StatsModel {
         val dateFormat = SimpleDateFormat("yyyyMMdd", Locale.getDefault())

@@ -17,8 +17,8 @@ data class ScreamSession(
     }
 
     //la misma sesion como interaccion con la herramienta; intensity = pico de 0 a 100
-    fun toInteraction(userId: String): ToolInteraction {
-        return ToolInteraction(
+    fun toInteraction(userId: String): ToolInteractionModel {
+        return ToolInteractionModel(
             userId = userId,
             toolId = TOOL_ID,
             duration = durationSeconds,

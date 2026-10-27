@@ -5,7 +5,7 @@ import com.moviles.ark.domain.composite.MoodComponent
 import com.moviles.ark.domain.composite.MoodFactory
 
 //modelo de dominio que representa un registro de check-in emocional del usuario con coordenadas gps
-data class CheckInModel(
+data class MoodCheckInModel(
     val mood: MoodComponent,
     val note: String = "",
     val latitude: Double? = null,
@@ -53,7 +53,7 @@ data class CheckInModel(
         fun isNoteNearLimit(note: String): Boolean = remainingNoteChars(note) <= NOTE_WARNING_REMAINING
 
         //check-in que queda al terminar una herramienta con las emociones del feedback
-        fun afterTool(emotions: Set<Emotion>, intensity: Int, comment: String): CheckInModel = CheckInModel(
+        fun afterTool(emotions: Set<Emotion>, intensity: Int, comment: String): MoodCheckInModel = MoodCheckInModel(
             mood = MoodFactory.fromEmotions(emotions, intensity),
             note = if (comment.isNotBlank()) "Post-tool feedback: $comment" else "Post-tool feedback"
         )
