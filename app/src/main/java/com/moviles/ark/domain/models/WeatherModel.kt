@@ -28,10 +28,10 @@ data class WeatherModel(
     }
 }
 
-//que tiene el clima de especial; el home lo usa para el icono de la tarjeta
-enum class WeatherCondition { RAINY, COLD, SUNNY }
+//que tiene el clima de especial; el home lo usa para el icono de la tarjeta (#153)
+enum class WeatherCondition { RAINY, COLD, SUNNY, NEUTRAL }
 
-//herramienta que sugiere el clima y el motivo que se muestra en el home (#134)
+//herramienta que sugiere el clima y el motivo que se muestra en el home (#134, #153)
 data class WeatherSuggestion(
     val tool: Tool,
     val condition: WeatherCondition,

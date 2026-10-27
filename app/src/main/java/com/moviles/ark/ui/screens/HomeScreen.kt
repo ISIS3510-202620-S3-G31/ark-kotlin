@@ -536,34 +536,15 @@ private fun WeatherRecommendationCard(
                 Spacer(modifier = Modifier.width(14.dp))
 
                 Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "WEATHER SUGGESTION",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontFamily = FigtreeFontFamily,
-                            fontWeight = FontWeight.Bold,
-                            color = AccentColor,
-                            fontSize = 11.sp,
-                            letterSpacing = 0.5.sp
-                        )
-                        if (suggestion == null) {
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = AccentColor.copy(alpha = 0.12f)
-                        ) {
-                            Text(
-                                text = "SOON",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontFamily = FigtreeFontFamily,
-                                fontWeight = FontWeight.Bold,
-                                color = AccentColor,
-                                fontSize = 9.sp,
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                            )
-                        }
-                        }
-                    }
+                    Text(
+                        text = "WEATHER SUGGESTION",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontFamily = FigtreeFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        color = AccentColor,
+                        fontSize = 11.sp,
+                        letterSpacing = 0.5.sp
+                    )
 
                     Spacer(modifier = Modifier.height(2.dp))
 
