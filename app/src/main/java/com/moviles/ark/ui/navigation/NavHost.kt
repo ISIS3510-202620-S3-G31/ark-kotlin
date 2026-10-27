@@ -156,8 +156,8 @@ fun AppNavigation(
                 PhotoOfTheDayRoute(
                     //vuelve a donde se abrio: home o el catalogo
                     onBack = { navController.popBackStack() },
-                    onPhotoSaved = {
-                        navController.navigate("post_tool_feedback/photo_of_the_day") {
+                    onPhotoSaved = { durationSeconds ->
+                        navController.navigate("post_tool_feedback/photo_of_the_day?duration=$durationSeconds") {
                             popUpTo("photo_of_the_day_screen") { inclusive = true }
                         }
                     }
@@ -165,9 +165,9 @@ fun AppNavigation(
             }
             //herramienta de respiracion guiada; si completo al menos 1 ciclo navega a feedback
             composable("custom_breathing_screen") {
-                CustomBreathingRoute(onBack = { wasCompleted ->
+                CustomBreathingRoute(onBack = { wasCompleted, durationSeconds ->
                     if (wasCompleted) {
-                        navController.navigate("post_tool_feedback/custom_breathing") {
+                        navController.navigate("post_tool_feedback/custom_breathing?duration=$durationSeconds") {
                             popUpTo("custom_breathing_screen") { inclusive = true }
                         }
                     } else {
@@ -177,9 +177,9 @@ fun AppNavigation(
             }
             //herramienta scream tank; si el microfono alcanzo a escuchar navega a feedback
             composable("scream_tank_screen") {
-                ScreamTankRoute(onBack = { wasCompleted ->
+                ScreamTankRoute(onBack = { wasCompleted, durationSeconds ->
                     if (wasCompleted) {
-                        navController.navigate("post_tool_feedback/scream_tank") {
+                        navController.navigate("post_tool_feedback/scream_tank?duration=$durationSeconds") {
                             popUpTo("scream_tank_screen") { inclusive = true }
                         }
                     } else {

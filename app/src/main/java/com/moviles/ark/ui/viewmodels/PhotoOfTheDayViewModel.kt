@@ -35,6 +35,9 @@ class PhotoOfTheDayViewModel(
     //publico: la pantalla solo lo escucha
     val uiState: StateFlow<PhotoOfTheDayUiState> = _uiState.asStateFlow()
 
+    //momento en que se abrio la herramienta; el viewmodel vive mientras la pantalla esta abierta
+    private val sessionStartMs = now()
+
     //se empieza a escuchar apenas se crea el viewmodel; si la pantalla rota no se vuelve a pedir
     init {
         observeWeek()
@@ -157,6 +160,9 @@ class PhotoOfTheDayViewModel(
     fun onNavigatedToFeedback() {
         _uiState.update { it.copy(isPhotoSaved = false) }
     }
+
+    //segundos desde que se abrio la herramienta hasta ahora (incluye el tiempo en la camara)
+    fun getSessionDurationSeconds(): Int = ((now() - sessionStartMs) / 1000L).toInt().coerceAtLeast(0)
 
     //milisegundos -> "Friday, October 2"
     private fun formatToday(millis: Long): String {
