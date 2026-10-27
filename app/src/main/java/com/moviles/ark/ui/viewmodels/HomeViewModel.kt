@@ -19,6 +19,7 @@ import com.moviles.ark.domain.models.RecommendationContextResolver
 import com.moviles.ark.domain.models.RecommendationDecision
 import com.moviles.ark.domain.models.Tool
 import com.moviles.ark.domain.models.ToolCategory
+import com.moviles.ark.domain.models.ToolEntryPoint
 import com.moviles.ark.domain.models.ToolLatencyTracker
 import com.moviles.ark.domain.models.WeatherSuggestionEngine
 import com.moviles.ark.domain.repositories.LocationRepository
@@ -203,14 +204,14 @@ class HomeViewModel(
             val localTools = toolRepository.getLocalTools().getOrNull()
             val pick = localTools?.let { tools -> Tool.surprisePick(tools.ifEmpty { _uiState.value.tools }.ifEmpty { Tool.DEFAULT_CATALOG }) }
             //abre la herramienta elegida de una vez, por el mismo camino que las demas entradas del home
-            onToolClick(pick?.id ?: Tool.FALLBACK_TOOL_ID)
+            onToolClick(pick?.id ?: Tool.FALLBACK_TOOL_ID, ToolEntryPoint.SURPRISE_ME)
         }
     }
 
-    //las tres entradas del home (catalogo, recomendacion y surprise me) llegan aqui
-    fun onToolClick(toolId: String) {
+    //todas las entradas a una herramienta (catalogo, recomendacion, clima y surprise me) llegan aqui
+    fun onToolClick(toolId: String, entryPoint: ToolEntryPoint = ToolEntryPoint.CATALOG) {
         //el toque es el inicio de la medicion; la pantalla de la herramienta la cierra al dibujarse
-        toolLatencyTracker?.start(toolId)
+        toolLatencyTracker?.start(toolId, entryPoint)
         _uiState.value = _uiState.value.copy(navigateToToolId = toolId)
     }
 

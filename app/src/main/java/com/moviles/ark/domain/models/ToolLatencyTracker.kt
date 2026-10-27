@@ -14,21 +14,26 @@ class ToolLatencyTracker(
     //herramienta que se toco y cuando; solo se espera una a la vez
     private var pendingToolId: String? = null
     private var pendingStartNanos: Long = 0L
+    private var pendingEntryPoint: ToolEntryPoint = ToolEntryPoint.CATALOG
+    //el tracker vive lo mismo que la app: mientras nadie haya medido, la siguiente es la primera apertura
+    private var hasMeasured = false
 
     //el usuario toco una herramienta: si ya habia otra esperando, se reemplaza
-    fun start(toolId: String) {
+    fun start(toolId: String, entryPoint: ToolEntryPoint = ToolEntryPoint.CATALOG) {
         pendingToolId = toolId
         pendingStartNanos = nanoTime()
+        pendingEntryPoint = entryPoint
     }
 
     //la pantalla de la herramienta termino su primer dibujo
     //si no hubo toque antes (por ejemplo al rotar el telefono), no se mide nada
     fun onToolRendered(toolId: String) {
         if (pendingToolId != toolId) return
-        val latency = ToolLoadLatency.between(toolId, pendingStartNanos, nanoTime())
+        val latency = ToolLoadLatency.between(toolId, pendingStartNanos, nanoTime(), pendingEntryPoint, firstOpen = !hasMeasured)
         pendingToolId = null
         //le preguntamos al modelo si la medicion es valida antes de enviarla
         if (latency.isValid()) {
+            hasMeasured = true
             analyticsRepository.logToolLoadLatency(latency)
         }
     }
