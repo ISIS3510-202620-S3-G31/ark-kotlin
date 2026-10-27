@@ -51,6 +51,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -74,6 +75,48 @@ fun rememberSpeechToTextHelper(): SpeechToTextHelper {
     }
 }
 
+//sobrecarga de dictado que anexa texto en vivo sin sobreescribir lo que ya estaba escrito en la caja de texto
+@Composable
+fun VoiceDictationComponent(
+    currentText: String,
+    onAppendText: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    maxLength: Int = Int.MAX_VALUE,
+    speechToTextHelper: SpeechToTextHelper = rememberSpeechToTextHelper(),
+    buttonSize: Dp = 38.dp,
+    enabled: Boolean = true,
+    onFallback: (String) -> Unit = {}
+) {
+    var baseTextSnapshot by remember { mutableStateOf("") }
+    val state by speechToTextHelper.state.collectAsStateWithLifecycle()
+
+    //al entrar en escucha captura el texto actual como base inmutable para esta sesion de dictado
+    LaunchedEffect(state) {
+        if (state == SpeechRecognitionState.LISTENING) {
+            baseTextSnapshot = currentText.trimEnd()
+        }
+    }
+
+    VoiceDictationComponent(
+        onTranscription = { spokenText ->
+            val cleanSpoken = spokenText.trim()
+            if (cleanSpoken.isNotEmpty()) {
+                val combined = if (baseTextSnapshot.isBlank()) {
+                    cleanSpoken
+                } else {
+                    "$baseTextSnapshot $cleanSpoken"
+                }
+                onAppendText(combined.take(maxLength))
+            }
+        },
+        modifier = modifier,
+        speechToTextHelper = speechToTextHelper,
+        buttonSize = buttonSize,
+        enabled = enabled,
+        onFallback = onFallback
+    )
+}
+
 //componente de dictado por voz para entradas de texto (ej. notas y pies de foto)
 //aplica tecnicas del curso: multithreading en ram y fallback graceful hacia teclado
 @Composable
@@ -81,6 +124,7 @@ fun VoiceDictationComponent(
     onTranscription: (String) -> Unit,
     modifier: Modifier = Modifier,
     speechToTextHelper: SpeechToTextHelper = rememberSpeechToTextHelper(),
+    buttonSize: Dp = 38.dp,
     enabled: Boolean = true,
     onFallback: (String) -> Unit = {}
 ) {
@@ -141,6 +185,7 @@ fun VoiceDictationComponent(
             VoiceDictationButton(
                 state = state,
                 soundLevel = soundLevel,
+                size = buttonSize,
                 enabled = enabled,
                 onClick = {
                     if (state == SpeechRecognitionState.LISTENING) {
@@ -195,6 +240,7 @@ fun VoiceDictationButton(
     soundLevel: Float,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    size: Dp = 38.dp,
     enabled: Boolean = true
 ) {
     val isListening = state == SpeechRecognitionState.LISTENING
@@ -225,9 +271,11 @@ fun VoiceDictationButton(
         else -> TextColor.copy(alpha = 0.70f)
     }
 
+    val iconSize = (size.value * 0.55f).dp
+
     Box(
         modifier = modifier
-            .size(48.dp)
+            .size(size)
             .scale(if (isListening) waveScale * pulse else 1f)
             .clip(CircleShape)
             .background(backgroundColor)
@@ -241,7 +289,7 @@ fun VoiceDictationButton(
     ) {
         if (isProcessing) {
             CircularProgressIndicator(
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(iconSize),
                 color = SecondaryColor,
                 strokeWidth = 2.dp
             )
@@ -250,7 +298,7 @@ fun VoiceDictationButton(
                 imageVector = if (isListening) Icons.Default.Stop else Icons.Default.Mic,
                 contentDescription = if (isListening) "Stop voice dictation" else "Dictate note with voice",
                 tint = iconColor,
-                modifier = Modifier.size(22.dp)
+                modifier = Modifier.size(iconSize)
             )
         }
     }
