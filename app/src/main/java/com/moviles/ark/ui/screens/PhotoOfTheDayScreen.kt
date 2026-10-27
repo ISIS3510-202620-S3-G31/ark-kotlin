@@ -116,6 +116,7 @@ fun PhotoOfTheDayScreen(
     val pagerState = rememberPagerState(initialPage = (photoDays.size - 1).coerceAtLeast(0)) { photoDays.size }
     val scope = rememberCoroutineScope()
     val carouselRequester = remember { BringIntoViewRequester() }
+    val scrollState = rememberScrollState()
 
     //cuando llega una foto nueva (o un retake) el carrusel se va a la mas reciente
     LaunchedEffect(photoDays.size, uiState.todayPhoto?.id) {
@@ -132,7 +133,7 @@ fun PhotoOfTheDayScreen(
                 .statusBarsPadding()
                 //deja libre la barra de gestos de android para que el nombre del dia del carrusel no quede debajo
                 .navigationBarsPadding()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scrollState)
                 .padding(24.dp)
         ) {
             Header(todayLabel = uiState.todayLabel, onBack = onBack)
@@ -188,6 +189,18 @@ fun PhotoOfTheDayScreen(
                             TodayPhotoActions(
                                 onRetakePhotoClick = onTakePhotoClick,
                                 onDeleteClick = { onShowDeleteDialog(true) }
+                            )
+                        } else if (shownDay != null) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            //volver a hoy: a la foto de hoy en el carrusel o, si no hay, arriba donde se toma
+                            PastDayInfo(
+                                dayName = shownDay.name,
+                                onBackToToday = {
+                                    scope.launch {
+                                        if (uiState.todayPhoto != null) pagerState.animateScrollToPage(photoDays.size - 1)
+                                        else scrollState.animateScrollTo(0)
+                                    }
+                                }
                             )
                         }
                     }
@@ -476,6 +489,34 @@ private fun TodayPhotoActions(onRetakePhotoClick: (() -> Unit)?, onDeleteClick: 
             Spacer(modifier = Modifier.width(8.dp))
             Text("Delete", style = MaterialTheme.typography.labelLarge)
         }
+    }
+}
+
+//foto de un dia pasado: solo se mira, no se puede retomar ni borrar
+@Composable
+private fun PastDayInfo(dayName: String, onBackToToday: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .background(CardFill, RoundedCornerShape(12.dp))
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("Past memory - $dayName", style = MaterialTheme.typography.labelLarge, color = TextColor)
+    }
+    Spacer(modifier = Modifier.height(8.dp))
+    Text(
+        "Entries from past days are in read-only mode.",
+        style = MaterialTheme.typography.bodyLarge,
+        color = TextColor.copy(alpha = 0.7f)
+    )
+    Spacer(modifier = Modifier.height(16.dp))
+    OutlinedButton(
+        onClick = onBackToToday,
+        modifier = Modifier.fillMaxWidth().height(50.dp),
+        border = BorderStroke(1.dp, SecondaryColor),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = TextColor)
+    ) {
+        Text("Back to today", style = MaterialTheme.typography.labelLarge)
     }
 }
 

@@ -68,17 +68,16 @@ class PhotoOfTheDayViewModel(
     }
 
     //la camara llama esto con la direccion de la foto capturada; se guarda sin caption de texto
-    //si hoy ya habia foto es un retake: se borra la anterior, la nueva queda como la de hoy y no se pide feedback otra vez
+    //si hoy ya habia foto es un retake: se borra la anterior y la nueva queda como la de hoy
     fun onPhotoCaptured(uri: String) {
         val previousTodayPhoto = _uiState.value.todayPhoto
-        val isRetake = previousTodayPhoto != null
         _uiState.update { it.copy(pendingPhotoUri = uri, caption = "", isSaving = true, errorMessage = null) }
         viewModelScope.launch {
             if (previousTodayPhoto != null) photoRepository.deletePhoto(previousTodayPhoto.id)
             val result = photoRepository.savePhoto(uri, "", now())
             result.onSuccess {
                 //la foto nueva llega sola por observeWeek; aqui solo se limpia lo pendiente y avisa que se guardo
-                _uiState.update { it.copy(isSaving = false, pendingPhotoUri = null, caption = "", isPhotoSaved = !isRetake) }
+                _uiState.update { it.copy(isSaving = false, pendingPhotoUri = null, caption = "", isPhotoSaved = true) }
             }
             result.onFailure {
                 _uiState.update { it.copy(isSaving = false, errorMessage = "Could not save your photo, try again") }
