@@ -52,7 +52,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -83,12 +82,12 @@ import com.moviles.ark.ui.viewmodels.MicPermissionState
 import com.moviles.ark.ui.viewmodels.ScreamTankUiState
 import com.moviles.ark.ui.viewmodels.ScreamTankViewModel
 
-//disenio del figma "Mockups - Moviles" (Scream Tank), sin el escenario oscuro: el tanque grande sobre el fondo, medidor de 12 segmentos y tres botones
+//disenio del figma "Mockups - Moviles" (Scream Tank), sin el escenario oscuro, las ondas ni el porcentaje: el tanque grande y centrado, medidor de 12 segmentos y tres botones
 //solo colores de la paleta (ms6) y estilos del tema: titulo en Sorean, el resto Figtree
 
-//medidas del tanque en el figma (el ancho llega hasta el porcentaje, sin el espacio vacio de la derecha)
-private val TankWidth = 266.dp
-private val TankHeight = 250.dp
+//medidas del cuerpo del tanque en el figma
+private val TankWidth = 115.dp
+private val TankHeight = 246.dp
 //cuanto puede crecer el tanque sobre su medida del figma
 private const val MAX_TANK_SCALE = 1.6f
 
@@ -212,7 +211,7 @@ private fun ScreamHeader(onBack: () -> Unit) {
     }
 }
 
-//escenario: aviso de estado arriba a la izquierda, el tanque en el centro y una frase debajo
+//escenario: aviso de estado arriba, el tanque en el centro y una frase debajo, todo centrado
 @Composable
 private fun ScreamStage(
     uiState: ScreamTankUiState,
@@ -234,7 +233,6 @@ private fun ScreamStage(
             TankIllustration(
                 level = uiState.currentLevel,
                 peakLevel = uiState.peakLevel,
-                isListening = uiState.isListening,
                 modifier = Modifier.weight(1f, fill = false)
             )
             Text(
@@ -261,7 +259,7 @@ private fun ScreamStage(
         StatusPill(
             uiState = uiState,
             modifier = Modifier
-                .align(Alignment.TopStart)
+                .align(Alignment.TopCenter)
                 .padding(16.dp)
         )
     }
@@ -301,10 +299,9 @@ private fun StatusPill(uiState: ScreamTankUiState, modifier: Modifier = Modifier
     }
 }
 
-//el tanque del figma: bandas naranjas, tapas grises, un tubo oscuro con 10 celdas que se llenan con el volumen,
-//las ondas de voz a la izquierda mientras se escucha y el porcentaje arriba a la derecha
+//el tanque del figma centrado: bandas naranjas, tapas grises y un tubo oscuro con 10 celdas que se llenan con el volumen
 @Composable
-private fun TankIllustration(level: Int, peakLevel: Int, isListening: Boolean, modifier: Modifier = Modifier) {
+private fun TankIllustration(level: Int, peakLevel: Int, modifier: Modifier = Modifier) {
     BoxWithConstraints(modifier = modifier, contentAlignment = Alignment.Center) {
         //el dibujo crece hasta llenar el espacio libre (con tope) y se achica si no cabe, sin deformarse
         val scale = minOf(MAX_TANK_SCALE, maxWidth / TankWidth, if (maxHeight == Dp.Infinity) 1f else maxHeight / TankHeight)
@@ -314,28 +311,12 @@ private fun TankIllustration(level: Int, peakLevel: Int, isListening: Boolean, m
                 .clearAndSetSemantics { contentDescription = "Current level $level of 100, peak $peakLevel" },
             contentAlignment = Alignment.Center
         ) {
-            Box(
+            AcousticContainer(
+                level = level,
                 modifier = Modifier
                     .requiredSize(TankWidth, TankHeight)
                     .graphicsLayer(scaleX = scale, scaleY = scale)
-            ) {
-                Image(
-                    painter = painterResource(R.drawable.scream_voice_waves),
-                    contentDescription = null,
-                    //las ondas eran claras sobre el escenario oscuro; sobre el fondo de la app van en el color del texto
-                    colorFilter = ColorFilter.tint(TextColor),
-                    modifier = Modifier
-                        .size(80.dp, 250.dp)
-                        .alpha(if (isListening) 1f else 0f)
-                )
-                AcousticContainer(level = level, modifier = Modifier.offset(x = 90.dp, y = 2.dp))
-                Text(
-                    text = "$level%",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = TextColor,
-                    modifier = Modifier.offset(x = 228.dp)
-                )
-            }
+            )
         }
     }
 }
