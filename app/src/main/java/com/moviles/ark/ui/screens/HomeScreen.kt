@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
@@ -33,6 +34,7 @@ import java.util.Date
 import java.text.SimpleDateFormat
 import com.moviles.ark.ui.components.getEmotionEmoji
 import com.moviles.ark.ui.components.getEmotionColor
+import com.moviles.ark.domain.composite.SingleEmotion
 import com.moviles.ark.domain.models.CheckInModel
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.GridView
@@ -69,8 +71,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.R
-import com.moviles.ark.data.local.AvatarPreferences
-import com.moviles.ark.data.repositories.ToolRepositoryImpl
+import com.moviles.ark.ui.components.avatarDrawable
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.border
 import com.moviles.ark.domain.models.Tool
@@ -91,6 +92,9 @@ import com.moviles.ark.ui.viewmodels.HomeViewModel
 import com.moviles.ark.ui.viewmodels.MoodCheckInViewModel
 import kotlinx.coroutines.delay
 
+//fondo neutro de chips y cajas internas sacado de la paleta: el color de texto con muy poca opacidad
+private val NeutralSurfaceColor = TextColor.copy(alpha = 0.06f)
+
 @Composable
 fun HomeRoute(
     viewModel: HomeViewModel = viewModel(factory = HomeViewModel.Factory),
@@ -98,7 +102,7 @@ fun HomeRoute(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    //al volver de una herramienta se recalculan las recomendaciones con la nueva interaccion (#96)
+    //al volver de una herramienta se recalculan las recomendaciones con la nueva interaccion
     LaunchedEffect(Unit) {
         viewModel.onHomeShown()
     }
@@ -116,23 +120,24 @@ fun HomeRoute(
         onSurpriseMe = viewModel::onSurpriseMe,
         onToolClick = viewModel::onToolClick,
         onCheckInSaved = viewModel::onCheckInSaved,
+        onCheckInPromptShown = viewModel::onCheckInPromptShown,
         onNavigateToTool = onNavigateToTool
     )
 }
 
 @Composable
 fun HomeScreen(
-    uiState: HomeUiState = HomeUiState(tools = ToolRepositoryImpl.sampleTools, filteredTools = ToolRepositoryImpl.sampleTools),
+    uiState: HomeUiState = HomeUiState(tools = Tool.DEFAULT_CATALOG, filteredTools = Tool.DEFAULT_CATALOG),
     onCategorySelect: (ToolCategory?) -> Unit = {},
     onSurpriseMe: () -> Unit = {},
     onToolClick: (String) -> Unit = {},
     onCheckInSaved: () -> Unit = {},
+    onCheckInPromptShown: () -> Unit = {},
     onNavigateToTool: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     var showCheckInPopup by remember { mutableStateOf(false) }
     var showReviewPopup by remember { mutableStateOf(false) }
-    var hasAutoPrompted by remember { mutableStateOf(false) }
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -145,10 +150,13 @@ fun HomeScreen(
                 Manifest.permission.ACCESS_COARSE_LOCATION
             )
         )
-        if (!uiState.isCheckInCompleted && !hasAutoPrompted) {
-            delay(1500)
-            hasAutoPrompted = true
+    }
+
+    //el viewmodel decide cuando ofrecer el check-in; la pantalla solo abre el dialogo
+    LaunchedEffect(uiState.showCheckInPrompt) {
+        if (uiState.showCheckInPrompt) {
             showCheckInPopup = true
+            onCheckInPromptShown()
         }
     }
 
@@ -183,7 +191,7 @@ fun HomeScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Image(
-                                painter = painterResource(AvatarPreferences.getDrawableRes(uiState.avatarId)),
+                                painter = painterResource(avatarDrawable(uiState.avatarId)),
                                 contentDescription = "User Avatar",
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()
@@ -207,7 +215,7 @@ fun HomeScreen(
                                     showCheckInPopup = true
                                 }
                             },
-                        color = if (!uiState.isCheckInCompleted) PrimaryColor.copy(alpha = 0.15f) else Color(0xFFEFE0C2),
+                        color = if (!uiState.isCheckInCompleted) PrimaryColor.copy(alpha = 0.15f) else NeutralSurfaceColor,
                         border = BorderStroke(1.dp, if (!uiState.isCheckInCompleted) PrimaryColor.copy(alpha = 0.4f) else TextColor.copy(alpha = 0.12f)),
                         shape = RoundedCornerShape(20.dp)
                     ) {
@@ -253,11 +261,11 @@ fun HomeScreen(
                                 .size(32.dp)
                                 .clip(CircleShape)
                                 .border(2.dp, BackgroundColor, CircleShape)
-                                .background(Color.White),
+                                .background(SecondaryColor.copy(alpha = 0.15f)),
                             contentAlignment = Alignment.Center
                         ) {
                             Image(
-                                painter = painterResource(AvatarPreferences.getDrawableRes(uiState.avatarId)),
+                                painter = painterResource(avatarDrawable(uiState.avatarId)),
                                 contentDescription = "Active Avatar Badge",
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()
@@ -303,8 +311,8 @@ fun HomeScreen(
                 )
             }
 
-            //1. recomendacion inteligente por Strategy (#16)
-            val recommendedTool = uiState.tools.firstOrNull()
+            //1. recomendacion inteligente por Strategy (la elige el viewmodel)
+            val recommendedTool = uiState.recommendedTool
             if (recommendedTool != null) {
                 item {
                     RecommendationCardComponent(
@@ -315,31 +323,22 @@ fun HomeScreen(
                 }
             }
 
-            //2. recomendacion al azar (Surprise me)
+            //2. recomendacion al azar (Surprise me): abre directamente una herramienta al azar
             item {
                 LeaveItToChanceCard(
                     onSurpriseMe = onSurpriseMe
                 )
             }
 
-            //banner si eligio una herramienta al azar
-            if (uiState.surpriseTool != null) {
+            //3. recomendacion basada en el clima: solo aparece cuando el clima sugiere una herramienta,
+            //y Explore la abre; sin internet, sin ubicacion o con clima neutro la tarjeta no se muestra
+            uiState.weatherSuggestion?.let { suggestion ->
                 item {
-                    SurpriseResultBanner(
-                        tool = uiState.surpriseTool,
-                        onOpenTool = { onToolClick(uiState.surpriseTool.id) }
+                    WeatherRecommendationCard(
+                        suggestion = suggestion,
+                        onOpenTool = { toolId -> onToolClick(toolId) }
                     )
                 }
-            }
-
-            //3. recomendacion basada en el clima (#134): con sugerencia la tarjeta muestra la herramienta y el motivo
-            //y Explore la abre; sin internet, sin ubicacion o con clima neutro queda la tarjeta general
-            item {
-                WeatherRecommendationCard(
-                    suggestion = uiState.weatherSuggestion,
-                    onClick = { onNavigateToTool("tools_catalog_screen") },
-                    onOpenTool = { toolId -> onToolClick(toolId) }
-                )
             }
 
             //acceso directo al catalogo completo de herramientas de regulacion
@@ -358,11 +357,14 @@ fun HomeScreen(
                 checkInViewModel.resetDraft()
                 showCheckInPopup = false
             },
-            properties = DialogProperties(usePlatformDefaultWidth = false)
+            //decorFitsSystemWindows en false: el dialogo no se encoge solo con el teclado, asi que
+            //safeDrawingPadding le quita el espacio del teclado y de las barras y el formulario puede hacer scroll
+            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .safeDrawingPadding()
                     .padding(horizontal = 16.dp, vertical = 24.dp)
                     .shadow(16.dp, RoundedCornerShape(26.dp))
                     .clip(RoundedCornerShape(26.dp))
@@ -489,13 +491,12 @@ private fun DailyCheckInCard(
 
 @Composable
 private fun WeatherRecommendationCard(
-    suggestion: WeatherSuggestion?,
-    onClick: () -> Unit,
+    suggestion: WeatherSuggestion,
     onOpenTool: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    //con sugerencia del clima la tarjeta abre esa herramienta; sin ella sigue llevando al catalogo
-    val onCardClick = { if (suggestion != null) onOpenTool(suggestion.tool.id) else onClick() }
+    //la tarjeta abre la herramienta que sugiere el clima
+    val onCardClick = { onOpenTool(suggestion.tool.id) }
     Card(
         modifier = modifier
             .fillMaxWidth()
@@ -524,7 +525,7 @@ private fun WeatherRecommendationCard(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = when (suggestion?.condition) {
+                        imageVector = when (suggestion.condition) {
                             WeatherCondition.RAINY -> Icons.Default.Umbrella
                             WeatherCondition.COLD -> Icons.Default.AcUnit
                             else -> Icons.Default.WbSunny
@@ -548,29 +549,12 @@ private fun WeatherRecommendationCard(
                             fontSize = 11.sp,
                             letterSpacing = 0.5.sp
                         )
-                        if (suggestion == null) {
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = AccentColor.copy(alpha = 0.12f)
-                        ) {
-                            Text(
-                                text = "SOON",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontFamily = FigtreeFontFamily,
-                                fontWeight = FontWeight.Bold,
-                                color = AccentColor,
-                                fontSize = 9.sp,
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                            )
-                        }
-                        }
                     }
 
                     Spacer(modifier = Modifier.height(2.dp))
 
                     Text(
-                        text = suggestion?.tool?.name ?: "Weather-based Activity",
+                        text = suggestion.tool.name,
                         style = MaterialTheme.typography.titleMedium,
                         fontFamily = FigtreeFontFamily,
                         fontWeight = FontWeight.Bold,
@@ -579,7 +563,7 @@ private fun WeatherRecommendationCard(
                     )
 
                     Text(
-                        text = suggestion?.reason ?: "Tune your practice to today's climate and sunlight.",
+                        text = suggestion.reason,
                         style = MaterialTheme.typography.bodyLarge,
                         fontFamily = FigtreeFontFamily,
                         color = TextColor.copy(alpha = 0.75f),
@@ -622,7 +606,7 @@ private fun BrowseCatalogBanner(
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
             .clickable { onOpenCatalog() },
-        color = Color(0xFFEFE0C2),
+        color = NeutralSurfaceColor,
         shape = RoundedCornerShape(18.dp),
         border = BorderStroke(1.dp, TextColor.copy(alpha = 0.08f))
     ) {
@@ -748,56 +732,9 @@ private fun LeaveItToChanceCard(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                     contentDescription = "Surprise me",
-                    tint = Color.White,
+                    tint = TextColor,
                     modifier = Modifier.size(16.dp)
                 )
-            }
-        }
-    }
-}
-
-@Composable
-private fun SurpriseResultBanner(
-    tool: Tool,
-    onOpenTool: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onOpenTool() },
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = SecondaryColor),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "WE PICKED FOR YOU",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontFamily = FigtreeFontFamily,
-                    fontWeight = FontWeight.Bold,
-                    color = TextColor.copy(alpha = 0.8f),
-                    fontSize = 11.sp,
-                    letterSpacing = 0.5.sp
-                )
-                Text(
-                    text = tool.name,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = TextColor,
-                )
-            }
-            Button(
-                onClick = onOpenTool,
-                colors = ButtonDefaults.buttonColors(containerColor = PrimaryColor),
-                shape = RoundedCornerShape(14.dp),
-            ) {
-                Text("Open", color = TextColor, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -846,7 +783,7 @@ private fun DailyCheckInReviewDialog(
                     ) {
                         Surface(
                             shape = RoundedCornerShape(12.dp),
-                            color = Color(0xFFEFE0C2),
+                            color = NeutralSurfaceColor,
                             border = BorderStroke(1.dp, TextColor.copy(alpha = 0.12f))
                         ) {
                             Row(
@@ -874,7 +811,7 @@ private fun DailyCheckInReviewDialog(
                             modifier = Modifier
                                 .size(34.dp)
                                 .clip(CircleShape)
-                                .background(Color.White.copy(alpha = 0.7f))
+                                .background(NeutralSurfaceColor)
                                 .clickable(onClick = onDismiss),
                             contentAlignment = Alignment.Center
                         ) {
@@ -954,7 +891,7 @@ private fun DailyCheckInReviewDialog(
                                 color = TextColor.copy(alpha = 0.65f)
                             )
                             Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                                for (i in 1..5) {
+                                for (i in SingleEmotion.MIN_INTENSITY..SingleEmotion.MAX_INTENSITY) {
                                     Box(
                                         modifier = Modifier
                                             .size(8.dp)
@@ -987,8 +924,8 @@ private fun DailyCheckInReviewDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(16.dp))
-                            .background(Color.White.copy(alpha = 0.7f))
-                            .border(1.dp, Color(0xFFEADBCE), RoundedCornerShape(16.dp))
+                            .background(NeutralSurfaceColor)
+                            .border(1.dp, TextColor.copy(alpha = 0.12f), RoundedCornerShape(16.dp))
                             .padding(14.dp)
                     ) {
                         Text(
@@ -1012,7 +949,7 @@ private fun DailyCheckInReviewDialog(
                         horizontalArrangement = Arrangement.Center,
                         modifier = Modifier
                             .clip(RoundedCornerShape(10.dp))
-                            .background(Color.White.copy(alpha = 0.35f))
+                            .background(NeutralSurfaceColor)
                             .padding(horizontal = 12.dp, vertical = 5.dp)
                     ) {
                         Text("📍", fontSize = 12.sp)
@@ -1044,7 +981,7 @@ private fun DailyCheckInReviewDialog(
                             text = "Close",
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
-                            color = Color.White
+                            color = TextColor
                         )
                     }
                 }

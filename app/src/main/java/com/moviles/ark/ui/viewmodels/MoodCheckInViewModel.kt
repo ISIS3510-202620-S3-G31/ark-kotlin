@@ -8,10 +8,9 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
-import com.moviles.ark.data.local.sensors.LocationStatus
-import com.moviles.ark.domain.composite.CompoundMood
+import com.moviles.ark.domain.models.LocationStatus
 import com.moviles.ark.domain.composite.Emotion
-import com.moviles.ark.domain.composite.MoodComponent
+import com.moviles.ark.domain.composite.MoodFactory
 import com.moviles.ark.domain.composite.SingleEmotion
 import com.moviles.ark.domain.models.CheckInModel
 import com.moviles.ark.domain.repositories.LocationRepository
@@ -66,7 +65,7 @@ class MoodCheckInViewModel(
     fun loadCurrentLocation() {
         val repository = locationRepository ?: return
         if (locationJob?.isActive == true) return
-        //se borran las coordenadas anteriores mientras se busca: nunca se guarda una ubicacion vieja (#144)
+        //se borran las coordenadas anteriores mientras se busca: nunca se guarda una ubicacion vieja
         privateUiState.value = privateUiState.value.copy(
             latitude = null,
             longitude = null,
@@ -74,13 +73,13 @@ class MoodCheckInViewModel(
             locationStatus = null
         )
         locationJob = viewModelScope.launch {
-            //el repositorio lee el gps en Dispatchers.IO con tiempo maximo y no lanza excepciones (#144)
+            //el repositorio lee el gps en Dispatchers.IO con tiempo maximo y no lanza excepciones
             val result = repository.getCurrentLocation()
             privateUiState.value = privateUiState.value.copy(
                 latitude = result.latitude,
                 longitude = result.longitude,
                 locationStatus = result.status,
-                //con el gps apagado o sin permiso se avisa con el dialogo; el check-in se guarda sin coordenadas (#112)
+                //con el gps apagado o sin permiso se avisa con el dialogo; el check-in se guarda sin coordenadas
                 showLocationDisabledDialog = result.status == LocationStatus.DISABLED
             )
             Log.d("MoodCheckIn", "GPS loaded: status=${result.status}, lat=${result.latitude}, lon=${result.longitude}")
@@ -117,7 +116,7 @@ class MoodCheckInViewModel(
         privateUiState.value = privateUiState.value.copy(
             selectedEmotions = newEmotions,
             activeEmotion = newActive,
-            intensity = if (isAdding) 3f else privateUiState.value.intensity,
+            intensity = if (isAdding) SingleEmotion.DEFAULT_INTENSITY.toFloat() else privateUiState.value.intensity,
             errorMessage = null
         )
     }
@@ -129,16 +128,10 @@ class MoodCheckInViewModel(
         )
     }
 
-    //sanitiza con take para tolerar pegados masivos desde el portapapeles sin que superen el limite
-    //y mantiene la inmutabilidad del stateflow notificando solo si el contenido es valido
+    //el modelo recorta la nota al limite, por ejemplo si se pega un texto largo
     fun onNoteChange(newNote: String) {
-        val sanitizedNote = if (newNote.length > CheckInModel.MAX_NOTE_LENGTH) {
-            newNote.take(CheckInModel.MAX_NOTE_LENGTH)
-        } else {
-            newNote
-        }
         privateUiState.value = privateUiState.value.copy(
-            note = sanitizedNote,
+            note = CheckInModel.limitNote(newNote),
             errorMessage = null
         )
     }
@@ -156,34 +149,23 @@ class MoodCheckInViewModel(
         val state = privateUiState.value
         //si ya se registro hoy, se bloquea la creacion de un nuevo check-in
         if (state.isAlreadyCheckedInToday) {
-            privateUiState.value = state.copy(errorMessage = "You have already completed your daily check-in today")
+            privateUiState.value = state.copy(errorMessage = CheckInModel.ALREADY_CHECKED_IN_ERROR)
             return false
         }
         //evita envios multiples simultaneos
         if (state.isLoading || state.isSaved) {
             return false
         }
-        if (state.selectedEmotions.isEmpty()) {
-            privateUiState.value = state.copy(errorMessage = "Please select at least one emotion")
-            return false
-        }
-        val moodResult: MoodComponent = if (state.selectedEmotions.size == 1) {
-            SingleEmotion(state.selectedEmotions.first(), state.intensity.toInt())
-        } else {
-            val compound = CompoundMood()
-            for (emotion in state.selectedEmotions) {
-                compound.add(SingleEmotion(emotion, state.intensity.toInt()))
-            }
-            compound
-        }
+        //el modelo arma el animo (una emocion o varias) y valida el check-in
         val checkIn = CheckInModel(
-            mood = moodResult,
+            mood = MoodFactory.fromEmotions(state.selectedEmotions, state.intensity.toInt()),
             note = state.note,
             latitude = state.latitude,
             longitude = state.longitude
         )
-        if (!checkIn.isValidNote()) {
-            privateUiState.value = state.copy(errorMessage = "Note cannot exceed 280 characters")
+        val validationError = checkIn.validationError()
+        if (validationError != null) {
+            privateUiState.value = state.copy(errorMessage = validationError)
             return false
         }
         Log.d("MoodCheckIn", "CheckIn saved locally: mood=${checkIn.mood.getName()}, lat=${checkIn.latitude}, lon=${checkIn.longitude}")

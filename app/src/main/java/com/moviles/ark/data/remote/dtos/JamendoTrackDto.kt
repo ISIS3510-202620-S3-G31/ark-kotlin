@@ -1,6 +1,6 @@
 package com.moviles.ark.data.remote.dtos
 
-//dto para representar una cancion individual devuelta por el api de jamendo (#7)
+//dto para representar una cancion individual devuelta por el api de jamendo
 data class JamendoTrackDto(
     val id: String = "",
     val name: String = "",

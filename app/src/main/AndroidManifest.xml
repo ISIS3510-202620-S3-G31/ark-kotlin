@@ -48,7 +48,7 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
-        <!-- recibe los mensajes de datos de fcm que avisan cambios en el catalogo de herramientas (#156) -->
+        <!-- recibe los mensajes de datos de fcm que avisan cambios en el catalogo de herramientas -->
         <service
             android:name=".data.remote.ToolsCatalogMessagingService"
             android:exported="false">

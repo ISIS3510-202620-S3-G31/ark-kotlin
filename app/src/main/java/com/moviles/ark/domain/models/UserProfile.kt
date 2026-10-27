@@ -1,8 +1,6 @@
 package com.moviles.ark.domain.models
 
-import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Locale
+import java.util.TimeZone
 
 //datos del usuario que se muestran en el perfil
 //es distinto de UserModel: UserModel sirve para registrarse y trae la clave, este nunca la tiene
@@ -24,54 +22,49 @@ data class UserProfile(
     val avatarPath: String? = null
 ) {
     //reglas de negocio para editar el perfil: las mismas del registro (UserModel)
-    fun isValidName(): Boolean {
-        val trimmed = name.trim()
-        return trimmed.length in MIN_NAME_LENGTH..MAX_NAME_LENGTH && trimmed.matches(NAME_REGEX)
-    }
+    fun isValidName(): Boolean = UserModel.nameError(name) == null
 
-    fun isValidBirthDate(): Boolean {
-        if (!birthDate.matches(DATE_REGEX)) return false
-        val format = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).apply { isLenient = false }
-        val date = runCatching { format.parse(birthDate) }.getOrNull() ?: return false
-        val birthCalendar = Calendar.getInstance().apply { time = date }
-        val today = Calendar.getInstance()
-        if (birthCalendar.after(today)) return false
-        var calculatedAge = today.get(Calendar.YEAR) - birthCalendar.get(Calendar.YEAR)
-        if (today.get(Calendar.DAY_OF_YEAR) < birthCalendar.get(Calendar.DAY_OF_YEAR)) {
-            calculatedAge--
-        }
-        return calculatedAge in MIN_AGE..MAX_AGE
-    }
+    fun isValidBirthDate(): Boolean = UserModel.birthDateError(birthDate) == null
 
     fun isValidAge(): Boolean {
         return age in MIN_AGE..MAX_AGE
     }
 
+    //el error al guardar la edicion del perfil, o null si se puede guardar
+    fun editError(): String? = when {
+        !isValidName() -> "Your name needs $MIN_NAME_LENGTH to $MAX_NAME_LENGTH letters"
+        !isValidBirthDate() -> "Enter a valid birth date (YYYY-MM-DD); you need to be $MIN_AGE to $MAX_AGE years old"
+        else -> null
+    }
+
     //calcula la edad a partir de la fecha de nacimiento; si no hay fecha, usa la edad guardada
-    fun getCalculatedAge(): Int {
-        if (birthDate.matches(DATE_REGEX)) {
-            val format = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).apply { isLenient = false }
-            val date = runCatching { format.parse(birthDate) }.getOrNull()
-            if (date != null) {
-                val birthCalendar = Calendar.getInstance().apply { time = date }
-                val today = Calendar.getInstance()
-                var calculated = today.get(Calendar.YEAR) - birthCalendar.get(Calendar.YEAR)
-                if (today.get(Calendar.DAY_OF_YEAR) < birthCalendar.get(Calendar.DAY_OF_YEAR)) {
-                    calculated--
-                }
-                if (calculated >= 0) return calculated
-            }
-        }
-        return age
+    fun getCalculatedAge(): Int = UserModel.ageOf(birthDate) ?: age
+
+    //si no hay nombre (sin internet la primera vez), se usa la parte del correo antes de la @
+    fun displayName(): String = name.ifBlank { email.substringBefore("@") }
+
+    //primera letra de las dos primeras palabras: "David Forero" -> "DF", "lau3" -> "L"
+    fun initials(): String {
+        return displayName().trim().split(Regex("\\s+"))
+            .filter { it.isNotEmpty() }
+            .take(2)
+            .joinToString("") { it.first().uppercase() }
+    }
+
+    //dias de calendario con ark en la hora local: registrarse hoy da 1, manana da 2
+    //se suma el desfase de la zona horaria para que el dia cambie a medianoche local y no de londres
+    fun daysWithArk(now: Long, zone: TimeZone = TimeZone.getDefault()): Int {
+        if (memberSince <= 0L) return 0
+        val today = (now + zone.getOffset(now)) / DAY_MILLIS
+        val firstDay = (memberSince + zone.getOffset(memberSince)) / DAY_MILLIS
+        return (today - firstDay + 1).toInt().coerceAtLeast(1)
     }
 
     companion object {
-        const val MIN_NAME_LENGTH = 2
-        //las reglas de firestore no dejan guardar nombres de mas de 100 letras
-        const val MAX_NAME_LENGTH = 100
-        const val MIN_AGE = 13
-        const val MAX_AGE = 120
-        private val DATE_REGEX = Regex("^\\d{4}-\\d{2}-\\d{2}$")
-        private val NAME_REGEX = Regex("^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ ]+$")
+        const val MIN_NAME_LENGTH = UserModel.MIN_NAME_LENGTH
+        const val MAX_NAME_LENGTH = UserModel.MAX_NAME_LENGTH
+        const val MIN_AGE = UserModel.MIN_AGE
+        const val MAX_AGE = UserModel.MAX_AGE
+        private const val DAY_MILLIS = 24 * 60 * 60 * 1000L
     }
 }

@@ -1,12 +1,17 @@
 package com.moviles.ark.data.repositories
 
 import com.google.firebase.FirebaseNetworkException
+import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
+import com.google.firebase.auth.FirebaseAuthInvalidUserException
+import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
 import com.moviles.ark.data.local.sensors.NetworkConnectivityObserver
 import com.moviles.ark.data.remote.CrashlyticsHelper
 import com.moviles.ark.data.remote.dtos.toDto
 import com.moviles.ark.domain.adapters.AuthServiceAdapter
+import com.moviles.ark.domain.exceptions.EmailAlreadyRegisteredException
+import com.moviles.ark.domain.exceptions.InvalidCredentialsException
 import com.moviles.ark.domain.exceptions.NetworkUnavailableException
 import com.moviles.ark.domain.models.UserModel
 import com.moviles.ark.domain.repositories.AuthRepository
@@ -109,7 +114,12 @@ class AuthRepositoryImpl(
             }
             throw NetworkUnavailableException(message = message, isAirplaneMode = isAirplane, cause = error)
         }
-        throw error
+        //los errores de firebase se traducen a excepciones del dominio para que la ui no dependa de firebase
+        throw when (error) {
+            is FirebaseAuthInvalidCredentialsException, is FirebaseAuthInvalidUserException -> InvalidCredentialsException(error)
+            is FirebaseAuthUserCollisionException -> EmailAlreadyRegisteredException(error)
+            else -> error
+        }
     }
 
     private fun isNetworkError(error: Throwable): Boolean {

@@ -5,7 +5,7 @@ import java.util.Calendar
 import java.util.TimeZone
 import kotlin.math.abs
 
-//motor de insights (#28): analiza en el telefono el historial del usuario y devuelve hallazgos utiles
+//motor de insights: analiza en el telefono el historial del usuario y devuelve hallazgos utiles
 //no usa red ni android; recibe los datos ya leidos de la base local
 class UsefulInsightsEngine(
     private val zone: TimeZone = TimeZone.getDefault(),
@@ -190,7 +190,7 @@ class UsefulInsightsEngine(
         )
     }
 
-    //emocion que mas se repite en los check-ins dados; la usa la tarjeta para filtrar el catalogo (#135)
+    //emocion que mas se repite en los check-ins dados; la usa la tarjeta para filtrar el catalogo
     private fun dominantEmotion(checkIns: List<CheckInModel>, onlyDifficult: Boolean): Emotion? {
         val emotions = checkIns.flatMap { it.mood.getEmotions().distinct() }
             .filter { !onlyDifficult || it in DIFFICULT_EMOTIONS }

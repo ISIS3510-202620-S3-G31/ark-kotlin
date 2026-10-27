@@ -1,6 +1,6 @@
 package com.moviles.ark.domain.models
 
-//nivel de luz del lugar donde esta el usuario, a partir de los lux del sensor (#165)
+//nivel de luz del lugar donde esta el usuario, a partir de los lux del sensor
 //los cortes de 20 y 5000 lux son los del plan del sprint 3: menos de 20 es luz tenue y mas de 5000 es luz de dia
 enum class LightLevel {
     //cuarto oscuro o casi sin luz
@@ -44,7 +44,7 @@ enum class DayPeriod {
     }
 }
 
-//lo que el motor de recomendaciones sabe del entorno sin que el usuario haga nada (#165)
+//lo que el motor de recomendaciones sabe del entorno sin que el usuario haga nada
 data class EnvironmentalContext(
     //null si el telefono no tiene sensor de luz o todavia no ha medido
     val lightLevel: LightLevel? = null,

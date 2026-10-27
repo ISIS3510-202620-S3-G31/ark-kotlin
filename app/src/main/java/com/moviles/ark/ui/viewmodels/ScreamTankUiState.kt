@@ -2,7 +2,7 @@ package com.moviles.ark.ui.viewmodels
 
 import com.moviles.ark.domain.models.DecibelMeter
 
-//estado del permiso del microfono (#157)
+//estado del permiso del microfono
 enum class MicPermissionState {
     //todavia no se ha preguntado en esta pantalla
     UNKNOWN,
@@ -13,7 +13,7 @@ enum class MicPermissionState {
     PERMANENTLY_DENIED
 }
 
-//estado de la pantalla del scream tank (#157)
+//estado de la pantalla del scream tank
 data class ScreamTankUiState(
     val permission: MicPermissionState = MicPermissionState.UNKNOWN,
     val showPermissionDialog: Boolean = false,
