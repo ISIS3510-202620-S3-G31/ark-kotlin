@@ -7,10 +7,8 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
-import com.moviles.ark.data.local.AvatarPreferences
-import com.moviles.ark.data.local.ProfilePreferences
-import com.moviles.ark.data.repositories.ToolRepositoryImpl
 import com.moviles.ark.domain.repositories.AvatarRepository
+import com.moviles.ark.domain.repositories.UserRepository
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
@@ -58,6 +56,8 @@ class HomeViewModel(
     private val locationRepository: LocationRepository? = null,
     //avatar elegido; null en previews
     private val avatarRepository: AvatarRepository? = null,
+    //nombre guardado en el telefono para el saludo; null en previews
+    private val userRepository: UserRepository? = null,
     private val now: () -> Long = { System.currentTimeMillis() },
     initialTools: List<Tool> = Tool.DEFAULT_CATALOG,
     private val defaultDispatcher: CoroutineDispatcher = Dispatchers.Default
@@ -93,7 +93,8 @@ class HomeViewModel(
         checkTodayStatus()
         loadTools()
         loadWeatherSuggestion()
-        observeProfilePreferences()
+        observeAvatar()
+        observeUserName()
     }
 
     //el clima va aparte del resolver de estrategias: no cambia el orden del catalogo, solo llena su propia tarjeta
@@ -118,13 +119,14 @@ class HomeViewModel(
         }
     }
 
-    private fun observeProfilePreferences() {
+    //nombre del perfil guardado en el telefono: el saludo sale al instante y sin red
+    private fun observeUserName() {
+        val repository = userRepository ?: return
         viewModelScope.launch {
-            ProfilePreferences.userProfile.collect { profile ->
-                _uiState.value = _uiState.value.copy(
-                    avatarId = profile.avatarId,
-                    userName = profile.name
-                )
+            repository.observeCachedName().collect { name -> _uiState.update { it.copy(userName = name) } }
+        }
+    }
+
     private fun observeAvatar() {
         val repository = avatarRepository ?: return
         viewModelScope.launch {
@@ -287,7 +289,8 @@ class HomeViewModel(
                     isOnline = app.container.networkConnectivityObserver::isConnected,
                     weatherServiceAdapter = app.container.weatherServiceAdapter,
                     locationRepository = app.container.locationRepository,
-                    avatarRepository = app.container.avatarRepository
+                    avatarRepository = app.container.avatarRepository,
+                    userRepository = app.container.userRepository
                 )
             }
         }
