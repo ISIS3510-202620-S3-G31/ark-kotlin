@@ -71,6 +71,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.domain.composite.Emotion
 import com.moviles.ark.domain.models.InsightModel
+import com.moviles.ark.domain.models.StatsCalculator
 import com.moviles.ark.domain.models.StatsModel
 import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.ui.components.UsefulInsightComponent
@@ -791,7 +792,8 @@ private fun WeeklyEmotionJourneyCard(
     weeklyEmotions: Map<String, Emotion>,
     onShowTooltip: (TooltipInfo) -> Unit = {}
 ) {
-    val dayLabels = if (weeklyIntensities.isNotEmpty()) weeklyIntensities.keys.toList() else listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+    //orden fijo de hace 6 dias hasta hoy, sin depender del orden del mapa que llega de firestore o del cache
+    val dayLabels = StatsCalculator.lastSevenDayLabels()
 
     Card(
         modifier = Modifier
