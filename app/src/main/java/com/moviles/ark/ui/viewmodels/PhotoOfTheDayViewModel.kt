@@ -158,6 +158,11 @@ class PhotoOfTheDayViewModel(
         _uiState.update { it.copy(isPhotoSaved = false) }
     }
 
+    private val sessionStartTime = System.currentTimeMillis()
+
+    fun getSessionDurationSeconds(): Int =
+        ((System.currentTimeMillis() - sessionStartTime) / 1000).toInt().coerceAtLeast(1)
+
     //milisegundos -> "Friday, October 2"
     private fun formatToday(millis: Long): String {
         val format = SimpleDateFormat("EEEE, MMMM d", Locale.ENGLISH)

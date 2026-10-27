@@ -14,7 +14,6 @@ import com.moviles.ark.data.remote.dtos.StatsSummaryDto
 import com.moviles.ark.data.remote.dtos.ToolInteractionDto
 import com.moviles.ark.data.remote.dtos.toDomain
 import com.moviles.ark.data.remote.dtos.toDto
-import com.moviles.ark.data.remote.dtos.toUsefulInsightDto
 import com.moviles.ark.domain.models.StatsCalculator
 import com.moviles.ark.domain.models.StatsModel
 import com.moviles.ark.domain.repositories.StatsRepository
@@ -114,8 +113,6 @@ class StatsRepositoryImpl(
                 weeklyIntensities = emptyMap(),
                 weeklyEmotions = emptyMap(),
                 toolUsagePercentages = emptyMap(),
-                currentInsight = null,
-                allInsights = emptyList(),
                 lastUpdated = System.currentTimeMillis()
             )
             statsDiskCache?.write(currentUserId, emptyStats)
@@ -131,7 +128,7 @@ class StatsRepositoryImpl(
         val toolInteractions = interactionDtos.map { it.toDomain() }
         val toolPercentages = StatsCalculator.toolUsagePercentages(interactionDtos.map { it.toolId }.filter { it.isNotBlank() })
 
-        //la logica de calculo de estadisticas e insights vive en StatsCalculator (dominio)
+        //la logica de calculo de estadisticas vive en StatsCalculator (dominio)
         val calculated = statsCalculator.calculateStats(
             checkIns = checkInModels,
             interactions = toolInteractions,
@@ -142,10 +139,10 @@ class StatsRepositoryImpl(
         //guarda el resumen en el disco del telefono para pintarlo al instante la proxima vez
         statsDiskCache?.write(currentUserId, computedStats)
 
-        //guarda el resumen precomputado e insights en firestore para futuras lecturas directas del backend
+        //guarda el resumen precomputado en firestore para futuras lecturas directas del backend
         saveUserStatsInternal(currentUserId, computedStats, totalToolEntries, todayKey)
 
-        Log.d("StatsRepository", "Calculated and persisted stats with ${computedStats.allInsights.size} insights: total=$totalCheckIns")
+        Log.d("StatsRepository", "Calculated and persisted stats total=$totalCheckIns")
         return@runCatching computedStats
     }
 
@@ -168,19 +165,8 @@ class StatsRepositoryImpl(
                 .document("latest")
                 .set(stats.toDto(totalTools, dayKey))
                 .await()
-
-            //persiste los hallazgos calculados en la subcoleccion de insights historicos
-            val savedAt = System.currentTimeMillis()
-            for (insight in stats.allInsights) {
-                firestore.collection("users")
-                    .document(userId)
-                    .collection("useful_insights")
-                    .document(insight.title.lowercase().replace(" ", "_"))
-                    .set(insight.toUsefulInsightDto(savedAt))
-                    .await()
-            }
         } catch (e: Exception) {
-            Log.e("StatsRepository", "Error saving stats summary and insights to firestore", e)
+            Log.e("StatsRepository", "Error saving stats summary to firestore", e)
         }
     }
 

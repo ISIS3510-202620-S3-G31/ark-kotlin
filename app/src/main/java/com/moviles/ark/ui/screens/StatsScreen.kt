@@ -70,12 +70,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.domain.composite.Emotion
-import com.moviles.ark.domain.models.InsightModel
 import com.moviles.ark.domain.models.StatsCalculator
 import com.moviles.ark.domain.models.EmotionShare
 import com.moviles.ark.domain.models.StatsModel
 import com.moviles.ark.domain.models.ToolCategory
-import com.moviles.ark.ui.components.UsefulInsightComponent
 import com.moviles.ark.ui.components.getEmotionColor
 import com.moviles.ark.ui.components.getEmotionEmoji
 import com.moviles.ark.ui.theme.AccentColor
@@ -1267,7 +1265,6 @@ fun StatsScreenPreview() {
             "Achievement Jar" to 17f,
             "Blow It Out" to 16f
         ),
-        currentInsight = null,
         emotionFrequencies = mapOf(
             Emotion.HAPPINESS to 5,
             Emotion.SURPRISE to 4,

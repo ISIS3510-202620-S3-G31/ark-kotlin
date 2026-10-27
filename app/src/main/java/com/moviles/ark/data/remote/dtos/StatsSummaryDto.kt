@@ -20,8 +20,7 @@ data class StatsSummaryDto(
     val toolUsagePercentages: Map<String, Double> = emptyMap(),
     //nombre de la emocion -> veces que aparece; null en resumenes guardados antes de existir el campo
     val emotionFrequencies: Map<String, Int>? = null,
-    //la app guarda aqui un InsightDto, pero la cloud function del backend escribe el mismo campo como texto
-    //por eso firestore lo lee sin tipo y currentInsightDto() se queda solo con la forma de la app
+    //campo residual en backend en caso de existir en firestore
     val currentInsight: Any? = null,
     //dia del calculo en formato yyyyMMdd
     val lastDayKey: String = "",
@@ -31,17 +30,6 @@ data class StatsSummaryDto(
     //un resumen guardado antes de existir emotionFrequencies no sirve para la tarjeta de distribucion
     //si ya hay check-ins y le falta el campo, hay que recalcularlo
     fun isComplete(): Boolean = totalCheckIns == 0 || emotionFrequencies != null
-
-    //el hallazgo guardado por la app; null si no hay o si es el texto del backend
-    fun currentInsightDto(): InsightDto? {
-        val fields = currentInsight as? Map<*, *> ?: return null
-        return InsightDto(
-            title = fields["title"] as? String ?: "",
-            message = fields["message"] as? String ?: "",
-            advice = fields["advice"] as? String ?: "",
-            actionLabel = fields["actionLabel"] as? String ?: ""
-        )
-    }
 }
 
 //de modelo de dominio a dto; si el modelo no trae fecha de calculo se usa la de ahora
@@ -54,7 +42,7 @@ fun StatsModel.toDto(totalToolEntries: Int, dayKey: String): StatsSummaryDto {
         weeklyEmotions = weeklyEmotions.mapValues { it.value.name },
         toolUsagePercentages = toolUsagePercentages.mapValues { it.value.toDouble() },
         emotionFrequencies = emotionFrequencies.mapKeys { it.key.name },
-        currentInsight = currentInsight?.toDto(),
+        currentInsight = null,
         lastDayKey = dayKey,
         lastUpdated = if (lastUpdated > 0L) lastUpdated else System.currentTimeMillis()
     )
@@ -69,15 +57,12 @@ fun StatsSummaryDto.toDomain(): StatsModel {
         val emotion = MoodFactory.emotionOrDefault(name)
         frequencies[emotion] = frequencies.getOrDefault(emotion, 0) + count
     }
-    val insight = currentInsightDto()?.toDomain(mainEmotion)
     return StatsModel(
         totalCheckIns = totalCheckIns,
         topEmotion = mainEmotion,
         weeklyIntensities = weeklyIntensities.mapValuesTo(LinkedHashMap()) { it.value.toFloat() },
         weeklyEmotions = weeklyEmotions.mapValuesTo(LinkedHashMap()) { MoodFactory.emotionOrDefault(it.value) },
         toolUsagePercentages = toolUsagePercentages.mapValuesTo(LinkedHashMap()) { it.value.toFloat() },
-        currentInsight = insight,
-        allInsights = listOfNotNull(insight),
         emotionFrequencies = frequencies,
         lastUpdated = if (lastUpdated > 0L) lastUpdated else System.currentTimeMillis()
     )
