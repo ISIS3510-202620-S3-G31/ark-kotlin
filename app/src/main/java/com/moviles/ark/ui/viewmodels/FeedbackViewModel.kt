@@ -97,13 +97,6 @@ class FeedbackViewModel(
         )
     }
 
-    fun onIntensityChange(newIntensity: Float) {
-        privateUiState.value = privateUiState.value.copy(
-            intensity = newIntensity,
-            errorMessage = null
-        )
-    }
-
     // Persiste en Room SQLite y sincroniza a Firestore desacoplado via FeedbackRepository
     // Vincula la calificacion tanto a toolId como a interactionId
     fun saveFeedback(onSavedCallback: () -> Unit = {}) {
