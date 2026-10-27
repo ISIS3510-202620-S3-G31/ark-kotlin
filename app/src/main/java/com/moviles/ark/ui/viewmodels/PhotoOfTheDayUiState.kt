@@ -10,12 +10,14 @@ data class PhotoOfTheDayUiState(
     val week: List<PhotoDay> = emptyList(),
     //la foto guardada hoy; solo esta se puede retomar, las de dias pasados no
     val todayPhoto: PhotoEntryModel? = null,
+    //dialogo para confirmar que se borra la foto de hoy
+    val showDeleteDialog: Boolean = false,
     //foto que entrego la camara y todavia no se guarda
     val pendingPhotoUri: String? = null,
     val caption: String = "",
     //cargando las fotos de la semana
     val isLoading: Boolean = true,
-    //guardando la foto nueva
+    //guardando o borrando la foto
     val isSaving: Boolean = false,
     //flag para navegar al feedback tras guardar
     val isPhotoSaved: Boolean = false,

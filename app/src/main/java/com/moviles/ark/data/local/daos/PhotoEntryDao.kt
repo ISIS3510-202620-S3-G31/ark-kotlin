@@ -95,5 +95,39 @@ interface PhotoEntryDao {
             throw e
         }
     }
-}
+    //busca una foto puntual por su id y usuario
+    @Query("SELECT * FROM photo_entries WHERE id = :id AND userId = :currentUserId LIMIT 1")
+    suspend fun getPhotoByIdRaw(id: Long, currentUserId: String): PhotoEntryEntity?
 
+    suspend fun getPhotoById(id: Long, currentUserId: String): PhotoEntryEntity? {
+        return try {
+            getPhotoByIdRaw(id, currentUserId)
+        } catch (e: Exception) {
+            CrashlyticsHelper.logNonFatal(
+                componentName = "PhotoEntryDao",
+                action = "getPhotoById",
+                throwable = e,
+                extraKeys = mapOf("photo_id" to id)
+            )
+            null
+        }
+    }
+
+    //elimina la foto de la base de datos local
+    @Query("DELETE FROM photo_entries WHERE id = :id AND userId = :currentUserId")
+    suspend fun deletePhotoRaw(id: Long, currentUserId: String)
+
+    suspend fun deletePhoto(id: Long, currentUserId: String) {
+        try {
+            deletePhotoRaw(id, currentUserId)
+        } catch (e: Exception) {
+            CrashlyticsHelper.logNonFatal(
+                componentName = "PhotoEntryDao",
+                action = "deletePhoto",
+                throwable = e,
+                extraKeys = mapOf("photo_id" to id)
+            )
+            throw e
+        }
+    }
+}

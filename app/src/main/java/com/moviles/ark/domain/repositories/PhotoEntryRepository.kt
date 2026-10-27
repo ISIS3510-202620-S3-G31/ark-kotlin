@@ -12,4 +12,6 @@ interface PhotoEntryRepository {
 
     //guarda la foto que entrego la camara; sourceUri es la direccion de la foto como texto
     suspend fun savePhoto(sourceUri: String, caption: String, takenAt: Long): Result<PhotoEntryModel>
+    //elimina la foto del almacenamiento local y de la base de datos
+    suspend fun deletePhoto(photoId: Long): Result<Unit>
 }

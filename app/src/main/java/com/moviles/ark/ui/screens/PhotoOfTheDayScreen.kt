@@ -2,11 +2,9 @@ package com.moviles.ark.ui.screens
 
 import android.Manifest
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.Matrix
-import android.media.ExifInterface
 import android.net.Uri
+import com.bumptech.glide.Glide
+import java.io.File
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -46,8 +44,10 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -84,6 +84,7 @@ import com.moviles.ark.domain.models.PhotoDayState
 import com.moviles.ark.domain.models.PhotoEntryModel
 import com.moviles.ark.ui.theme.AppTheme
 import com.moviles.ark.ui.theme.BackgroundColor
+import com.moviles.ark.ui.theme.ErrorColor
 import com.moviles.ark.ui.theme.FigtreeFontFamily
 import com.moviles.ark.ui.theme.PrimaryColor
 import com.moviles.ark.ui.theme.SecondaryColor
@@ -93,8 +94,6 @@ import com.moviles.ark.ui.viewmodels.PhotoOfTheDayUiState
 import com.moviles.ark.ui.viewmodels.PhotoOfTheDayViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.FileInputStream
-import java.io.InputStream
 
 //solo se usan colores de la paleta (ms6); las tarjetas son el texto muy transparente sobre el fondo
 private val CardFill = TextColor.copy(alpha = 0.06f)
@@ -108,7 +107,9 @@ fun PhotoOfTheDayScreen(
     onPickPhotoClick: (() -> Unit)? = null,
     onCaptionChange: (String) -> Unit,
     onRetakeClick: () -> Unit,
-    onSaveClick: () -> Unit
+    onSaveClick: () -> Unit,
+    onShowDeleteDialog: (Boolean) -> Unit = {},
+    onConfirmDelete: () -> Unit = {}
 ) {
     //dias con foto en orden (el mas viejo primero); son las paginas del carrusel
     val photoDays = uiState.week.filter { it.photo != null }
@@ -184,7 +185,10 @@ fun PhotoOfTheDayScreen(
                         //solo la foto de hoy se puede retomar; las de dias pasados solo se miran
                         if (shownDay?.isToday == true) {
                             Spacer(modifier = Modifier.height(16.dp))
-                            TodayPhotoActions(onRetakePhotoClick = onTakePhotoClick)
+                            TodayPhotoActions(
+                                onRetakePhotoClick = onTakePhotoClick,
+                                onDeleteClick = { onShowDeleteDialog(true) }
+                            )
                         }
                     }
                 }
@@ -195,6 +199,10 @@ fun PhotoOfTheDayScreen(
                 Text(uiState.errorMessage, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.error)
             }
         }
+    }
+
+    if (uiState.showDeleteDialog) {
+        DeletePhotoDialog(onDismiss = { onShowDeleteDialog(false) }, onConfirm = onConfirmDelete)
     }
 }
 
@@ -430,9 +438,9 @@ private fun PendingPhotoSection(
     }
 }
 
-//la foto que se ve es la de hoy: etiqueta de guardada y boton para retomarla
+//la foto que se ve es la de hoy: etiqueta de guardada y botones para retomarla o borrarla
 @Composable
-private fun TodayPhotoActions(onRetakePhotoClick: (() -> Unit)?) {
+private fun TodayPhotoActions(onRetakePhotoClick: (() -> Unit)?, onDeleteClick: () -> Unit) {
     Row(
         modifier = Modifier
             .background(SuccessColor, RoundedCornerShape(12.dp))
@@ -443,19 +451,67 @@ private fun TodayPhotoActions(onRetakePhotoClick: (() -> Unit)?) {
         Spacer(modifier = Modifier.width(6.dp))
         Text("Saved for today", style = MaterialTheme.typography.labelLarge, color = TextColor)
     }
-    if (onRetakePhotoClick != null) {
-        Spacer(modifier = Modifier.height(16.dp))
+    Spacer(modifier = Modifier.height(16.dp))
+    Row(modifier = Modifier.fillMaxWidth()) {
         OutlinedButton(
-            onClick = onRetakePhotoClick,
-            modifier = Modifier.fillMaxWidth().height(50.dp),
+            onClick = { onRetakePhotoClick?.invoke() },
+            enabled = onRetakePhotoClick != null,
+            modifier = Modifier.weight(1f).height(50.dp),
             border = BorderStroke(1.dp, SecondaryColor),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = TextColor)
         ) {
-            Icon(Icons.Filled.PhotoCamera, contentDescription = null, tint = TextColor, modifier = Modifier.size(20.dp))
+            Icon(Icons.Filled.PhotoCamera, contentDescription = null, tint = TextColor, modifier = Modifier.size(18.dp))
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Retake today's photo", style = MaterialTheme.typography.labelLarge)
+            Text("Retake", style = MaterialTheme.typography.labelLarge)
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        //borrar es destructivo: borde y texto en el color de error de la paleta
+        OutlinedButton(
+            onClick = onDeleteClick,
+            modifier = Modifier.weight(1f).height(50.dp),
+            border = BorderStroke(1.dp, ErrorColor),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = ErrorColor)
+        ) {
+            Icon(Icons.Filled.Delete, contentDescription = null, tint = ErrorColor, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Delete", style = MaterialTheme.typography.labelLarge)
         }
     }
+}
+
+//confirmacion antes de borrar la foto de hoy, porque no se puede deshacer
+@Composable
+private fun DeletePhotoDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = BackgroundColor,
+        shape = RoundedCornerShape(20.dp),
+        title = { Text("Delete photo?", style = MaterialTheme.typography.headlineSmall, color = TextColor) },
+        text = {
+            Text(
+                "Are you sure you want to delete today's photo? This action cannot be undone.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = TextColor
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(containerColor = ErrorColor, contentColor = BackgroundColor)
+            ) {
+                Text("Delete", style = MaterialTheme.typography.labelLarge)
+            }
+        },
+        dismissButton = {
+            OutlinedButton(
+                onClick = onDismiss,
+                border = BorderStroke(1.dp, SecondaryColor),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = TextColor)
+            ) {
+                Text("Cancel", style = MaterialTheme.typography.labelLarge)
+            }
+        }
+    )
 }
 
 //miniatura de la foto: se lee en segundo plano y reducida, para no trabar la pantalla ni gastar memoria
@@ -479,42 +535,16 @@ private fun PhotoThumbnail(path: String, modifier: Modifier = Modifier, descript
     }
 }
 
-//abre la foto desde una direccion content:// o file:// (camara) o desde una ruta de archivo
-private fun openPhoto(context: Context, path: String): InputStream {
-    return if (path.startsWith("content://") || path.startsWith("file://")) {
-        context.contentResolver.openInputStream(Uri.parse(path)) ?: error("Cannot open $path")
-    } else {
-        FileInputStream(path)
-    }
-}
-
-//lee la foto a un tamano maximo de 1080 px y la gira segun lo que guardo la camara (exif)
+//glide lee la foto (content:// de la galeria o ruta de archivo) en segundo plano, reducida y ya girada segun el exif
 private fun decodeThumbnail(context: Context, path: String): ImageBitmap {
-    //primero solo se leen las medidas, sin cargar la imagen
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    openPhoto(context, path).use { BitmapFactory.decodeStream(it, null, bounds) }
-    var sample = 1
-    while (bounds.outWidth / (sample * 2) >= MAX_THUMBNAIL_SIZE || bounds.outHeight / (sample * 2) >= MAX_THUMBNAIL_SIZE) {
-        sample *= 2
-    }
-    val options = BitmapFactory.Options().apply { inSampleSize = sample }
-    val bitmap = openPhoto(context, path).use { BitmapFactory.decodeStream(it, null, options) }
-        ?: error("Not an image: $path")
-
-    val rotation = openPhoto(context, path).use { stream ->
-        when (ExifInterface(stream).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
-            ExifInterface.ORIENTATION_ROTATE_90 -> 90f
-            ExifInterface.ORIENTATION_ROTATE_180 -> 180f
-            ExifInterface.ORIENTATION_ROTATE_270 -> 270f
-            else -> 0f
-        }
-    }
-    val upright = if (rotation == 0f) {
-        bitmap
-    } else {
-        Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, Matrix().apply { postRotate(rotation) }, true)
-    }
-    return upright.asImageBitmap()
+    val model: Any = if (path.startsWith("content://") || path.startsWith("file://")) Uri.parse(path) else File(path)
+    val bitmap = Glide.with(context)
+        .asBitmap()
+        .load(model)
+        .override(MAX_THUMBNAIL_SIZE)
+        .submit()
+        .get() ?: error("Could not decode $path")
+    return bitmap.asImageBitmap()
 }
 
 private const val MAX_THUMBNAIL_SIZE = 1080
@@ -600,7 +630,9 @@ fun PhotoOfTheDayRoute(
         onPickPhotoClick = onPickPhoto,
         onCaptionChange = viewModel::onCaptionChange,
         onRetakeClick = viewModel::onRetakeClick,
-        onSaveClick = viewModel::onSaveClick
+        onSaveClick = viewModel::onSaveClick,
+        onShowDeleteDialog = viewModel::onShowDeleteDialog,
+        onConfirmDelete = viewModel::onDeleteTodayPhoto
     )
 }
 

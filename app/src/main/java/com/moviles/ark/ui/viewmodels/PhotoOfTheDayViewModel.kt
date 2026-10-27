@@ -68,11 +68,13 @@ class PhotoOfTheDayViewModel(
     }
 
     //la camara llama esto con la direccion de la foto capturada; se guarda sin caption de texto
-    //si hoy ya habia foto es un retake: la nueva queda como la de hoy (la tira muestra la mas reciente) y no se pide feedback otra vez
+    //si hoy ya habia foto es un retake: se borra la anterior, la nueva queda como la de hoy y no se pide feedback otra vez
     fun onPhotoCaptured(uri: String) {
-        val isRetake = _uiState.value.todayPhoto != null
+        val previousTodayPhoto = _uiState.value.todayPhoto
+        val isRetake = previousTodayPhoto != null
         _uiState.update { it.copy(pendingPhotoUri = uri, caption = "", isSaving = true, errorMessage = null) }
         viewModelScope.launch {
+            if (previousTodayPhoto != null) photoRepository.deletePhoto(previousTodayPhoto.id)
             val result = photoRepository.savePhoto(uri, "", now())
             result.onSuccess {
                 //la foto nueva llega sola por observeWeek; aqui solo se limpia lo pendiente y avisa que se guardo
@@ -103,6 +105,8 @@ class PhotoOfTheDayViewModel(
 
         _uiState.update { it.copy(isSaving = true, errorMessage = null) }
         viewModelScope.launch {
+            //una foto por dia: si hoy ya habia una, la nueva la reemplaza
+            state.todayPhoto?.let { photoRepository.deletePhoto(it.id) }
             val result = photoRepository.savePhoto(uri, "", now())
             result.onSuccess {
                 //la foto nueva llega sola por observeWeek; aqui solo se limpia lo pendiente y avisa que se guardo
@@ -111,6 +115,22 @@ class PhotoOfTheDayViewModel(
             result.onFailure {
                 _uiState.update { it.copy(isSaving = false, errorMessage = "Could not save your photo, try again") }
             }
+        }
+    }
+
+    //muestra u oculta el dialogo que confirma el borrado
+    fun onShowDeleteDialog(show: Boolean) {
+        _uiState.update { it.copy(showDeleteDialog = show) }
+    }
+
+    //borra la foto de hoy despues de que el usuario confirma; las de dias pasados no se pueden borrar
+    fun onDeleteTodayPhoto() {
+        val todayPhoto = _uiState.value.todayPhoto ?: return
+        _uiState.update { it.copy(isSaving = true, showDeleteDialog = false, errorMessage = null) }
+        viewModelScope.launch {
+            photoRepository.deletePhoto(todayPhoto.id)
+                .onSuccess { _uiState.update { it.copy(isSaving = false) } }
+                .onFailure { _uiState.update { it.copy(isSaving = false, errorMessage = "Could not delete your photo, try again") } }
         }
     }
 
