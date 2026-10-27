@@ -23,8 +23,8 @@ import java.io.FileOutputStream
 import java.io.InputStream
 import java.util.UUID
 
-//fotos aisladas por usuario (#133): las filas llevan el uid y los jpg van en filesDir/photos/{uid}/
-//almacenamiento dual (#146): guarda en filesDir/photos/ para acceso privado offline y exporta a la galeria publica via MediaStore
+//fotos por usuario: cada fila de room lleva el uid y la pantalla solo lee las del usuario con sesion
+//el jpg se guarda una sola vez en la galeria publica (MediaStore, Pictures/Ark/User_<uid>) y room guarda su direccion content://
 class PhotoEntryRepositoryImpl(
     private val context: Context,
     private val auth: FirebaseAuth,
@@ -102,7 +102,7 @@ class PhotoEntryRepositoryImpl(
         }
     }
 
-    //guarda la foto en la galeria publica del sistema usando MediaStore API en subcarpetas por usuario (#146)
+    //guarda la foto en la galeria publica del sistema usando MediaStore API en subcarpetas por usuario
     private suspend fun exportToPublicGallery(sourceUri: String, takenAt: Long, userId: String): Uri? = withContext(Dispatchers.IO) {
         runCatching {
             val displayName = "Ark_Photo_${takenAt}.jpg"
