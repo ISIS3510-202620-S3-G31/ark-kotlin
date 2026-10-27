@@ -7,6 +7,8 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
 import com.moviles.ark.data.local.AvatarPreferences
+import com.moviles.ark.data.local.ProfilePreferences
+import kotlinx.coroutines.Dispatchers
 import com.moviles.ark.domain.models.CheckInStreak
 import com.moviles.ark.domain.models.UserProfile
 import com.moviles.ark.domain.repositories.AuthRepository
@@ -45,8 +47,27 @@ class ProfileViewModel(
     //room se escucha apenas se crea el viewmodel; si la pantalla rota no se vuelve a pedir
     //el refresco con firestore lo pide la pantalla cada vez que se muestra (loadProfile)
     init {
+        loadCachedPreferences()
         observeProfile()
         observeAvatar()
+    }
+
+    //carga inmediata de datos escalares guardados en sharedpreferences (offline-first)
+    private fun loadCachedPreferences() {
+        val cached = ProfilePreferences.getScalarProfile()
+        if (cached.name.isNotBlank() || cached.email.isNotBlank()) {
+            val name = cached.name.ifBlank { cached.email.substringBefore("@") }
+            _uiState.update {
+                it.copy(
+                    name = name,
+                    initials = initialsOf(name),
+                    email = cached.email,
+                    age = cached.age,
+                    selectedAvatarId = cached.avatarId,
+                    isLoading = false
+                )
+            }
+        }
     }
 
     //room avisa cada vez que cambia la fila: al refrescar desde firestore, al editar o al cambiar el avatar
@@ -67,7 +88,9 @@ class ProfileViewModel(
     }
 
     fun onAvatarSelected(avatarId: String) {
-        AvatarPreferences.setAvatarId(avatarId)
+        viewModelScope.launch(Dispatchers.IO) {
+            ProfilePreferences.saveAvatarId(avatarId)
+        }
     }
 
     //trae lo ultimo de firestore (y sube un cambio que haya quedado pendiente sin internet)
@@ -146,7 +169,17 @@ class ProfileViewModel(
         _uiState.update { it.copy(isSaving = true) }
         viewModelScope.launch {
             userRepository.updateProfile(edited.name, edited.age)
-                .onSuccess { _uiState.update { it.copy(isSaving = false, isEditing = false, message = "Profile saved") } }
+                .onSuccess {
+                    launch(Dispatchers.IO) {
+                        ProfilePreferences.saveProfile(
+                            name = edited.name,
+                            email = state.email,
+                            age = edited.age,
+                            avatarId = state.selectedAvatarId
+                        )
+                    }
+                    _uiState.update { it.copy(isSaving = false, isEditing = false, message = "Profile saved") }
+                }
                 .onFailure { _uiState.update { it.copy(isSaving = false, editError = "Could not save your profile, try again") } }
         }
     }
@@ -166,6 +199,9 @@ class ProfileViewModel(
 
     fun onSignOutClick() {
         authRepository.logout()
+        viewModelScope.launch(Dispatchers.IO) {
+            ProfilePreferences.clear()
+        }
         _uiState.update { it.copy(isSignedOut = true) }
     }
 
@@ -185,6 +221,14 @@ class ProfileViewModel(
                 streakDays = freshStreak ?: streak.stillAlive(profile.streakDays, profile.lastCheckInAt),
                 isLoading = false,
                 errorMessage = null
+            )
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            ProfilePreferences.saveProfile(
+                name = name,
+                email = profile.email,
+                age = profile.getCalculatedAge(),
+                avatarId = _uiState.value.selectedAvatarId
             )
         }
     }

@@ -2,7 +2,7 @@ package com.moviles.ark.domain.models
 
 import com.moviles.ark.domain.composite.Emotion
 
-//modelo de dominio principal de estadisticas usando directamente los enums y tipos nativos (#15 y #29)
+//modelo de dominio principal de estadisticas usando directamente los enums y tipos nativos
 data class StatsModel(
     val totalCheckIns: Int,
     val topEmotion: Emotion?,
@@ -11,9 +11,10 @@ data class StatsModel(
     val toolUsagePercentages: Map<String, Float>,
     val currentInsight: InsightModel? = null,
     val allInsights: List<InsightModel> = emptyList(),
-    val emotionFrequencies: Map<Emotion, Int> = emptyMap()
+    val emotionFrequencies: Map<Emotion, Int> = emptyMap(),
+    val lastUpdated: Long = 0L
 ) {
-    //una fuente nueva reemplaza a lo que se ve solo si no tiene menos check-ins o es mas reciente (#135, #147, #158)
+    //una fuente nueva reemplaza a lo que se ve solo si no tiene menos check-ins o es mas reciente
     fun canReplace(shown: StatsModel?): Boolean {
         if (shown == null) return true
         if (lastUpdated > 0L && shown.lastUpdated > 0L) {

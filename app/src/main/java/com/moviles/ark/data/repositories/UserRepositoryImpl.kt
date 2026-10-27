@@ -8,6 +8,7 @@ import android.media.ExifInterface
 import android.net.Uri
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.moviles.ark.data.local.ProfilePreferences
 import com.moviles.ark.data.local.daos.UserDao
 import com.moviles.ark.data.local.entities.UserEntity
 import com.moviles.ark.data.local.entities.toDomain
@@ -68,19 +69,27 @@ class UserRepositoryImpl(
             val remoteName = document?.getString("name").orEmpty()
             val remoteBirthDate = document?.getString("birthDate").orEmpty()
             val remoteAge = document?.getLong("age")?.toInt() ?: 0
+            val resolvedName = remoteName.ifBlank { local?.name.orEmpty() }
+            val resolvedAge = if (remoteAge > 0) remoteAge else local?.age ?: 0
             userDao.upsertUser(
                 UserEntity(
                     uid = user.uid,
-                    name = remoteName.ifBlank { local?.name.orEmpty() },
+                    name = resolvedName,
                     email = user.email.orEmpty(),
                     birthDate = remoteBirthDate.ifBlank { local?.birthDate.orEmpty() },
-                    age = if (remoteAge > 0) remoteAge else local?.age ?: 0,
+                    age = resolvedAge,
                     streakDays = local?.streakDays ?: 0,
                     lastCheckInAt = local?.lastCheckInAt,
                     createdAt = user.metadata?.creationTimestamp ?: local?.createdAt ?: 0L,
                     avatarPath = local?.avatarPath,
                     isSynced = true
                 )
+            )
+            //persiste los datos escalares en sharedpreferences en segundo plano (offline-first)
+            ProfilePreferences.saveProfile(
+                name = resolvedName,
+                email = user.email.orEmpty(),
+                age = resolvedAge
             )
             //si firestore no respondio y room tampoco tenia nada, la pantalla debe saber que fallo
             if (document == null && local == null) error("Could not load the profile")
@@ -98,6 +107,11 @@ class UserRepositoryImpl(
             val uid = auth.currentUser?.uid ?: error("No user is logged in")
             //primero room: la pantalla cambia de una vez, haya o no internet
             userDao.updateProfile(uid, name.trim(), birthDate)
+            ProfilePreferences.saveProfile(
+                name = name.trim(),
+                email = auth.currentUser?.email.orEmpty(),
+                age = 0
+            )
             pushProfile(uid, name.trim(), birthDate)
         }.onFailure { error ->
             CrashlyticsHelper.logNonFatal(
@@ -113,6 +127,11 @@ class UserRepositoryImpl(
         runCatching {
             val uid = auth.currentUser?.uid ?: error("No user is logged in")
             userDao.updateProfileWithAge(uid, name.trim(), age)
+            ProfilePreferences.saveProfile(
+                name = name.trim(),
+                email = auth.currentUser?.email.orEmpty(),
+                age = age
+            )
             pushProfileWithAge(uid, name.trim(), age)
         }.onFailure { error ->
             CrashlyticsHelper.logNonFatal(

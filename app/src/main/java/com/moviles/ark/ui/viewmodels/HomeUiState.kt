@@ -20,7 +20,8 @@ data class HomeUiState(
     //ultimo check-in registrado hoy para la vista de revision no editable
     val todayCheckIn: CheckInModel? = null,
     val errorMessage: String? = null,
-    //tarjeta aparte segun el clima de afuera; null sin internet, sin ubicacion o si el clima no sugiere nada (#134)
+    //tarjeta aparte segun el clima de afuera; null sin internet, sin ubicacion o si el clima no sugiere nada
     val weatherSuggestion: WeatherSuggestion? = null,
-    val avatarId: String = AvatarPreferences.DEFAULT_AVATAR_ID
+    val avatarId: String = AvatarPreferences.DEFAULT_AVATAR_ID,
+    val userName: String = ""
 )
