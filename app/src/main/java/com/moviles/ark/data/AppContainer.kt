@@ -41,6 +41,9 @@ import com.moviles.ark.domain.repositories.StatsRepository
 import com.moviles.ark.domain.repositories.SyncRepository
 import com.moviles.ark.domain.repositories.ToolInteractionRepository
 import com.moviles.ark.domain.repositories.UserRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 interface AppContainer {
     val auth: FirebaseAuth
@@ -68,6 +71,7 @@ interface AppContainer {
     val syncRepository: SyncRepository
     val syncManager: SyncManager
     val environmentalSensorManager: EnvironmentalSensorManager
+    val applicationScope: CoroutineScope
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -113,7 +117,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     }
     // clima de afuera con open-meteo detras del adapter
     override val weatherServiceAdapter: com.moviles.ark.domain.adapters.WeatherServiceAdapter by lazy {
-        com.moviles.ark.data.remote.apis.OpenMeteoAdapterImpl(context.cacheDir)
+        com.moviles.ark.data.remote.apis.OpenMeteoAdapterImpl()
     }
     // adapter de musica ambiental para desacoplar el consumo de jamendo y cachear audios en disco
     override val musicServiceAdapter: com.moviles.ark.domain.adapters.MusicServiceAdapter by lazy {
@@ -170,4 +174,6 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     }
     // sensor de luz + hora del dia para recomendaciones segun el entorno; uno para toda la app
     override val environmentalSensorManager: EnvironmentalSensorManager by lazy { EnvironmentalSensorManager(context) }
+    // scope para tareas de fondo que deben sobrevivir a la destruccion de pantallas y viewmodels (#166)
+    override val applicationScope: CoroutineScope by lazy { CoroutineScope(Dispatchers.IO + SupervisorJob()) }
 }

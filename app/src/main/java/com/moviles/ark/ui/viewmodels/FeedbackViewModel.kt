@@ -5,13 +5,13 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
-import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.google.firebase.auth.FirebaseAuth
 import com.moviles.ark.ArkApplication
 import com.moviles.ark.data.local.daos.ToolRecordDao
 import com.moviles.ark.data.local.entities.ToolInteractionEntity
+import com.moviles.ark.data.remote.CrashlyticsHelper
 import com.moviles.ark.domain.composite.CompoundMood
 import com.moviles.ark.domain.composite.Emotion
 import com.moviles.ark.domain.composite.MoodComponent
@@ -23,12 +23,13 @@ import com.moviles.ark.domain.repositories.FeedbackRepository
 import com.moviles.ark.domain.repositories.MoodRepository
 import com.moviles.ark.domain.repositories.ToolRepository
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.util.Date
 
 class FeedbackViewModel(
@@ -41,7 +42,8 @@ class FeedbackViewModel(
     savedStateHandle: SavedStateHandle? = null,
     initialToolId: String = "",
     initialDuration: Int = 0,
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val backgroundScope: CoroutineScope = CoroutineScope(ioDispatcher + SupervisorJob())
 ) : ViewModel() {
 
     private val privateUiState = MutableStateFlow(
@@ -104,85 +106,105 @@ class FeedbackViewModel(
         )
     }
 
-    // Persiste en Room SQLite y sincroniza a Firestore desacoplado via FeedbackRepository (#166)
-    // Vincula la calificacion tanto a toolId como a interactionId
+    // Modelo optimista (#166): valida con el modelo de dominio, avanza de inmediato la UI
+    // y despacha copias de las entidades al hilo IO en segundo plano para su persistencia y manejo de errores
     fun saveFeedback(onSavedCallback: () -> Unit = {}) {
         val state = privateUiState.value
 
-        if (state.rating < 1 || state.rating > 5) {
-            privateUiState.value = state.copy(errorMessage = "Please select a rating from 1 to 5 stars")
+        // Regla de negocio delegada al modelo de dominio: validar el rango de calificación
+        if (!FeedbackModel.isValidRating(state.rating)) {
+            privateUiState.value = state.copy(
+                errorMessage = "Please select a rating from ${FeedbackModel.MIN_RATING} to ${FeedbackModel.MAX_RATING} stars"
+            )
             return
         }
 
-        privateUiState.value = state.copy(isLoading = true, errorMessage = null)
+        //  Modelo optimista: avanzar de inmediato en la UI sin bloquear al usuario ya que no es tan importnate y masn bien le mandamos una copia de los cosos que vamos a guardar y asis no se pierden
+        privateUiState.value = state.copy(
+            isSaved = true,
+            isLoading = false,
+            errorMessage = null
+        )
+        onSavedCallback()
 
-        viewModelScope.launch(ioDispatcher) {
+        // 3. Crear copias inmutables de los datos actuales en el hilo principal antes de despachar al hilo IO
+        val snapshotToolId = state.toolId
+        val snapshotRating = state.rating
+        val snapshotComment = state.comment
+        val snapshotDuration = if (state.duration > 0) state.duration else 60
+        val snapshotEmotions = state.selectedEmotions.toSet()
+        val snapshotIntensity = state.intensity
+        val nowMillis = System.currentTimeMillis()
+        val userId = auth?.currentUser?.uid ?: "anonymous"
+
+        // 4. Despachar a segundo plano en el hilo IO usando backgroundScope para que no se cancele al salir de la pantalla
+        backgroundScope.launch(ioDispatcher) {
             try {
-                val nowMillis = System.currentTimeMillis()
-                val userId = auth?.currentUser?.uid ?: "anonymous"
-                val format = toolRepository?.getToolById(state.toolId)?.format ?: "touch"
-                val durationSeconds = if (state.duration > 0) state.duration else 60
+                val format = toolRepository?.getToolById(snapshotToolId)?.format ?: "touch"
 
-                // 1. Grabar la interaccion en Room SQLite para obtener el interactionId generado (#154)
-                val interactionId = toolRecordDao?.insertInteraction(
-                    ToolInteractionEntity(
-                        userId = userId,
-                        toolId = state.toolId,
-                        duration = durationSeconds,
-                        interactionType = format,
-                        complete = true,
-                        timestamp = Date(nowMillis),
-                        isSynced = false
-                    )
+                // A. Guardar copia de la interaccion en Room SQLite para obtener el interactionId generado (#154)
+                val interaction = ToolInteractionEntity(
+                    userId = userId,
+                    toolId = snapshotToolId,
+                    duration = snapshotDuration,
+                    interactionType = format,
+                    complete = true,
+                    timestamp = Date(nowMillis),
+                    isSynced = false
+                )
+                val interactionId = toolRecordDao?.insertInteraction(interaction)
+
+                // B. Construir el modelo de dominio aplicando sus reglas de negocio y persistirlo
+                val feedbackResult = FeedbackModel.create(
+                    toolId = snapshotToolId,
+                    rating = snapshotRating,
+                    comment = snapshotComment,
+                    interactionId = interactionId,
+                    createdAt = nowMillis
                 )
 
-                // 2. Persistir ratings (1 a 5 estrellas) y comentarios en Room vinculados a toolId e interactionId, sincronizando a Firestore (#166)
-                val feedbackModel = FeedbackModel(
-                    toolId = state.toolId,
-                    rating = state.rating,
-                    comment = state.comment.trim(),
-                    createdAt = nowMillis,
-                    interactionId = interactionId
-                )
-                feedbackRepository?.saveFeedback(feedbackModel)
+                feedbackResult.onSuccess { model ->
+                    feedbackRepository?.saveFeedback(model)
+                }.onFailure { error ->
+                    Log.e("FeedbackViewModel", "Domain validation failure in FeedbackModel", error)
+                }
 
-                // 3. Guardar el post-tool emotion check-in si se seleccionaron emociones
-                if (state.selectedEmotions.isNotEmpty() && moodRepository != null) {
-                    val moodResult: MoodComponent = if (state.selectedEmotions.size == 1) {
-                        SingleEmotion(state.selectedEmotions.first(), state.intensity.toInt())
+                // C. Guardar copia del check-in emocional en segundo plano si se eligieron emociones
+                if (snapshotEmotions.isNotEmpty() && moodRepository != null) {
+                    val moodResult: MoodComponent = if (snapshotEmotions.size == 1) {
+                        SingleEmotion(snapshotEmotions.first(), snapshotIntensity.toInt())
                     } else {
                         val compound = CompoundMood()
-                        for (emotion in state.selectedEmotions) {
-                            compound.add(SingleEmotion(emotion, state.intensity.toInt()))
+                        for (emotion in snapshotEmotions) {
+                            compound.add(SingleEmotion(emotion, snapshotIntensity.toInt()))
                         }
                         compound
                     }
                     val checkIn = CheckInModel(
                         mood = moodResult,
-                        note = if (state.comment.isNotBlank()) "Post-tool feedback: ${state.comment}" else "Post-tool feedback"
+                        note = if (snapshotComment.isNotBlank()) "Post-tool feedback: ${snapshotComment.trim()}" else "Post-tool feedback"
                     )
                     moodRepository.saveCheckIn(checkIn)
                 }
 
-                // 4. Registrar evento de finalizacion de herramienta en Firebase Analytics (#34)
+                //  Registrar evento de finalizacion de herramienta en Firebase Analytics (#34)
                 analyticsRepository?.logToolEntryCompleted(
-                    toolId = state.toolId.ifBlank { "custom_breathing" },
+                    toolId = snapshotToolId.ifBlank { "custom_breathing" },
                     toolFormat = format
                 )
 
-                privateUiState.value = privateUiState.value.copy(
-                    isLoading = false,
-                    isSaved = true,
-                    errorMessage = null
-                )
-                withContext(Dispatchers.Main) {
-                    onSavedCallback()
-                }
+                Log.d("FeedbackViewModel", "Optimistic feedback persistence finished successfully on IO thread")
             } catch (e: Exception) {
-                Log.e("FeedbackViewModel", "Error saving feedback", e)
-                privateUiState.value = privateUiState.value.copy(
-                    isLoading = false,
-                    errorMessage = e.localizedMessage ?: "Failed to save feedback"
+                // Manejo de errores en el hilo IO sin romper ni bloquear la experiencia del usuario porqsi algo sale mal con el guardado
+                Log.e("FeedbackViewModel", "Error persisting feedback in background on IO thread", e)
+                CrashlyticsHelper.logNonFatal(
+                    componentName = "FeedbackViewModel",
+                    action = "saveFeedbackOptimistic",
+                    throwable = e,
+                    extraKeys = mapOf(
+                        "toolId" to snapshotToolId,
+                        "rating" to snapshotRating
+                    )
                 )
             }
         }
@@ -198,7 +220,8 @@ class FeedbackViewModel(
                     moodRepository = app.container.moodRepository,
                     analyticsRepository = app.container.analyticsRepository,
                     toolRepository = app.container.toolRepository,
-                    auth = app.container.auth
+                    auth = app.container.auth,
+                    backgroundScope = app.container.applicationScope
                 )
             }
         }

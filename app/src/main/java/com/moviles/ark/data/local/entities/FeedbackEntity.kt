@@ -24,13 +24,17 @@ data class FeedbackEntity(
 
 //de fila de Room a modelo de dominio (#166)
 fun FeedbackEntity.toDomain(): FeedbackModel {
+    val safeRating = if (FeedbackModel.isValidRating(rating)) rating else FeedbackModel.MIN_RATING
+    val safeToolId = toolId.ifBlank { "unknown_tool" }
+    val safeCreatedAt = if (createdAt > 0L) createdAt else System.currentTimeMillis()
+    val safeInteractionId = if (interactionId != null && interactionId > 0L) interactionId else null
     return FeedbackModel(
         id = id,
-        interactionId = interactionId,
-        toolId = toolId,
-        rating = rating,
+        interactionId = safeInteractionId,
+        toolId = safeToolId,
+        rating = safeRating,
         comment = comment,
-        createdAt = createdAt,
+        createdAt = safeCreatedAt,
         isSynced = isSynced
     )
 }

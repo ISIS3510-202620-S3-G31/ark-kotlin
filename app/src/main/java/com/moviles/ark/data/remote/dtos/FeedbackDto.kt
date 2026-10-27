@@ -53,15 +53,19 @@ fun FeedbackModel.toDto(userId: String): FeedbackDto {
     )
 }
 
-//de dto de Firestore a modelo de dominio (#166)
+//de dto de Firestore a modelo de dominio aplicando reglas de negocio (#166)
 fun FeedbackDto.toDomain(id: Long = 0L, isSynced: Boolean = true): FeedbackModel {
+    val safeRating = if (FeedbackModel.isValidRating(rating)) rating else FeedbackModel.MIN_RATING
+    val safeToolId = toolId.ifBlank { "unknown_tool" }
+    val safeCreatedAt = if (createdAt > 0L) createdAt else System.currentTimeMillis()
+    val safeInteractionId = if (interactionId != null && interactionId > 0L) interactionId else null
     return FeedbackModel(
         id = id,
-        interactionId = interactionId,
-        toolId = toolId,
-        rating = rating,
+        interactionId = safeInteractionId,
+        toolId = safeToolId,
+        rating = safeRating,
         comment = comment,
-        createdAt = createdAt,
+        createdAt = safeCreatedAt,
         isSynced = isSynced
     )
 }
