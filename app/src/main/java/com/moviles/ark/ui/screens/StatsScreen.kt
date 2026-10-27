@@ -988,8 +988,8 @@ private fun EmotionDistributionCard(
             .fillMaxWidth()
             .shadow(6.dp, RoundedCornerShape(24.dp), ambientColor = Color(0x35351B08), spotColor = Color(0x35351B08)),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF5E6)),
-        border = BorderStroke(1.2.dp, Color(0xFFE8D3B9))
+        colors = CardDefaults.cardColors(containerColor = CardSurfaceColor),
+        border = BorderStroke(1.dp, CardBorderColor)
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             Row(
@@ -1041,7 +1041,7 @@ private fun EmotionDistributionCard(
             if (emotionFrequencies.isEmpty()) {
                 Text(
                     text = "No emotion records yet",
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyLarge,
                     color = TextColor.copy(alpha = 0.5f)
                 )
             } else {
@@ -1065,7 +1065,7 @@ private fun EmotionDistributionCard(
                                 )
                                 Text(
                                     text = "$count ($percentage%)",
-                                    style = MaterialTheme.typography.bodyMedium,
+                                    style = MaterialTheme.typography.bodyLarge,
                                     color = TextColor.copy(alpha = 0.7f),
                                     fontSize = 12.sp
                                 )
@@ -1076,7 +1076,8 @@ private fun EmotionDistributionCard(
                                     .fillMaxWidth()
                                     .height(8.dp)
                                     .clip(RoundedCornerShape(4.dp))
-                                    .background(Color(0xFFE8D3B9).copy(alpha = 0.45f))
+                                    //pista de la barra con el color de texto suave, como los fondos vacios del resto de la app
+                                    .background(TextColor.copy(alpha = 0.08f))
                             ) {
                                 Box(
                                     modifier = Modifier
