@@ -12,19 +12,18 @@ service firebase.storage {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    // Default rule: Deny all reads and writes unless explicitly permitted below
+    // User photo storage: max 10MB per image, only image content types
+    match /users/{userId}/photos/{fileName} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId)
+                    && request.resource.size < 10 * 1024 * 1024
+                    && request.resource.contentType.matches('image/.*');
+      allow delete: if isOwner(userId);
+    }
+
+    // Deny all other access
     match /{allPaths=**} {
       allow read, write: if false;
-    }
-
-    // User profile images and assets
-    match /users/{userId}/{allPaths=**} {
-      allow read, write: if isOwner(userId);
-    }
-
-    // User photo of the day and tool upload assets
-    match /user_photos/{userId}/{allPaths=**} {
-      allow read, write: if isOwner(userId);
     }
   }
 }

@@ -56,11 +56,10 @@ por colección, cambiando solo la colección y la tabla. Hoy hay 6:
 Las dos últimas necesitan que `firestore.rules` permita `tool_load_latency` y `screen_time`
 (ya publicadas).
 
-**Ojo con las reglas:** el `firestore.rules` de este repo es igual a lo publicado en la consola.
-El del repo `backend` es una versión vieja (30-sep) a la que le faltan colecciones que hoy se usan
-(`tool_interactions`, `stats_summary`, `tool_feedback`, `tool_load_latency`, `screen_time`...).
-Desde `backend` desplegar siempre con `firebase deploy --only functions`; un `firebase deploy`
-sin `--only` subiría esas reglas viejas y dejaría de funcionar el sync, Stats y la analítica. Valores iguales en todas (en el formulario, llenar primero las ubicaciones):
+**Reglas:** `firestore.rules` y `storage.rules` de este repo son iguales a lo publicado en la
+consola y a las del repo `backend` (PR backend#2, que actualizó su `firestore.rules`). Si se
+cambian, cambiarlas en los dos repos. Desde `backend`, para subir solo las funciones:
+`firebase deploy --only functions`. Valores iguales en todas (en el formulario, llenar primero las ubicaciones):
 
 - BigQuery Dataset location: **us**
 - BigQuery Project ID: `ark-mobiles`
