@@ -3,74 +3,84 @@ package com.moviles.ark.domain.models
 import java.util.Calendar
 import java.util.TimeZone
 
-//estado de cada dia en la tira de la semana
+//estado de cada dia en la tira de los ultimos 7 dias
 enum class PhotoDayState {
     //ese dia hay foto
     TAKEN,
     //hoy, todavia sin foto
     TODAY,
     //dia que ya paso sin foto
-    MISSED,
-    //dia que no ha llegado
-    UPCOMING
+    MISSED
 }
 
-//un dia de la tira: "M" arriba y el nombre completo para lectores de pantalla
+//un dia de la tira: "M" arriba, el nombre completo para lectores de pantalla y la foto de ese dia si hay
 data class PhotoDay(
     val shortLabel: String,
     val name: String,
-    val state: PhotoDayState
+    val state: PhotoDayState,
+    //si ese dia hay varias fotos (por ejemplo hoy se retomo), es la mas reciente
+    val photo: PhotoEntryModel? = null,
+    val isToday: Boolean = false
 )
 
-//reglas de la semana de fotos: la semana va de lunes a domingo en la hora local
+//reglas de la tira de fotos: los ultimos 7 dias en la hora local, y el ultimo siempre es hoy
 object PhotoWeek {
-    private val SHORT_LABELS = listOf("M", "T", "W", "T", "F", "S", "S")
-    private val NAMES = listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+    private const val DAYS = 7
 
-    //inicio de cada dia de la semana actual (lunes a domingo) y el inicio del lunes siguiente
+    //letra y nombre de cada dia segun Calendar.DAY_OF_WEEK (domingo = 1 ... sabado = 7)
+    private val SHORT_LABELS = mapOf(
+        Calendar.MONDAY to "M", Calendar.TUESDAY to "T", Calendar.WEDNESDAY to "W", Calendar.THURSDAY to "T",
+        Calendar.FRIDAY to "F", Calendar.SATURDAY to "S", Calendar.SUNDAY to "S"
+    )
+    private val NAMES = mapOf(
+        Calendar.MONDAY to "Monday", Calendar.TUESDAY to "Tuesday", Calendar.WEDNESDAY to "Wednesday",
+        Calendar.THURSDAY to "Thursday", Calendar.FRIDAY to "Friday", Calendar.SATURDAY to "Saturday", Calendar.SUNDAY to "Sunday"
+    )
+
+    //inicio de cada uno de los ultimos 7 dias (hace 6 dias ... hoy) y el inicio de manana
     //se usa Calendar para respetar la zona horaria y los cambios de hora
     fun dayStarts(now: Long, zone: TimeZone): List<Long> {
-        val calendar = Calendar.getInstance(zone)
-        calendar.timeInMillis = now
-        calendar.set(Calendar.HOUR_OF_DAY, 0)
-        calendar.set(Calendar.MINUTE, 0)
-        calendar.set(Calendar.SECOND, 0)
-        calendar.set(Calendar.MILLISECOND, 0)
-        //retrocede hasta el lunes
-        while (calendar.get(Calendar.DAY_OF_WEEK) != Calendar.MONDAY) {
-            calendar.add(Calendar.DAY_OF_MONTH, -1)
-        }
+        val calendar = startOfDay(now, zone)
+        calendar.add(Calendar.DAY_OF_MONTH, -(DAYS - 1))
         val starts = mutableListOf<Long>()
-        repeat(8) {
+        repeat(DAYS + 1) {
             starts.add(calendar.timeInMillis)
             calendar.add(Calendar.DAY_OF_MONTH, 1)
         }
         return starts
     }
 
-    //la tira de 7 dias con el estado de cada uno
+    //la tira de 7 dias con el estado de cada uno; el ultimo es hoy
     fun build(photos: List<PhotoEntryModel>, now: Long, zone: TimeZone): List<PhotoDay> {
         val starts = dayStarts(now, zone)
-        return (0 until 7).map { index ->
+        return (0 until DAYS).map { index ->
             val from = starts[index]
             val until = starts[index + 1]
-            val hasPhoto = photos.any { it.takenAt >= from && it.takenAt < until }
+            val photo = photos.filter { it.takenAt >= from && it.takenAt < until }.maxByOrNull { it.takenAt }
+            val isToday = index == DAYS - 1
             val state = when {
-                hasPhoto -> PhotoDayState.TAKEN
-                now >= from && now < until -> PhotoDayState.TODAY
-                until <= now -> PhotoDayState.MISSED
-                else -> PhotoDayState.UPCOMING
+                photo != null -> PhotoDayState.TAKEN
+                isToday -> PhotoDayState.TODAY
+                else -> PhotoDayState.MISSED
             }
-            PhotoDay(SHORT_LABELS[index], NAMES[index], state)
+            val dayOfWeek = Calendar.getInstance(zone).apply { timeInMillis = from }.get(Calendar.DAY_OF_WEEK)
+            PhotoDay(SHORT_LABELS.getValue(dayOfWeek), NAMES.getValue(dayOfWeek), state, photo, isToday)
         }
     }
 
     //la foto de hoy, si ya hay; si hay varias, la mas reciente
     fun todayPhoto(photos: List<PhotoEntryModel>, now: Long, zone: TimeZone): PhotoEntryModel? {
         val starts = dayStarts(now, zone)
-        val today = (0 until 7).first { now >= starts[it] && now < starts[it + 1] }
         return photos
-            .filter { it.takenAt >= starts[today] && it.takenAt < starts[today + 1] }
+            .filter { it.takenAt >= starts[DAYS - 1] && it.takenAt < starts[DAYS] }
             .maxByOrNull { it.takenAt }
+    }
+
+    private fun startOfDay(now: Long, zone: TimeZone): Calendar = Calendar.getInstance(zone).apply {
+        timeInMillis = now
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
     }
 }

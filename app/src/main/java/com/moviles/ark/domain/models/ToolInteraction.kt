@@ -4,7 +4,7 @@ import java.util.Date
 
 //una vez que el usuario uso una herramienta (una interaccion con ella)
 //los atributos siguen la clase ToolInteraction del diagrama de clases
-//el repositorio la arma desde la tabla tool_interactions (ToolInteractionEntity, #11)
+//el repositorio la arma desde la tabla tool_interactions (ToolInteractionEntity)
 data class ToolInteraction(
     //usuario que uso la herramienta (User.id)
     val userId: String,
@@ -24,4 +24,12 @@ data class ToolInteraction(
     val timestamp: Date,
     //detalle opcional
     val description: String = ""
-)
+) {
+    companion object {
+        //valores que se usan cuando un registro no trae el dato
+        const val DEFAULT_DURATION_SECONDS = 60
+        const val DEFAULT_INTERACTION_TYPE = "touch"
+        //id de la respiracion en los registros viejos de firestore
+        const val LEGACY_TOOL_ID = "breathing_pacer"
+    }
+}

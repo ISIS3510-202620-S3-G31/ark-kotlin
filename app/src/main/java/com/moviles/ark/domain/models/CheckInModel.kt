@@ -1,6 +1,8 @@
 package com.moviles.ark.domain.models
 
+import com.moviles.ark.domain.composite.Emotion
 import com.moviles.ark.domain.composite.MoodComponent
+import com.moviles.ark.domain.composite.MoodFactory
 
 //modelo de dominio que representa un registro de check-in emocional del usuario con coordenadas gps
 data class CheckInModel(
@@ -15,9 +17,49 @@ data class CheckInModel(
         return mood.getEmotions().isNotEmpty()
     }
     fun isValidNote(): Boolean {
-        return note.length <= 280
+        return note.length <= MAX_NOTE_LENGTH
     }
     fun hasLocation(): Boolean {
         return latitude != null && longitude != null
+    }
+
+    //el primer error del check-in, o null si se puede guardar
+    fun validationError(): String? = when {
+        !isValidMood() -> SELECT_EMOTION_ERROR
+        !isValidNote() -> "Note cannot exceed $MAX_NOTE_LENGTH characters"
+        else -> null
+    }
+
+    companion object {
+        //cuando faltan estos caracteres o menos el contador de la nota se resalta
+        const val NOTE_WARNING_REMAINING = 40
+        const val SELECT_EMOTION_ERROR = "Please select at least one emotion"
+        const val ALREADY_CHECKED_IN_ERROR = "You have already completed your daily check-in today"
+
+        //un solo check-in por dia de calendario en la hora local: cuenta desde la medianoche de hoy
+        fun startOfToday(now: Long = System.currentTimeMillis()): Long = java.util.Calendar.getInstance().apply {
+            timeInMillis = now
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }.timeInMillis
+
+        //se corta lo que pase del limite, por ejemplo al pegar un texto largo
+        fun limitNote(note: String): String = note.take(MAX_NOTE_LENGTH)
+
+        fun remainingNoteChars(note: String): Int = (MAX_NOTE_LENGTH - note.length).coerceAtLeast(0)
+
+        fun isNoteNearLimit(note: String): Boolean = remainingNoteChars(note) <= NOTE_WARNING_REMAINING
+
+        //check-in que queda al terminar una herramienta con las emociones del feedback
+        fun afterTool(emotions: Set<Emotion>, intensity: Int, comment: String): CheckInModel = CheckInModel(
+            mood = MoodFactory.fromEmotions(emotions, intensity),
+            note = if (comment.isNotBlank()) "Post-tool feedback: $comment" else "Post-tool feedback"
+        )
+
+        //estandar de 280 caracteres para micro-journaling: evita fatiga cognitiva en el usuario
+        //y previene desbordamientos de payload en los documentos de room y firestore
+        const val MAX_NOTE_LENGTH = 280
     }
 }

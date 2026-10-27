@@ -8,7 +8,7 @@ import com.moviles.ark.data.remote.CrashlyticsHelper
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 
-//consultas de la tabla photo_entries (#26)
+//consultas de la tabla photo_entries
 @Dao
 interface PhotoEntryDao {
 
@@ -30,12 +30,12 @@ interface PhotoEntryDao {
         }
     }
 
-    //todas las fotos, de la mas nueva a la mas vieja
-    @Query("SELECT * FROM photo_entries ORDER BY takenAt DESC")
-    fun getPhotosRaw(): Flow<List<PhotoEntryEntity>>
+    //todas las fotos de un usuario, de la mas nueva a la mas vieja
+    @Query("SELECT * FROM photo_entries WHERE userId = :currentUserId ORDER BY takenAt DESC")
+    fun getPhotosRaw(currentUserId: String): Flow<List<PhotoEntryEntity>>
 
-    fun getPhotos(): Flow<List<PhotoEntryEntity>> {
-        return getPhotosRaw().catch { e ->
+    fun getPhotos(currentUserId: String): Flow<List<PhotoEntryEntity>> {
+        return getPhotosRaw(currentUserId).catch { e ->
             CrashlyticsHelper.logNonFatal(
                 componentName = "PhotoEntryDao",
                 action = "getPhotos",
@@ -45,12 +45,12 @@ interface PhotoEntryDao {
         }
     }
 
-    //fotos entre dos momentos; para "la foto de hoy" se pasa el inicio y el fin del dia
-    @Query("SELECT * FROM photo_entries WHERE takenAt >= :fromMillis AND takenAt < :toMillis ORDER BY takenAt DESC")
-    fun getPhotosBetweenRaw(fromMillis: Long, toMillis: Long): Flow<List<PhotoEntryEntity>>
+    //fotos de un usuario entre dos momentos; para "la foto de hoy" se pasa el inicio y el fin del dia
+    @Query("SELECT * FROM photo_entries WHERE userId = :currentUserId AND takenAt >= :fromMillis AND takenAt < :toMillis ORDER BY takenAt DESC")
+    fun getPhotosBetweenRaw(currentUserId: String, fromMillis: Long, toMillis: Long): Flow<List<PhotoEntryEntity>>
 
-    fun getPhotosBetween(fromMillis: Long, toMillis: Long): Flow<List<PhotoEntryEntity>> {
-        return getPhotosBetweenRaw(fromMillis, toMillis).catch { e ->
+    fun getPhotosBetween(currentUserId: String, fromMillis: Long, toMillis: Long): Flow<List<PhotoEntryEntity>> {
+        return getPhotosBetweenRaw(currentUserId, fromMillis, toMillis).catch { e ->
             CrashlyticsHelper.logNonFatal(
                 componentName = "PhotoEntryDao",
                 action = "getPhotosBetween",
@@ -61,13 +61,17 @@ interface PhotoEntryDao {
         }
     }
 
-    //las que faltan por subir a firebase storage (#33)
-    @Query("SELECT * FROM photo_entries WHERE isSynced = 0")
-    suspend fun getUnsyncedPhotosRaw(): List<PhotoEntryEntity>
+    //la foto de un usuario tomada en ese momento exacto; sirve para no traer de la nube una que ya esta en el telefono
+    @Query("SELECT * FROM photo_entries WHERE userId = :currentUserId AND takenAt = :takenAt LIMIT 1")
+    suspend fun getPhotoByTakenAt(currentUserId: String, takenAt: Long): PhotoEntryEntity?
 
-    suspend fun getUnsyncedPhotos(): List<PhotoEntryEntity> {
+    //las de un usuario que faltan por subir a firebase
+    @Query("SELECT * FROM photo_entries WHERE userId = :currentUserId AND isSynced = 0")
+    suspend fun getUnsyncedPhotosRaw(currentUserId: String): List<PhotoEntryEntity>
+
+    suspend fun getUnsyncedPhotos(currentUserId: String): List<PhotoEntryEntity> {
         return try {
-            getUnsyncedPhotosRaw()
+            getUnsyncedPhotosRaw(currentUserId)
         } catch (e: Exception) {
             CrashlyticsHelper.logNonFatal(
                 componentName = "PhotoEntryDao",
@@ -95,5 +99,39 @@ interface PhotoEntryDao {
             throw e
         }
     }
-}
+    //busca una foto puntual por su id y usuario
+    @Query("SELECT * FROM photo_entries WHERE id = :id AND userId = :currentUserId LIMIT 1")
+    suspend fun getPhotoByIdRaw(id: Long, currentUserId: String): PhotoEntryEntity?
 
+    suspend fun getPhotoById(id: Long, currentUserId: String): PhotoEntryEntity? {
+        return try {
+            getPhotoByIdRaw(id, currentUserId)
+        } catch (e: Exception) {
+            CrashlyticsHelper.logNonFatal(
+                componentName = "PhotoEntryDao",
+                action = "getPhotoById",
+                throwable = e,
+                extraKeys = mapOf("photo_id" to id)
+            )
+            null
+        }
+    }
+
+    //elimina la foto de la base de datos local
+    @Query("DELETE FROM photo_entries WHERE id = :id AND userId = :currentUserId")
+    suspend fun deletePhotoRaw(id: Long, currentUserId: String)
+
+    suspend fun deletePhoto(id: Long, currentUserId: String) {
+        try {
+            deletePhotoRaw(id, currentUserId)
+        } catch (e: Exception) {
+            CrashlyticsHelper.logNonFatal(
+                componentName = "PhotoEntryDao",
+                action = "deletePhoto",
+                throwable = e,
+                extraKeys = mapOf("photo_id" to id)
+            )
+            throw e
+        }
+    }
+}

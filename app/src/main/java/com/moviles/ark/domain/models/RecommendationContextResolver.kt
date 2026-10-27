@@ -7,7 +7,7 @@ import com.moviles.ark.domain.strategies.RecommendationContext
 import com.moviles.ark.domain.strategies.RecommendationStrategy
 import java.util.TimeZone
 
-//por que se eligio la estrategia; el carrusel del home (#16) lo puede usar para sus etiquetas
+//por que se eligio la estrategia; el carrusel del home lo puede usar para sus etiquetas
 enum class RecommendationReason {
     //hubo check-in hoy: se recomienda segun el animo
     TODAY_MOOD,
@@ -24,9 +24,9 @@ data class RecommendationDecision(
     val reason: RecommendationReason
 )
 
-// mira el contexto actual del usuario y elige la estrategia de recomendacion (#22)
+// mira el contexto actual del usuario y elige la estrategia de recomendacion
 // si hizo check-in hoy por mood
-// si no pero termino al menos 3 herramientas en los ultimos 30 dias  por frecuencia estos ddatos igual los podemos cambiar más adelante si llega a ser el caso de como susen los ususraior nuestra app
+// si no pero termino al menos 3 herramientas en los ultimos 30 dias por frecuencia estos ddatos igual los podemos cambiar más adelante si llega a ser el caso de como susen los ususraior nuestra app
 // si no orden por defecto
 class RecommendationContextResolver(
     private val zone: TimeZone = TimeZone.getDefault(),
@@ -46,7 +46,7 @@ class RecommendationContextResolver(
         //cuantas veces termino cada herramienta en los ultimos 30 dias
         val usageCounts = interactions
             .filter { it.complete && today - dayOf(it.timestamp.time) in 0 until USAGE_WINDOW_DAYS } // Solo si complelto la herramienta pooruqe puede uqe enre pero al final no
-            .groupingBy { it.toolId }  // miramos que tan lejos fue con el tiempo  y luego miro si esta entre 0 y 30 y si si pues la incluyo
+            .groupingBy { it.toolId }  // miramos que tan lejos fue con el tiempo y luego miro si esta entre 0 y 30 y si si pues la incluyo
             .eachCount() // contamos ya qeu agrupamos por herramienta
 
         val context = RecommendationContext(usageCounts = usageCounts, latestCheckIn = todayCheckIn)
@@ -58,6 +58,10 @@ class RecommendationContextResolver(
         }
     }
 
+
+    //plan b cuando no se pudieron leer los datos del usuario: orden por defecto del catalogo
+    fun fallback(): RecommendationDecision =
+        RecommendationDecision(DefaultRecommendationStrategy(), RecommendationContext(), RecommendationReason.DEFAULT)
 
     //numero del dia en la hora local; se suma el desfase de la zona para que el dia cambie a medianoche de colombia
     private fun dayOf(millis: Long): Long = (millis + zone.getOffset(millis)) / DAY_MILLIS

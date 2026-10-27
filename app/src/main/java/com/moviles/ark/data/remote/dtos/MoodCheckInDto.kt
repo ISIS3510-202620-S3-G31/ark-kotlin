@@ -4,6 +4,7 @@ import com.moviles.ark.data.local.entities.CheckInEntity
 import com.moviles.ark.domain.composite.CompoundMood
 import com.moviles.ark.domain.composite.Emotion
 import com.moviles.ark.domain.composite.MoodComponent
+import com.moviles.ark.domain.composite.MoodFactory
 import com.moviles.ark.domain.composite.SingleEmotion
 import com.moviles.ark.domain.models.CheckInModel
 
@@ -13,7 +14,7 @@ data class EmotionDto(
     val intensity: Int = 3
 )
 
-//dto del documento users/{uid}/mood_checkins/{id} en firestore (#163)
+//dto del documento users/{uid}/mood_checkins/{id} en firestore
 //los valores por defecto le dan a firestore el constructor vacio que necesita para leerlo con toObject
 data class MoodCheckInDto(
     val userId: String = "",
@@ -27,7 +28,7 @@ data class MoodCheckInDto(
     val note: String = ""
 )
 
-//de fila de room a dto, para subir los check-ins guardados sin conexion (#33)
+//de fila de room a dto, para subir los check-ins guardados sin conexion
 fun CheckInEntity.toDto(userId: String): MoodCheckInDto {
     return MoodCheckInDto(
         userId = userId,
@@ -58,14 +59,10 @@ fun CheckInModel.toDto(userId: String): MoodCheckInDto {
 //si llega un nombre que ya no existe en el enum, se ignora en vez de cerrar la app
 fun MoodCheckInDto.toDomain(): CheckInModel {
     val parsedEmotions = emotions.mapNotNull { dto ->
-        val emotion = Emotion.entries.find { it.name.equals(dto.name, ignoreCase = true) } ?: return@mapNotNull null
+        val emotion = MoodFactory.emotionFromName(dto.name) ?: return@mapNotNull null
         SingleEmotion(emotion, dto.intensity)
     }
-    val mood: MoodComponent = when {
-        parsedEmotions.size == 1 -> parsedEmotions.first()
-        parsedEmotions.size > 1 -> CompoundMood(customName = moodName).apply { parsedEmotions.forEach { add(it) } }
-        else -> SingleEmotion(Emotion.HAPPINESS, 3)
-    }
+    val mood = if (parsedEmotions.isEmpty()) MoodFactory.default() else MoodFactory.fromParts(parsedEmotions, moodName)
     return CheckInModel(
         mood = mood,
         note = note,
@@ -78,9 +75,10 @@ fun MoodCheckInDto.toDomain(): CheckInModel {
 //de dto a fila de room (por ejemplo para bajar el historial al telefono); ya viene de firestore, asi que esta sincronizado
 fun MoodCheckInDto.toEntity(): CheckInEntity {
     return CheckInEntity(
+        userId = userId,
         moodName = moodName,
         emotions = emotions.map { it.name },
-        intensity = emotions.firstOrNull()?.intensity ?: 3,
+        intensity = emotions.firstOrNull()?.intensity ?: SingleEmotion.DEFAULT_INTENSITY,
         note = note,
         latitude = latitude,
         longitude = longitude,

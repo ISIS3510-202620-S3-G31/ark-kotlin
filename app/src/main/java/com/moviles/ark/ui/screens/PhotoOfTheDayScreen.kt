@@ -2,17 +2,22 @@ package com.moviles.ark.ui.screens
 
 import android.Manifest
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.Matrix
-import android.media.ExifInterface
 import android.net.Uri
+import com.bumptech.glide.Glide
+import com.bumptech.glide.load.engine.DiskCacheStrategy
+import java.io.File
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import com.moviles.ark.data.local.sensors.CameraHelper
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,6 +30,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -37,17 +43,17 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -78,6 +84,7 @@ import com.moviles.ark.domain.models.PhotoDayState
 import com.moviles.ark.domain.models.PhotoEntryModel
 import com.moviles.ark.ui.theme.AppTheme
 import com.moviles.ark.ui.theme.BackgroundColor
+import com.moviles.ark.ui.theme.ErrorColor
 import com.moviles.ark.ui.theme.FigtreeFontFamily
 import com.moviles.ark.ui.theme.PrimaryColor
 import com.moviles.ark.ui.theme.SecondaryColor
@@ -87,8 +94,6 @@ import com.moviles.ark.ui.viewmodels.PhotoOfTheDayUiState
 import com.moviles.ark.ui.viewmodels.PhotoOfTheDayViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.FileInputStream
-import java.io.InputStream
 
 //solo se usan colores de la paleta (ms6); las tarjetas son el texto muy transparente sobre el fondo
 private val CardFill = TextColor.copy(alpha = 0.06f)
@@ -102,29 +107,59 @@ fun PhotoOfTheDayScreen(
     onPickPhotoClick: (() -> Unit)? = null,
     onCaptionChange: (String) -> Unit,
     onRetakeClick: () -> Unit,
-    onSaveClick: () -> Unit
+    onSaveClick: () -> Unit,
+    onShowDeleteDialog: (Boolean) -> Unit = {},
+    onConfirmDelete: () -> Unit = {}
 ) {
+    //dias con foto en orden (el mas viejo primero); son las paginas del carrusel
+    val photoDays = uiState.week.filter { it.photo != null }
+    val pagerState = rememberPagerState(initialPage = (photoDays.size - 1).coerceAtLeast(0)) { photoDays.size }
+    val scope = rememberCoroutineScope()
+    val carouselRequester = remember { BringIntoViewRequester() }
+    val scrollState = rememberScrollState()
+
+    //cuando llega una foto nueva (o un retake) el carrusel se va a la mas reciente
+    LaunchedEffect(photoDays.size, uiState.todayPhoto?.id) {
+        if (photoDays.isNotEmpty()) pagerState.scrollToPage(photoDays.size - 1)
+    }
+
+    //dia que se ve en el carrusel, para resaltarlo en la tira
+    val shownDay = photoDays.getOrNull(pagerState.currentPage)
+
     Surface(modifier = Modifier.fillMaxSize(), color = BackgroundColor) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
-                .verticalScroll(rememberScrollState())
+                //deja libre la barra de gestos de android para que el nombre del dia del carrusel no quede debajo
+                .navigationBarsPadding()
+                .verticalScroll(scrollState)
                 .padding(24.dp)
         ) {
             Header(todayLabel = uiState.todayLabel, onBack = onBack)
             Spacer(modifier = Modifier.height(20.dp))
-            WeekStrip(week = uiState.week)
+            WeekStrip(
+                week = uiState.week,
+                shownDay = shownDay,
+                //tocar un chulito lleva el carrusel a la foto de ese dia
+                onDayClick = { day ->
+                    val page = photoDays.indexOf(day)
+                    if (page >= 0) {
+                        scope.launch {
+                            carouselRequester.bringIntoView()
+                            pagerState.animateScrollToPage(page)
+                        }
+                    }
+                }
+            )
             Spacer(modifier = Modifier.height(24.dp))
 
-            //el orden importa: primero lo que esta cargando, luego la foto de hoy, luego la pendiente
-            val todayPhoto = uiState.todayPhoto
             val pendingPhotoUri = uiState.pendingPhotoUri
             when {
                 uiState.isLoading -> Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = SecondaryColor)
                 }
-                todayPhoto != null -> SavedPhotoSection(photo = todayPhoto)
+                //foto recien tomada guardandose (tambien al retomar la de hoy)
                 pendingPhotoUri != null -> PendingPhotoSection(
                     uri = pendingPhotoUri,
                     caption = uiState.caption,
@@ -133,10 +168,43 @@ fun PhotoOfTheDayScreen(
                     onRetakeClick = onRetakeClick,
                     onSaveClick = onSaveClick
                 )
-                else -> EmptyPhotoSection(
-                    onTakePhotoClick = onTakePhotoClick,
-                    onPickPhotoClick = onPickPhotoClick
-                )
+                else -> {
+                    //sin foto hoy: primero el espacio para tomarla y debajo el carrusel de los dias pasados
+                    if (uiState.todayPhoto == null) {
+                        EmptyPhotoSection(
+                            onTakePhotoClick = onTakePhotoClick,
+                            onPickPhotoClick = onPickPhotoClick
+                        )
+                    }
+                    if (photoDays.isNotEmpty()) {
+                        if (uiState.todayPhoto == null) Spacer(modifier = Modifier.height(32.dp))
+                        PhotoCarousel(
+                            photoDays = photoDays,
+                            pagerState = pagerState,
+                            modifier = Modifier.bringIntoViewRequester(carouselRequester)
+                        )
+                        //solo la foto de hoy se puede retomar; las de dias pasados solo se miran
+                        if (shownDay?.isToday == true) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            TodayPhotoActions(
+                                onRetakePhotoClick = onTakePhotoClick,
+                                onDeleteClick = { onShowDeleteDialog(true) }
+                            )
+                        } else if (shownDay != null) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            //volver a hoy: a la foto de hoy en el carrusel o, si no hay, arriba donde se toma
+                            PastDayInfo(
+                                dayName = shownDay.name,
+                                onBackToToday = {
+                                    scope.launch {
+                                        if (uiState.todayPhoto != null) pagerState.animateScrollToPage(photoDays.size - 1)
+                                        else scrollState.animateScrollTo(0)
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
             }
 
             if (uiState.errorMessage != null) {
@@ -144,6 +212,10 @@ fun PhotoOfTheDayScreen(
                 Text(uiState.errorMessage, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.error)
             }
         }
+    }
+
+    if (uiState.showDeleteDialog) {
+        DeletePhotoDialog(onDismiss = { onShowDeleteDialog(false) }, onConfirm = onConfirmDelete)
     }
 }
 
@@ -169,51 +241,114 @@ private fun Header(todayLabel: String, onBack: () -> Unit) {
     }
 }
 
-//tira de lunes a domingo con el estado de cada dia
+//tira de los ultimos 7 dias con el estado de cada uno; el ultimo es hoy
+//los dias con foto se pueden tocar y el que se ve en el carrusel lleva un anillo secondary
 @Composable
-private fun WeekStrip(week: List<PhotoDay>) {
+private fun WeekStrip(week: List<PhotoDay>, shownDay: PhotoDay?, onDayClick: (PhotoDay) -> Unit) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        week.forEach { day -> DayDot(day) }
+        week.forEach { day -> DayDot(day = day, isShown = day == shownDay, onClick = { onDayClick(day) }) }
     }
 }
 
 @Composable
-private fun DayDot(day: PhotoDay) {
+private fun DayDot(day: PhotoDay, isShown: Boolean, onClick: () -> Unit) {
     val stateText = when (day.state) {
         PhotoDayState.TAKEN -> "photo taken"
         PhotoDayState.TODAY -> "today"
         PhotoDayState.MISSED -> "no photo"
-        PhotoDayState.UPCOMING -> "not yet"
     }
+    val canOpen = day.photo != null
     Column(
         //el lector de pantalla lee "Monday, photo taken" en vez de la letra sola
-        modifier = Modifier.clearAndSetSemantics { contentDescription = "${day.name}, $stateText" },
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .then(if (canOpen) Modifier.clickable(role = Role.Button, onClickLabel = "Show photo", onClick = onClick) else Modifier)
+            .clearAndSetSemantics { contentDescription = "${day.name}, $stateText" }
+            .padding(2.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        when (day.state) {
-            //success: la paleta lo reserva para tareas completadas
-            PhotoDayState.TAKEN -> Box(
-                modifier = Modifier.size(36.dp).background(SuccessColor, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(Icons.Filled.Check, contentDescription = null, tint = TextColor, modifier = Modifier.size(16.dp))
+        //anillo secondary alrededor del dia que se esta viendo en el carrusel
+        Box(
+            modifier = Modifier
+                .size(42.dp)
+                .border(2.dp, if (isShown) SecondaryColor else BackgroundColor, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            when (day.state) {
+                //success: la paleta lo reserva para tareas completadas
+                PhotoDayState.TAKEN -> Box(
+                    modifier = Modifier.size(34.dp).background(SuccessColor, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Filled.Check, contentDescription = null, tint = TextColor, modifier = Modifier.size(16.dp))
+                }
+                //primary: lo importante de hoy
+                PhotoDayState.TODAY -> Box(
+                    modifier = Modifier.size(34.dp).border(2.dp, PrimaryColor, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(modifier = Modifier.size(10.dp).background(PrimaryColor, CircleShape))
+                }
+                //dia sin foto: x en color de texto sobre el mismo circulo suave, sin rojo para no castigar al usuario
+                PhotoDayState.MISSED -> Box(
+                    modifier = Modifier.size(34.dp).background(TextColor.copy(alpha = 0.1f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Filled.Close, contentDescription = null, tint = TextColor, modifier = Modifier.size(16.dp))
+                }
             }
-            //primary: lo importante de hoy
-            PhotoDayState.TODAY -> Box(
-                modifier = Modifier.size(36.dp).border(2.dp, PrimaryColor, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Box(modifier = Modifier.size(10.dp).background(PrimaryColor, CircleShape))
-            }
-            PhotoDayState.MISSED -> Box(modifier = Modifier.size(36.dp).background(TextColor.copy(alpha = 0.1f), CircleShape))
-            PhotoDayState.UPCOMING -> Box(modifier = Modifier.size(36.dp).border(1.dp, TextColor.copy(alpha = 0.2f), CircleShape))
         }
         Spacer(modifier = Modifier.height(4.dp))
         Text(
             day.shortLabel,
             style = MaterialTheme.typography.labelLarge,
-            color = if (day.state == PhotoDayState.TODAY) TextColor else TextColor.copy(alpha = 0.7f)
+            color = if (day.isToday) TextColor else TextColor.copy(alpha = 0.7f)
         )
+    }
+}
+
+//carrusel con las fotos de los ultimos 7 dias que existen; debajo dice de que dia es y en que pagina va
+@Composable
+private fun PhotoCarousel(photoDays: List<PhotoDay>, pagerState: PagerState, modifier: Modifier = Modifier) {
+    Column(modifier = modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        HorizontalPager(
+            state = pagerState,
+            pageSpacing = 12.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) { page ->
+            val day = photoDays[page]
+            day.photo?.let { photo ->
+                PhotoThumbnail(
+                    path = photo.localFilePath,
+                    remoteUrl = photo.remoteUrl,
+                    description = if (day.isToday) "Today's photo" else "Photo from ${day.name}",
+                    modifier = Modifier.fillMaxWidth().aspectRatio(3f / 4f)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        val shown = photoDays.getOrNull(pagerState.currentPage)
+        Text(
+            text = if (shown?.isToday == true) "Today" else shown?.name.orEmpty(),
+            style = MaterialTheme.typography.headlineSmall,
+            color = TextColor
+        )
+        //puntos de pagina solo si hay mas de una foto
+        if (photoDays.size > 1) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                photoDays.indices.forEach { index ->
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .background(
+                                if (index == pagerState.currentPage) SecondaryColor else TextColor.copy(alpha = 0.2f),
+                                CircleShape
+                            )
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -278,7 +413,7 @@ private fun EmptyPhotoSection(
     }
 }
 
-//foto recien tomada: vista previa, nota opcional, repetir o guardar
+//foto recien tomada: vista previa, guardar o repetir sin caption
 @Composable
 private fun PendingPhotoSection(
     uri: String,
@@ -290,64 +425,36 @@ private fun PendingPhotoSection(
 ) {
     PhotoThumbnail(path = uri, modifier = Modifier.fillMaxWidth().aspectRatio(3f / 4f))
     Spacer(modifier = Modifier.height(16.dp))
-    OutlinedTextField(
-        value = caption,
-        onValueChange = onCaptionChange,
-        enabled = !isSaving,
-        modifier = Modifier.fillMaxWidth(),
-        maxLines = 3,
-        textStyle = MaterialTheme.typography.bodyLarge.copy(color = TextColor),
-        //se cambia solo la fuente: material anima el tamano de la etiqueta y usaria su letra por defecto
-        label = { Text("Add a note (optional)", style = LocalTextStyle.current.copy(fontFamily = FigtreeFontFamily)) },
-        supportingText = {
-            Text(
-                "${caption.length} / ${PhotoEntryModel.MAX_CAPTION_LENGTH}",
-                style = LocalTextStyle.current.copy(fontFamily = FigtreeFontFamily),
-                modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.End
-            )
-        },
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = SecondaryColor,
-            unfocusedBorderColor = TextColor.copy(alpha = 0.3f),
-            focusedLabelColor = TextColor,
-            unfocusedLabelColor = TextColor.copy(alpha = 0.7f),
-            cursorColor = TextColor
-        )
-    )
-    Spacer(modifier = Modifier.height(16.dp))
-    Row(modifier = Modifier.fillMaxWidth()) {
-        //repetir es secundario: borde secondary y texto oscuro para que se lea bien
-        OutlinedButton(
-            onClick = onRetakeClick,
-            enabled = !isSaving,
-            modifier = Modifier.weight(1f).height(50.dp),
-            border = BorderStroke(1.dp, SecondaryColor),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = TextColor)
-        ) {
-            Text("Retake", style = MaterialTheme.typography.labelLarge)
+    if (isSaving) {
+        Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = SecondaryColor)
         }
-        Spacer(modifier = Modifier.width(12.dp))
-        //guardar es la accion principal: primary
-        Button(
-            onClick = onSaveClick,
-            enabled = !isSaving,
-            modifier = Modifier.weight(1f).height(50.dp)
-        ) {
-            if (isSaving) {
-                CircularProgressIndicator(modifier = Modifier.size(22.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
-            } else {
+    } else {
+        Row(modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(
+                onClick = onRetakeClick,
+                enabled = !isSaving,
+                modifier = Modifier.weight(1f).height(50.dp),
+                border = BorderStroke(1.dp, SecondaryColor),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = TextColor)
+            ) {
+                Text("Retake", style = MaterialTheme.typography.labelLarge)
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Button(
+                onClick = onSaveClick,
+                enabled = !isSaving,
+                modifier = Modifier.weight(1f).height(50.dp)
+            ) {
                 Text("Save", style = MaterialTheme.typography.labelLarge)
             }
         }
     }
 }
 
-//ya hay foto hoy: se muestra con su nota (una foto por dia)
+//la foto que se ve es la de hoy: etiqueta de guardada y botones para retomarla o borrarla
 @Composable
-private fun SavedPhotoSection(photo: PhotoEntryModel) {
-    PhotoThumbnail(path = photo.localFilePath, modifier = Modifier.fillMaxWidth().aspectRatio(3f / 4f))
-    Spacer(modifier = Modifier.height(16.dp))
+private fun TodayPhotoActions(onRetakePhotoClick: (() -> Unit)?, onDeleteClick: () -> Unit) {
     Row(
         modifier = Modifier
             .background(SuccessColor, RoundedCornerShape(12.dp))
@@ -358,21 +465,113 @@ private fun SavedPhotoSection(photo: PhotoEntryModel) {
         Spacer(modifier = Modifier.width(6.dp))
         Text("Saved for today", style = MaterialTheme.typography.labelLarge, color = TextColor)
     }
-    if (photo.caption.isNotBlank()) {
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(photo.caption, style = MaterialTheme.typography.bodyLarge, color = TextColor)
+    Spacer(modifier = Modifier.height(16.dp))
+    Row(modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(
+            onClick = { onRetakePhotoClick?.invoke() },
+            enabled = onRetakePhotoClick != null,
+            modifier = Modifier.weight(1f).height(50.dp),
+            border = BorderStroke(1.dp, SecondaryColor),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = TextColor)
+        ) {
+            Icon(Icons.Filled.PhotoCamera, contentDescription = null, tint = TextColor, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Retake", style = MaterialTheme.typography.labelLarge)
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        //borrar es destructivo: borde y texto en el color de error de la paleta
+        OutlinedButton(
+            onClick = onDeleteClick,
+            modifier = Modifier.weight(1f).height(50.dp),
+            border = BorderStroke(1.dp, ErrorColor),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = ErrorColor)
+        ) {
+            Icon(Icons.Filled.Delete, contentDescription = null, tint = ErrorColor, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Delete", style = MaterialTheme.typography.labelLarge)
+        }
+    }
+}
+
+//foto de un dia pasado: solo se mira, no se puede retomar ni borrar
+@Composable
+private fun PastDayInfo(dayName: String, onBackToToday: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .background(CardFill, RoundedCornerShape(12.dp))
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("Past memory - $dayName", style = MaterialTheme.typography.labelLarge, color = TextColor)
     }
     Spacer(modifier = Modifier.height(8.dp))
-    Text("Come back tomorrow for a new moment.", style = MaterialTheme.typography.bodyLarge, color = TextColor.copy(alpha = 0.7f))
+    Text(
+        "Entries from past days are in read-only mode.",
+        style = MaterialTheme.typography.bodyLarge,
+        color = TextColor.copy(alpha = 0.7f)
+    )
+    Spacer(modifier = Modifier.height(16.dp))
+    OutlinedButton(
+        onClick = onBackToToday,
+        modifier = Modifier.fillMaxWidth().height(50.dp),
+        border = BorderStroke(1.dp, SecondaryColor),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = TextColor)
+    ) {
+        Text("Back to today", style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+//confirmacion antes de borrar la foto de hoy, porque no se puede deshacer
+@Composable
+private fun DeletePhotoDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = BackgroundColor,
+        shape = RoundedCornerShape(20.dp),
+        title = { Text("Delete photo?", style = MaterialTheme.typography.headlineSmall, color = TextColor) },
+        text = {
+            Text(
+                "Are you sure you want to delete today's photo? This action cannot be undone.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = TextColor
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(containerColor = ErrorColor, contentColor = BackgroundColor)
+            ) {
+                Text("Delete", style = MaterialTheme.typography.labelLarge)
+            }
+        },
+        dismissButton = {
+            OutlinedButton(
+                onClick = onDismiss,
+                border = BorderStroke(1.dp, SecondaryColor),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = TextColor)
+            ) {
+                Text("Cancel", style = MaterialTheme.typography.labelLarge)
+            }
+        }
+    )
 }
 
 //miniatura de la foto: se lee en segundo plano y reducida, para no trabar la pantalla ni gastar memoria
 @Composable
-private fun PhotoThumbnail(path: String, modifier: Modifier = Modifier) {
+private fun PhotoThumbnail(
+    path: String,
+    modifier: Modifier = Modifier,
+    description: String = "Photo of the day",
+    remoteUrl: String? = null
+) {
     val context = LocalContext.current
     //null mientras carga; despues trae la imagen o el error
-    val result by produceState<Result<ImageBitmap>?>(initialValue = null, path) {
-        value = withContext(Dispatchers.IO) { runCatching { decodeThumbnail(context, path) } }
+    //primero el archivo del telefono; si no esta (otro telefono, la borraron de la galeria) la copia de storage
+    val result by produceState<Result<ImageBitmap>?>(initialValue = null, path, remoteUrl) {
+        value = withContext(Dispatchers.IO) {
+            runCatching { if (path.isBlank() && remoteUrl != null) decodeRemote(context, remoteUrl) else decodeThumbnail(context, path) }
+                .recoverCatching { error -> if (remoteUrl != null) decodeRemote(context, remoteUrl) else throw error }
+        }
     }
     Box(
         modifier = modifier.clip(RoundedCornerShape(24.dp)).background(CardFill),
@@ -380,49 +579,35 @@ private fun PhotoThumbnail(path: String, modifier: Modifier = Modifier) {
     ) {
         val bitmap = result?.getOrNull()
         when {
-            bitmap != null -> Image(bitmap, contentDescription = "Photo of the day", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            bitmap != null -> Image(bitmap, contentDescription = description, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
             result == null -> CircularProgressIndicator(color = SecondaryColor)
             else -> Icon(Icons.Filled.BrokenImage, contentDescription = "The photo could not be opened", tint = TextColor.copy(alpha = 0.5f), modifier = Modifier.size(48.dp))
         }
     }
 }
 
-//abre la foto desde una direccion content:// o file:// (camara) o desde una ruta de archivo (#26)
-private fun openPhoto(context: Context, path: String): InputStream {
-    return if (path.startsWith("content://") || path.startsWith("file://")) {
-        context.contentResolver.openInputStream(Uri.parse(path)) ?: error("Cannot open $path")
-    } else {
-        FileInputStream(path)
-    }
+//glide lee la foto (content:// de la galeria o ruta de archivo) en segundo plano, reducida y ya girada segun el exif
+private fun decodeThumbnail(context: Context, path: String): ImageBitmap {
+    val model: Any = if (path.startsWith("content://") || path.startsWith("file://")) Uri.parse(path) else File(path)
+    val bitmap = Glide.with(context)
+        .asBitmap()
+        .load(model)
+        .override(MAX_THUMBNAIL_SIZE)
+        .submit()
+        .get() ?: error("Could not decode $path")
+    return bitmap.asImageBitmap()
 }
 
-//lee la foto a un tamano maximo de 1080 px y la gira segun lo que guardo la camara (exif)
-private fun decodeThumbnail(context: Context, path: String): ImageBitmap {
-    //primero solo se leen las medidas, sin cargar la imagen
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    openPhoto(context, path).use { BitmapFactory.decodeStream(it, null, bounds) }
-    var sample = 1
-    while (bounds.outWidth / (sample * 2) >= MAX_THUMBNAIL_SIZE || bounds.outHeight / (sample * 2) >= MAX_THUMBNAIL_SIZE) {
-        sample *= 2
-    }
-    val options = BitmapFactory.Options().apply { inSampleSize = sample }
-    val bitmap = openPhoto(context, path).use { BitmapFactory.decodeStream(it, null, options) }
-        ?: error("Not an image: $path")
-
-    val rotation = openPhoto(context, path).use { stream ->
-        when (ExifInterface(stream).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
-            ExifInterface.ORIENTATION_ROTATE_90 -> 90f
-            ExifInterface.ORIENTATION_ROTATE_180 -> 180f
-            ExifInterface.ORIENTATION_ROTATE_270 -> 270f
-            else -> 0f
-        }
-    }
-    val upright = if (rotation == 0f) {
-        bitmap
-    } else {
-        Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, Matrix().apply { postRotate(rotation) }, true)
-    }
-    return upright.asImageBitmap()
+//glide baja la foto de storage una sola vez: queda en su cache en disco (50 MB) y despues se ve sin red
+private fun decodeRemote(context: Context, url: String): ImageBitmap {
+    val bitmap = Glide.with(context)
+        .asBitmap()
+        .load(url)
+        .diskCacheStrategy(DiskCacheStrategy.DATA)
+        .override(MAX_THUMBNAIL_SIZE)
+        .submit()
+        .get() ?: error("Could not download $url")
+    return bitmap.asImageBitmap()
 }
 
 private const val MAX_THUMBNAIL_SIZE = 1080
@@ -434,10 +619,7 @@ fun PhotoOfTheDayRoute(
     onBack: () -> Unit,
     onPhotoSaved: () -> Unit = {}
 ) {
-    val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val cameraHelper = remember { CameraHelper(context) }
-    var currentPhotoUri by remember { mutableStateOf<Uri?>(null) }
 
     LaunchedEffect(uiState.isPhotoSaved) {
         if (uiState.isPhotoSaved) {
@@ -446,16 +628,14 @@ fun PhotoOfTheDayRoute(
         }
     }
 
-    //launcher para capturar foto con la camara del dispositivo (#31)
+    //launcher para capturar foto con la camara del dispositivo
     val takePictureLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
     ) { success ->
-        if (success && currentPhotoUri != null) {
-            viewModel.onPhotoCaptured(currentPhotoUri.toString())
-        }
+        viewModel.onCaptureResult(success)
     }
 
-    //launcher para seleccionar foto de la galeria mediante PickVisualMedia (#31)
+    //launcher para seleccionar foto de la galeria mediante PickVisualMedia
     val pickVisualMediaLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
@@ -464,26 +644,19 @@ fun PhotoOfTheDayRoute(
         }
     }
 
-    //launcher para solicitar el permiso de camara al usuario (#31)
+    //launcher para solicitar el permiso de camara al usuario
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
-            val uri = cameraHelper.createTempPictureUri()
-            if (uri != null) {
-                currentPhotoUri = uri
-                takePictureLauncher.launch(uri)
-            }
+            viewModel.prepareCapture()?.let { takePictureLauncher.launch(Uri.parse(it)) }
         }
     }
 
-    val onTakePhoto = {
-        if (cameraHelper.hasCameraPermission()) {
-            val uri = cameraHelper.createTempPictureUri()
-            if (uri != null) {
-                currentPhotoUri = uri
-                takePictureLauncher.launch(uri)
-            }
+    val onTakePhoto: () -> Unit = {
+        //el viewmodel crea el archivo de la foto; la pantalla solo abre la camara
+        if (viewModel.hasCameraPermission()) {
+            viewModel.prepareCapture()?.let { takePictureLauncher.launch(Uri.parse(it)) }
         } else {
             cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
@@ -495,7 +668,7 @@ fun PhotoOfTheDayRoute(
         )
     }
 
-    //#8: se espera al siguiente cuadro; para entonces el primer dibujo de la pantalla ya termino
+    //latencia: se espera al siguiente cuadro; para entonces el primer dibujo de la pantalla ya termino
     LaunchedEffect(Unit) {
         withFrameNanos { }
         viewModel.onScreenRendered()
@@ -508,18 +681,20 @@ fun PhotoOfTheDayRoute(
         onPickPhotoClick = onPickPhoto,
         onCaptionChange = viewModel::onCaptionChange,
         onRetakeClick = viewModel::onRetakeClick,
-        onSaveClick = viewModel::onSaveClick
+        onSaveClick = viewModel::onSaveClick,
+        onShowDeleteDialog = viewModel::onShowDeleteDialog,
+        onConfirmDelete = viewModel::onDeleteTodayPhoto
     )
 }
 
 private val previewWeek = listOf(
+    PhotoDay("S", "Saturday", PhotoDayState.MISSED),
+    PhotoDay("S", "Sunday", PhotoDayState.TAKEN),
     PhotoDay("M", "Monday", PhotoDayState.TAKEN),
     PhotoDay("T", "Tuesday", PhotoDayState.MISSED),
     PhotoDay("W", "Wednesday", PhotoDayState.TAKEN),
     PhotoDay("T", "Thursday", PhotoDayState.TAKEN),
-    PhotoDay("F", "Friday", PhotoDayState.TODAY),
-    PhotoDay("S", "Saturday", PhotoDayState.UPCOMING),
-    PhotoDay("S", "Sunday", PhotoDayState.UPCOMING)
+    PhotoDay("F", "Friday", PhotoDayState.TODAY, isToday = true)
 )
 
 @Preview(showBackground = true, name = "Photo of the day - empty")

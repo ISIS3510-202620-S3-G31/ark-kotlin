@@ -46,7 +46,7 @@ interface EmotionCheckInDao {
         }
     }
 
-    //historial desde una fecha, por ejemplo la ultima semana para las estadisticas (#15)
+    //historial desde una fecha, por ejemplo la ultima semana para las estadisticas
     @Query("SELECT * FROM mood_checkins WHERE timestamp >= :fromMillis ORDER BY timestamp ASC")
     fun getCheckInsSinceRaw(fromMillis: Long): Flow<List<CheckInEntity>>
 
@@ -62,7 +62,7 @@ interface EmotionCheckInDao {
         }
     }
 
-    //solo las fechas, para calcular la racha de dias seguidos (perfil #6 y estadisticas #15)
+    //solo las fechas, para calcular la racha de dias seguidos (perfil y estadisticas)
     @Query("SELECT timestamp FROM mood_checkins ORDER BY timestamp DESC")
     fun getCheckInTimestampsRaw(): Flow<List<Long>>
 
@@ -77,13 +77,34 @@ interface EmotionCheckInDao {
         }
     }
 
-    //los que faltan por subir a firestore (#33)
-    @Query("SELECT * FROM mood_checkins WHERE isSynced = 0")
-    suspend fun getUnsyncedCheckInsRaw(): List<CheckInEntity>
+    //el ultimo check-in del usuario; el home lo lee de aqui para funcionar sin internet
+    @Query("SELECT * FROM mood_checkins WHERE userId = :userId ORDER BY timestamp DESC LIMIT 1")
+    suspend fun getLatestCheckInRaw(userId: String): CheckInEntity?
 
-    suspend fun getUnsyncedCheckIns(): List<CheckInEntity> {
+    suspend fun getLatestCheckIn(userId: String): CheckInEntity? {
         return try {
-            getUnsyncedCheckInsRaw()
+            getLatestCheckInRaw(userId)
+        } catch (e: Exception) {
+            CrashlyticsHelper.logNonFatal(
+                componentName = "EmotionCheckInDao",
+                action = "getLatestCheckIn",
+                throwable = e
+            )
+            null
+        }
+    }
+
+    //cuantos check-ins tiene el usuario desde una fecha; con 0 desde el inicio del dia todavia no ha hecho el de hoy
+    @Query("SELECT COUNT(*) FROM mood_checkins WHERE userId = :userId AND timestamp >= :fromMillis")
+    suspend fun countCheckInsSince(userId: String, fromMillis: Long): Int
+
+    //los que faltan por subir a firestore; solo los del usuario con sesion, porque se suben a su carpeta
+    @Query("SELECT * FROM mood_checkins WHERE isSynced = 0 AND userId = :userId")
+    suspend fun getUnsyncedCheckInsRaw(userId: String): List<CheckInEntity>
+
+    suspend fun getUnsyncedCheckIns(userId: String): List<CheckInEntity> {
+        return try {
+            getUnsyncedCheckInsRaw(userId)
         } catch (e: Exception) {
             CrashlyticsHelper.logNonFatal(
                 componentName = "EmotionCheckInDao",

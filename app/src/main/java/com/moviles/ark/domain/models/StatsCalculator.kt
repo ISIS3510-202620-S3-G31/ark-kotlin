@@ -6,7 +6,7 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-//clase de dominio que procesa los datos brutos y calcula las estadisticas e insights del usuario (#15 y #29)
+//clase de dominio que procesa los datos brutos y calcula las estadisticas e insights del usuario
 class StatsCalculator(
     private val insightsEngine: UsefulInsightsEngine = UsefulInsightsEngine()
 ) {
@@ -18,18 +18,16 @@ class StatsCalculator(
         toolPercentages: Map<String, Float> = emptyMap()
     ): StatsModel {
         val dateFormat = SimpleDateFormat("yyyyMMdd", Locale.getDefault())
-        val dayNameFormat = SimpleDateFormat("EEE", Locale.ENGLISH)
 
         //ultimos 7 dias desde hace 6 dias hasta hoy
         val weekDateKeys = mutableListOf<String>()
-        val dayLabels = mutableListOf<String>()
         for (i in 0..6) {
             val daysAgo = 6 - i
             val tempCal = Calendar.getInstance()
             tempCal.add(Calendar.DAY_OF_YEAR, -daysAgo)
             weekDateKeys.add(dateFormat.format(tempCal.time))
-            dayLabels.add(dayNameFormat.format(tempCal.time))
         }
+        val dayLabels = lastSevenDayLabels()
 
         val dayEmotionsList = Array(7) { mutableListOf<Emotion>() }
         val dayIntensitiesList = Array(7) { mutableListOf<Int>() }
@@ -60,7 +58,10 @@ class StatsCalculator(
                 if (dominant != null) {
                     weeklyEmotions[dayLabel] = dominant
                 }
-                weeklyIntensities[dayLabel] = dayIntensitiesList[i].average().toFloat()
+                //usamos la intensidad dominante del dia en lugar de un promedio plano
+                val dominantIntensity = dayIntensitiesList[i].groupingBy { it }.eachCount().maxByOrNull { it.value }?.key?.toFloat()
+                    ?: (dayIntensitiesList[i].maxOrNull()?.toFloat() ?: 0f)
+                weeklyIntensities[dayLabel] = dominantIntensity
             } else {
                 weeklyIntensities[dayLabel] = 0f
             }
@@ -68,11 +69,12 @@ class StatsCalculator(
 
         val topEmotion = allEmotionsCount.maxByOrNull { it.value }?.key
 
-        //llamamos al motor de hallazgos utiles que creo el companero (#28)
+        //llamamos al motor de hallazgos utiles que creo el companero
+        //si el hallazgo no trae emocion propia se usa la mas frecuente para filtrar el catalogo
         val allInsights = insightsEngine.generateInsights(
             checkIns = checkIns,
             interactions = interactions
-        )
+        ).map { if (it.emotion == null) it.copy(emotion = topEmotion) else it }
 
         //seleccionamos el insight actual: si hay varios, rotamos dinamicamente para darle variedad al entrar
         val currentInsight = if (allInsights.isNotEmpty()) {
@@ -89,7 +91,42 @@ class StatsCalculator(
             weeklyEmotions = weeklyEmotions,
             toolUsagePercentages = toolPercentages,
             currentInsight = currentInsight,
-            allInsights = allInsights
+            allInsights = allInsights,
+            emotionFrequencies = allEmotionsCount
         )
+    }
+
+    companion object {
+        //porcentaje de uso de cada herramienta a partir de sus nombres o ids (firestore o room)
+        fun toolUsagePercentages(rawToolNames: List<String>): Map<String, Float> {
+            val counts = rawToolNames.filter { it.isNotBlank() }.groupingBy { displayToolName(it) }.eachCount()
+            if (counts.isEmpty()) return emptyMap()
+            val total = counts.values.sum().toFloat()
+            return counts.mapValues { (_, count) -> count / total * 100f }
+        }
+
+        //nombre visible de una herramienta; junta los alias viejos (espanol, ids cortos) bajo un mismo nombre
+        fun displayToolName(raw: String): String {
+            return when (raw.lowercase().replace("-", "_").trim()) {
+                "breathing_pacer", "breathing", "respiracion" -> "Breathing Pacer"
+                "photo_of_the_day", "photo", "foto" -> "Photo of the Day"
+                "achievement_jar", "jar", "frasco" -> "Achievement Jar"
+                "blow_it_out", "blow", "sopla" -> "Blow It Out"
+                else -> raw.split("_", "-").joinToString(" ") { word ->
+                    word.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.getDefault()) else it.toString() }
+                }
+            }
+        }
+
+        //nombres cortos de los ultimos 7 dias, de hace 6 dias hasta hoy; la grafica semanal los recorre en este orden
+        //porque el mapa que vuelve de firestore no conserva el orden en que se guardaron los dias
+        fun lastSevenDayLabels(): List<String> {
+            val dayNameFormat = SimpleDateFormat("EEE", Locale.ENGLISH)
+            return (6 downTo 0).map { daysAgo ->
+                val tempCal = Calendar.getInstance()
+                tempCal.add(Calendar.DAY_OF_YEAR, -daysAgo)
+                dayNameFormat.format(tempCal.time)
+            }
+        }
     }
 }

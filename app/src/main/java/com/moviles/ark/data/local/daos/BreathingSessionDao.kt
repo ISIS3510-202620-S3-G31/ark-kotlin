@@ -8,7 +8,7 @@ import com.moviles.ark.data.remote.CrashlyticsHelper
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 
-//consultas de la tabla breathing_sessions (#82)
+//consultas de la tabla breathing_sessions
 @Dao
 interface BreathingSessionDao {
 

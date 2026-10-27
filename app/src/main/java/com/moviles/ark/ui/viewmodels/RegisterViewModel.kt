@@ -5,10 +5,10 @@ import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.AP
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import com.google.firebase.FirebaseNetworkException
-import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
-import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.moviles.ark.ArkApplication
+import com.moviles.ark.domain.exceptions.EmailAlreadyRegisteredException
+import com.moviles.ark.domain.exceptions.InvalidCredentialsException
+import com.moviles.ark.domain.exceptions.NetworkUnavailableException
 import com.moviles.ark.domain.models.UserModel
 import com.moviles.ark.domain.repositories.AuthRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,108 +16,113 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-class RegisterViewModel(private val authRepository: AuthRepository): ViewModel() { //hereda de view model, como hay que llamar al constructor super(), se pone ()
-    private val privateUiState = MutableStateFlow(RegisterUiState()) //solo el viewmodel lo puede editar
-    //uiState es un contenedor reactivo, guarda solo 1 register ui state a la vez
-    //aunque solo guardo un objeto, necesito el contenedor para que este pendiente si algo cambia y le avise a la vista
-    val uiState: StateFlow<RegisterUiState> = privateUiState.asStateFlow() //misma direccion de memoria que el private pero solo de lectura
+class RegisterViewModel(private val authRepository: AuthRepository) : ViewModel() {
+    //solo el viewmodel puede modificar el estado privado
+    private val privateUiState = MutableStateFlow(RegisterUiState())
+    //contenedor reactivo expuesto a la vista de solo lectura
+    val uiState: StateFlow<RegisterUiState> = privateUiState.asStateFlow()
 
-    //actualizar el register ui state cuando el usuario escribe algo (con tan solo una letra ya se lanza)
-    //dejamos error message en todos por si ya salio un error y el usuario lo esta corrigiendo, para que no siga viendo que hay error
-    fun onNameChange(newName: String): Unit {
-        //abrir contenedor, sacar el objeto contenido y hace copia cambiando solo el atributo que le decimos
-        //la copia es necesaria porque los campos en register ui state son val (inmutables)
-        //ademas, al crear un objeto nuevo, el stateflow lo nota y avisa a la vista
-        privateUiState.value = privateUiState.value.copy(name = newName, errorMessage = null)
+    //cada campo le pregunta al modelo UserModel si cumple; el viewmodel solo guarda el resultado en el estado
+    fun onNameChange(newName: String) {
+        updateForm(privateUiState.value.copy(name = newName, nameError = UserModel.nameErrorWhileTyping(newName)))
     }
 
-    fun onAgeChange(newAge: String): Unit {
-        privateUiState.value = privateUiState.value.copy(age = newAge, errorMessage = null)
+    fun onBirthDateChange(newBirthDate: String) {
+        updateForm(privateUiState.value.copy(birthDate = newBirthDate, birthDateError = UserModel.birthDateErrorWhileTyping(newBirthDate)))
     }
 
-    fun onEmailChange(newEmail: String): Unit {
-        privateUiState.value = privateUiState.value.copy(email = newEmail, errorMessage = null)
+    fun onEmailChange(newEmail: String) {
+        updateForm(privateUiState.value.copy(email = newEmail, emailError = UserModel.emailErrorWhileTyping(newEmail)))
     }
 
-    fun onPasswordChange(newPassword: String): Unit {
-        privateUiState.value = privateUiState.value.copy(password = newPassword, errorMessage = null)
+    fun onPasswordChange(newPassword: String) {
+        val current = privateUiState.value
+        updateForm(
+            current.copy(
+                password = newPassword,
+                passwordError = UserModel.passwordErrorWhileTyping(newPassword),
+                confirmPasswordError = UserModel.confirmPasswordErrorWhileTyping(newPassword, current.confirmPassword)
+            )
+        )
     }
 
-    fun onConfirmPasswordChange(newConfirmPassword: String): Unit {
-        privateUiState.value = privateUiState.value.copy(confirmPassword = newConfirmPassword, errorMessage = null)
+    fun onConfirmPasswordChange(newConfirmPassword: String) {
+        val current = privateUiState.value
+        updateForm(
+            current.copy(
+                confirmPassword = newConfirmPassword,
+                confirmPasswordError = UserModel.confirmPasswordErrorWhileTyping(current.password, newConfirmPassword)
+            )
+        )
+    }
+
+    private fun updateForm(updated: RegisterUiState) {
+        privateUiState.value = updated.copy(
+            errorMessage = null,
+            isFormValid = userOf(updated).registrationError(updated.confirmPassword) == null
+        )
+    }
+
+    private fun userOf(state: RegisterUiState) = UserModel(
+        name = state.name.trim(),
+        birthDate = state.birthDate.trim(),
+        email = state.email.trim(),
+        password = state.password
+    )
+
+    fun dismissNoInternetDialog() {
+        privateUiState.value = privateUiState.value.copy(showNoInternetDialog = false)
     }
 
     //hacer el registro cuando el usuario presiona el boton en la screen
-    //aqui solo hacemos validaciones de presentacion de la pantalla y le delegamos las de negocio al modelo UserModel
-    //onSuccess se ejecuta cuando firebase termina de crear la cuenta
+    //las reglas de negocio pertenecen al modelo UserModel
     fun register(onSuccess: () -> Unit) {
         val state = privateUiState.value
 
-        //reglas de presentacion
-        //revisar que no haya ningun campo vacio en la pantalla
-        if (state.name.isBlank() || state.age.isBlank() || state.email.isBlank() || state.password.isBlank() || state.confirmPassword.isBlank()) {
-            privateUiState.value = state.copy(errorMessage = "Please fill in all fields")
-            return //detener la funcion, no seguir revisando nada mas, pues porque ya encontro un error
-        }
-
-        //revisar que ambas contrasenas escritas coincidan
-        if (state.password != state.confirmPassword) {
-            privateUiState.value = state.copy(errorMessage = "Passwords do not match")
-            return //detener la funcion, no seguir revisando nada mas, pues porque ya encontro un error
-        }
-
-        //revisar que el texto de la edad se pueda convertir a numero
-        val ageNumber = state.age.toIntOrNull()
-        if (ageNumber == null) {
-            privateUiState.value = state.copy(errorMessage = "Please enter a valid age")
-            return
-        }
-
-        //creamos el objeto del modelo con los datos listos
-        val userModel = UserModel(state.name, ageNumber, state.email, state.password)
-
-        //reglas de negocio
-        //le preguntamos al modelo UserModel si cumple con reglas de negocio
-        if (!userModel.isValidName()) {
-            privateUiState.value = state.copy(errorMessage = "Name is too short")
-            return
-        }
-
-        if (!userModel.isValidAge()) {
-            privateUiState.value = state.copy(errorMessage = "Please enter a valid age")
-            return
-        }
-
-        if (!userModel.isValidEmail()) {
-            privateUiState.value = state.copy(errorMessage = "Please enter a valid email address")
-            return
-        }
-
-        if (!userModel.isValidPassword()) {
-            privateUiState.value = state.copy(errorMessage = "Password must be at least 8 characters and contain 1 uppercase and 1 number")
+        //el modelo dice el primer error del formulario y el de cada campo
+        val userModel = userOf(state)
+        val formError = userModel.registrationError(state.confirmPassword)
+        if (formError != null) {
+            privateUiState.value = state.copy(
+                errorMessage = formError,
+                nameError = if (formError == UserModel.CHECK_FIELDS_ERROR) UserModel.nameError(userModel.name) else state.nameError,
+                birthDateError = if (formError == UserModel.CHECK_FIELDS_ERROR) UserModel.birthDateError(userModel.birthDate) else state.birthDateError,
+                emailError = if (formError == UserModel.CHECK_FIELDS_ERROR) UserModel.emailError(userModel.email) else state.emailError,
+                passwordError = if (formError == UserModel.CHECK_FIELDS_ERROR) UserModel.passwordError(userModel.password) else state.passwordError,
+                confirmPasswordError = if (formError == UserModel.PASSWORDS_DO_NOT_MATCH_ERROR) formError else state.confirmPasswordError
+            )
             return
         }
 
         //activamos la carga para mostrar el spinner en la pantalla
-        privateUiState.value = state.copy(isLoading = true, errorMessage = null)
+        privateUiState.value = state.copy(isLoading = true, errorMessage = null, showNoInternetDialog = false)
 
-        //llamamos a authRepository para guardar el userModel en firebase
-        //se hace en una corrutina porque firebase se demora en responder
         viewModelScope.launch {
             val result = authRepository.registerUser(userModel)
-
-            //apagamos la carga una vez completado
             privateUiState.value = privateUiState.value.copy(isLoading = false)
 
-            result.onSuccess { onSuccess() }
+            result.onSuccess {
+                privateUiState.value = privateUiState.value.copy(
+                    successMessage = "Account created successfully! Welcome to Ark"
+                )
+                onSuccess()
+            }
             result.onFailure { error ->
-                val message = when (error) {
-                    is FirebaseAuthUserCollisionException -> "This email is already registered"
-                    is FirebaseAuthInvalidCredentialsException -> "Please enter a valid email address"
-                    is FirebaseNetworkException -> "No internet connection, try again"
-                    else -> "Could not create the account, try again"
+                //el repositorio ya traduce los errores de firebase a excepciones del dominio
+                if (error is NetworkUnavailableException) {
+                    privateUiState.value = privateUiState.value.copy(
+                        showNoInternetDialog = true,
+                        isAirplaneModeError = error.isAirplaneMode,
+                        errorMessage = null
+                    )
+                } else {
+                    val message = when (error) {
+                        is EmailAlreadyRegisteredException -> "This email is already registered"
+                        is InvalidCredentialsException -> UserModel.INVALID_EMAIL_ERROR
+                        else -> "Could not create the account, try again"
+                    }
+                    privateUiState.value = privateUiState.value.copy(errorMessage = message)
                 }
-                privateUiState.value = privateUiState.value.copy(errorMessage = message)
             }
         }
     }

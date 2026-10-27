@@ -7,8 +7,10 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
 import com.moviles.ark.domain.models.CheckInStreak
+import com.moviles.ark.domain.models.UserModel
 import com.moviles.ark.domain.models.UserProfile
 import com.moviles.ark.domain.repositories.AuthRepository
+import com.moviles.ark.domain.repositories.AvatarRepository
 import com.moviles.ark.domain.repositories.MoodRepository
 import com.moviles.ark.domain.repositories.UserRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,15 +21,16 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.TimeZone
 
 //now se puede cambiar en las pruebas para fijar "hoy"; en la app es la hora del telefono
 class ProfileViewModel(
     private val authRepository: AuthRepository,
-    //perfil guardado en room (#119): se muestra de una vez, aunque no haya internet
+    //perfil guardado en room: se muestra de una vez, aunque no haya internet
     private val userRepository: UserRepository,
-    //check-ins del usuario para la racha (#96)
+    //check-ins del usuario para la racha
     private val moodRepository: MoodRepository? = null,
+    //avatar elegido; null en previews
+    private val avatarRepository: AvatarRepository? = null,
     private val now: () -> Long = { System.currentTimeMillis() }
 ) : ViewModel() {
     //privado: solo el viewmodel lo modifica
@@ -44,7 +47,23 @@ class ProfileViewModel(
     //room se escucha apenas se crea el viewmodel; si la pantalla rota no se vuelve a pedir
     //el refresco con firestore lo pide la pantalla cada vez que se muestra (loadProfile)
     init {
+        loadCachedProfile()
         observeProfile()
+        observeAvatar()
+    }
+
+    //lo ultimo guardado en el telefono (sharedpreferences) se muestra de una vez mientras llegan room y firestore
+    private fun loadCachedProfile() {
+        val cached = userRepository.cachedProfile() ?: return
+        _uiState.update {
+            it.copy(
+                name = cached.displayName(),
+                initials = cached.initials(),
+                email = cached.email,
+                age = cached.getCalculatedAge(),
+                isLoading = false
+            )
+        }
     }
 
     //room avisa cada vez que cambia la fila: al refrescar desde firestore, al editar o al cambiar el avatar
@@ -54,6 +73,19 @@ class ProfileViewModel(
                 if (profile != null) showProfile(profile)
             }
         }
+    }
+
+    private fun observeAvatar() {
+        val repository = avatarRepository ?: return
+        viewModelScope.launch {
+            repository.currentAvatarId.collect { avatarId ->
+                _uiState.update { it.copy(selectedAvatarId = avatarId) }
+            }
+        }
+    }
+
+    fun onAvatarSelected(avatarId: String) {
+        avatarRepository?.setAvatarId(avatarId)
     }
 
     //trae lo ultimo de firestore (y sube un cambio que haya quedado pendiente sin internet)
@@ -70,14 +102,14 @@ class ProfileViewModel(
         }
     }
 
-    //la pantalla lo pide cada vez que se muestra, asi la racha se ve al dia despues de un check-in en el home (#96)
+    //la pantalla lo pide cada vez que se muestra, asi la racha se ve al dia despues de un check-in en el home
     fun loadStreak() {
         val repository = moodRepository ?: return
         viewModelScope.launch {
             val from = now() - CheckInStreak.LOOKBACK_DAYS * DAY_MILLIS
             //si no se puede leer (por ejemplo sin internet y sin copia local) se queda la racha guardada en room
             repository.getCheckInTimestampsSince(from).onSuccess { timestamps ->
-                //le preguntamos al modelo cuantos dias seguidos lleva y se guarda para verla sin internet (#119)
+                //le preguntamos al modelo cuantos dias seguidos lleva y se guarda para verla sin internet
                 val days = streak.daysInARow(timestamps)
                 freshStreak = days
                 userRepository.saveStreak(days, timestamps.maxOrNull())
@@ -92,7 +124,7 @@ class ProfileViewModel(
             it.copy(
                 isEditing = true,
                 editName = state.name,
-                editAge = if (state.age > 0) state.age.toString() else "",
+                editBirthDate = state.birthDate,
                 editError = null
             )
         }
@@ -102,9 +134,9 @@ class ProfileViewModel(
         _uiState.update { it.copy(editName = name, editError = null) }
     }
 
-    //solo numeros y maximo 3 cifras
-    fun onEditAgeChange(age: String) {
-        _uiState.update { it.copy(editAge = age.filter { c -> c.isDigit() }.take(3), editError = null) }
+    //el modelo limpia lo escrito para que quepa en YYYY-MM-DD (el selector de fecha ya la entrega asi)
+    fun onEditBirthDateChange(birthDate: String) {
+        _uiState.update { it.copy(editBirthDate = UserModel.cleanBirthDateInput(birthDate), editError = null) }
     }
 
     fun onEditDismiss() {
@@ -118,20 +150,17 @@ class ProfileViewModel(
             name = state.editName.trim(),
             email = state.email,
             memberSince = 0L,
-            age = state.editAge.toIntOrNull() ?: 0
+            birthDate = state.editBirthDate.trim()
         )
-        val error = when {
-            !edited.isValidName() -> "Your name needs ${UserProfile.MIN_NAME_LENGTH} to ${UserProfile.MAX_NAME_LENGTH} letters"
-            !edited.isValidAge() -> "Enter an age between 1 and 120"
-            else -> null
-        }
+        val error = edited.editError()
         if (error != null) {
             _uiState.update { it.copy(editError = error) }
             return
         }
         _uiState.update { it.copy(isSaving = true) }
         viewModelScope.launch {
-            userRepository.updateProfile(edited.name, edited.age)
+            //se guarda la fecha y la edad se calcula de ella, asi se mantiene al dia con los cumpleanos
+            userRepository.updateProfile(edited.name, edited.birthDate)
                 .onSuccess { _uiState.update { it.copy(isSaving = false, isEditing = false, message = "Profile saved") } }
                 .onFailure { _uiState.update { it.copy(isSaving = false, editError = "Could not save your profile, try again") } }
         }
@@ -152,21 +181,23 @@ class ProfileViewModel(
 
     fun onSignOutClick() {
         authRepository.logout()
+        //lo guardado en el telefono es del usuario que sale
+        viewModelScope.launch { userRepository.clearCachedProfile() }
         _uiState.update { it.copy(isSignedOut = true) }
     }
 
     private fun showProfile(profile: UserProfile) {
-        //si no hay nombre (sin internet la primera vez), se usa la parte del correo antes de la @
-        val name = profile.name.ifBlank { profile.email.substringBefore("@") }
+        val name = profile.displayName()
         _uiState.update {
             it.copy(
                 name = name,
-                initials = initialsOf(name),
+                initials = profile.initials(),
                 email = profile.email,
-                age = profile.age,
+                age = profile.getCalculatedAge(),
+                birthDate = profile.birthDate,
                 avatarPath = profile.avatarPath,
                 memberSince = formatMemberSince(profile.memberSince),
-                daysWithArk = daysSince(profile.memberSince),
+                daysWithArk = profile.daysWithArk(now()),
                 //la racha guardada solo vale si el ultimo check-in fue hoy o ayer
                 streakDays = freshStreak ?: streak.stillAlive(profile.streakDays, profile.lastCheckInAt),
                 isLoading = false,
@@ -181,24 +212,6 @@ class ProfileViewModel(
         return SimpleDateFormat("MMMM yyyy", Locale.ENGLISH).format(Date(millis))
     }
 
-    //primera letra de las dos primeras palabras: "David Forero" -> "DF", "lau3" -> "L"
-    private fun initialsOf(name: String): String {
-        return name.trim().split(Regex("\\s+"))
-            .filter { it.isNotEmpty() }
-            .take(2)
-            .joinToString("") { it.first().uppercase() }
-    }
-
-    //cuenta dias de calendario en la hora local: registrarse hoy da 1, manana da 2
-    //se suma el desfase de la zona horaria para que el dia cambie a medianoche de colombia y no de londres
-    private fun daysSince(millis: Long): Int {
-        if (millis <= 0L) return 0
-        val zone = TimeZone.getDefault()
-        val today = (now() + zone.getOffset(now())) / DAY_MILLIS
-        val firstDay = (millis + zone.getOffset(millis)) / DAY_MILLIS
-        return (today - firstDay + 1).toInt().coerceAtLeast(1)
-    }
-
     //factory para que el viewmodel reciba los repositorios del AppContainer
     companion object {
         private const val DAY_MILLIS = 24 * 60 * 60 * 1000L
@@ -209,9 +222,11 @@ class ProfileViewModel(
                 ProfileViewModel(
                     authRepository = app.container.authRepository,
                     userRepository = app.container.userRepository,
-                    moodRepository = app.container.moodRepository
+                    moodRepository = app.container.moodRepository,
+                    avatarRepository = app.container.avatarRepository
                 )
             }
         }
     }
 }
+

@@ -1,0 +1,58 @@
+[
+  {
+    "id": "custom_breathing",
+    "name": "Custom breathing",
+    "description": "Build the rhythm that fits you.",
+    "category": "breathing_regulation",
+    "format": "touch",
+    "iconName": "ic_tool_custom_breathing"
+  },
+  {
+    "id": "blow_it_out",
+    "name": "Blow it out",
+    "description": "Blow out the tension, one breath at a time.",
+    "category": "somatic_release",
+    "format": "voice",
+    "iconName": "ic_tool_blow_it_out"
+  },
+  {
+    "id": "scream_tank",
+    "name": "Scream tank",
+    "description": "Let it out. Nobody is listening but you.",
+    "category": "somatic_release",
+    "format": "voice",
+    "iconName": "ic_tool_scream_tank"
+  },
+  {
+    "id": "body_mapping",
+    "name": "Body mapping",
+    "description": "Mark where the feeling lives.",
+    "category": "emotional_awareness",
+    "format": "touch",
+    "iconName": "ic_tool_body_mapping"
+  },
+  {
+    "id": "emotion_detective",
+    "name": "Emotion detective",
+    "description": "Not sure what you feel? Let's find out.",
+    "category": "emotional_awareness",
+    "format": "text",
+    "iconName": "ic_tool_emotion_detective"
+  },
+  {
+    "id": "achievement_jar",
+    "name": "Achievement jar",
+    "description": "Save the good stuff. Read it when you need it.",
+    "category": "behavioral_activation",
+    "format": "text",
+    "iconName": "ic_tool_achievement_jar"
+  },
+  {
+    "id": "photo_of_the_day",
+    "name": "Photo of the day",
+    "description": "One photo a day, one new memory.",
+    "category": "behavioral_activation",
+    "format": "photo",
+    "iconName": "ic_tool_photo_of_the_day"
+  }
+]
