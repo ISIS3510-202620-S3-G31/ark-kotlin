@@ -7,6 +7,10 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
+import com.moviles.ark.data.remote.CrashlyticsHelper
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import com.moviles.ark.data.local.AvatarPreferences
 import com.moviles.ark.data.repositories.ToolRepositoryImpl
 import com.moviles.ark.domain.adapters.WeatherServiceAdapter
@@ -51,7 +55,8 @@ class HomeViewModel(
     private val weatherServiceAdapter: WeatherServiceAdapter? = null,
     private val locationRepository: LocationRepository? = null,
     private val now: () -> Long = { System.currentTimeMillis() },
-    initialTools: List<Tool> = ToolRepositoryImpl.sampleTools
+    initialTools: List<Tool> = ToolRepositoryImpl.sampleTools,
+    private val defaultDispatcher: CoroutineDispatcher = Dispatchers.Default
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -81,18 +86,24 @@ class HomeViewModel(
     }
 
     //el clima va aparte del resolver de estrategias: no cambia el orden del catalogo, solo llena su propia tarjeta
+    //se valida la cache en disco (TTL de 1 hora) para tener clima sin red; si no hay clima o no tiene sugerencia la tarjeta no sale
     fun loadWeatherSuggestion() {
         val adapter = weatherServiceAdapter ?: return
         viewModelScope.launch(Dispatchers.IO) {
-            //sin internet no hay clima nuevo; la tarjeta simplemente no aparece
-            if (!isOnline()) return@launch
-            //sin permiso o con el gps apagado no hay coordenadas y no se pide el clima
-            val location = locationRepository?.getCurrentLocation() ?: return@launch
-            val latitude = location.latitude ?: return@launch
-            val longitude = location.longitude ?: return@launch
-            val weather = adapter.getCurrentWeather(latitude, longitude).getOrNull() ?: return@launch
-            val suggestion = WeatherSuggestionEngine(weather).suggest(_uiState.value.tools)
-            _uiState.value = _uiState.value.copy(weatherSuggestion = suggestion)
+            val location = locationRepository?.getCurrentLocation()
+            val latitude = location?.latitude
+            val longitude = location?.longitude
+
+            val weather = if (latitude != null && longitude != null) {
+                adapter.getCurrentWeather(latitude, longitude).getOrNull()
+            } else {
+                (adapter as? com.moviles.ark.data.remote.apis.OpenMeteoAdapterImpl)?.getCachedWeatherIfValid()
+            }
+
+            val currentTools = _uiState.value.tools.ifEmpty { ToolRepositoryImpl.sampleTools }
+            val suggestion = weather?.let { WeatherSuggestionEngine(it).suggest(currentTools) }
+
+            _uiState.update { it.copy(weatherSuggestion = suggestion) }
         }
     }
 
@@ -150,17 +161,36 @@ class HomeViewModel(
         )
     }
 
+    //elige una herramienta al azar del catalogo guardado en room, en Dispatchers.Default y sin red
+    //solo entre las que ya estan hechas; si falla la lectura se abre la respiracion
     fun onSurpriseMe() {
-        val available = if (_uiState.value.filteredTools.isNotEmpty()) {
-            _uiState.value.filteredTools
-        } else {
-            _uiState.value.tools
-        }
+        viewModelScope.launch(defaultDispatcher) {
+            try {
+                val localTools = toolRepository.getTools().first()
+                val available = localTools.ifEmpty { _uiState.value.tools }.ifEmpty { ToolRepositoryImpl.sampleTools }
+                    .filter { it.isImplemented }
 
-        //abre la herramienta elegida de una vez, por el mismo camino que las demas entradas del home
-        if (available.isNotEmpty()) {
-            onToolClick(available.random().id)
+                //abre la herramienta elegida de una vez, por el mismo camino que las demas entradas del home
+                if (available.isNotEmpty()) {
+                    onToolClick(available.random().id)
+                } else {
+                    launchBreathingFallback()
+                }
+            } catch (e: Throwable) {
+                if (e is CancellationException) throw e
+                CrashlyticsHelper.logNonFatal(
+                    componentName = "HomeViewModel",
+                    action = "onSurpriseMe",
+                    throwable = e
+                )
+                launchBreathingFallback()
+            }
         }
+    }
+
+    //si no se pudo leer el catalogo se abre la respiracion, que siempre esta en el telefono
+    private fun launchBreathingFallback() {
+        onToolClick(WeatherSuggestionEngine.CALM_TOOL_ID)
     }
 
     //las tres entradas del home (catalogo, recomendacion y surprise me) llegan aqui
