@@ -27,7 +27,9 @@ class ArkApplication : Application() {
         AvatarPreferences.init(this)
         //iniciar el observador de sincronizacion automatica offline
         container.syncManager.startMonitoring()
-        //escuchar los avisos push de cambios en el catalogo de herramientas
+        //precargar y verificar el soporte del modelo de reconocimiento de voz offline
+        container.speechToTextHelper.preloadOfflineModel()
+        //escuchar los avisos push de cambios en el catalogo de herramientas (#156)
         ToolsCatalogMessagingService.subscribeToCatalogUpdates()
     }
 

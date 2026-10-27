@@ -18,6 +18,7 @@ import com.moviles.ark.data.local.sensors.AudioPlayerHelper
 import com.moviles.ark.data.local.sensors.EnvironmentalSensorManager
 import com.moviles.ark.data.local.sensors.Location
 import com.moviles.ark.data.local.sensors.NetworkConnectivityObserver
+import com.moviles.ark.data.local.sensors.SpeechToTextHelper
 import com.moviles.ark.data.local.sensors.SyncManager
 import com.moviles.ark.data.repositories.AnalyticsRepositoryImpl
 import com.moviles.ark.data.repositories.AuthRepositoryImpl
@@ -71,6 +72,7 @@ interface AppContainer {
     val syncRepository: SyncRepository
     val syncManager: SyncManager
     val environmentalSensorManager: EnvironmentalSensorManager
+    val speechToTextHelper: SpeechToTextHelper
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -180,4 +182,6 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     }
     // sensor de luz + hora del dia para recomendaciones segun el entorno; uno para toda la app
     override val environmentalSensorManager: EnvironmentalSensorManager by lazy { EnvironmentalSensorManager(context) }
+    // ayudante reutilizable de speech-to-text nativo de android para dictado offline
+    override val speechToTextHelper: SpeechToTextHelper by lazy { SpeechToTextHelper(context) }
 }
