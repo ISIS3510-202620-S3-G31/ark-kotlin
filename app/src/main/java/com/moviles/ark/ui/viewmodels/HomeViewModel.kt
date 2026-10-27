@@ -125,6 +125,10 @@ class HomeViewModel(
                     avatarId = profile.avatarId,
                     userName = profile.name
                 )
+            }
+        }
+    }
+
     private fun observeAvatar() {
         val repository = avatarRepository ?: return
         viewModelScope.launch {
@@ -238,7 +242,7 @@ class HomeViewModel(
 
     //online-first: con internet se decide con los datos frescos y el resultado se guarda en disco;
     //sin internet se usa lo guardado hoy y, si no hay, se decide en el telefono con lo que haya guardado
-    private suspend fun recommend(rawTools: List<ToolModel>): List<Tool> {
+    private suspend fun recommend(rawTools: List<ToolModel>): List<ToolModel> {
         val online = isOnline()
         if (!online) {
             val cached = recommendationRepository?.getLastRecommendation()

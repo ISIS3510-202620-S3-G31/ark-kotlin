@@ -12,6 +12,7 @@ import com.moviles.ark.domain.composite.Emotion
 import com.moviles.ark.domain.composite.MoodFactory
 import com.moviles.ark.domain.composite.SingleEmotion
 import com.moviles.ark.domain.models.InsightModel
+import com.moviles.ark.domain.models.MoodCheckInModel
 import com.moviles.ark.domain.models.StatsCalculator
 import com.moviles.ark.domain.models.StatsModel
 import com.moviles.ark.domain.models.ToolInteractionModel
@@ -174,7 +175,7 @@ class StatsRepositoryImpl(
         }
 
         //transforma los documentos crudos de firestore a modelos de dominio
-        val checkInModels = mutableListOf<CheckInModel>()
+        val checkInModels = mutableListOf<MoodCheckInModel>()
         for (doc in checkInDocs) {
             val timestamp = doc.getLong("timestamp") ?: continue
             val emotionsRaw = doc.get("emotions") as? List<Map<String, Any>> ?: emptyList()
@@ -193,7 +194,7 @@ class StatsRepositoryImpl(
             val moodComponent = if (parsedEmotions.isEmpty()) MoodFactory.default() else MoodFactory.fromParts(parsedEmotions)
 
             checkInModels.add(
-                CheckInModel(
+                MoodCheckInModel(
                     mood = moodComponent,
                     note = note,
                     latitude = lat,

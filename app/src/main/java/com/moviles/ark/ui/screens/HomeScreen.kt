@@ -73,6 +73,7 @@ import com.moviles.ark.R
 import com.moviles.ark.ui.components.avatarDrawable
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.border
+import com.moviles.ark.domain.models.MoodCheckInModel
 import com.moviles.ark.domain.models.ToolModel
 import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.domain.models.WeatherCondition
@@ -741,7 +742,7 @@ private fun LeaveItToChanceCard(
 //dialogo no editable para revisar el check-in completado del dia sin permitir duplicados
 @Composable
 private fun DailyCheckInReviewDialog(
-    checkIn: CheckInModel?,
+    checkIn: MoodCheckInModel?,
     onDismiss: () -> Unit
 ) {
     val todayFormatted = remember(checkIn?.timestamp) {
@@ -814,7 +815,7 @@ private fun DailyCheckInReviewDialog(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = "✕",
+                                text = "âœ•",
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = TextColor.copy(alpha = 0.75f)
@@ -950,7 +951,7 @@ private fun DailyCheckInReviewDialog(
                             .background(NeutralSurfaceColor)
                             .padding(horizontal = 12.dp, vertical = 5.dp)
                     ) {
-                        Text("📍", fontSize = 12.sp)
+                        Text("ðŸ“", fontSize = 12.sp)
                         Spacer(modifier = Modifier.width(6.dp))
                         val locationText = if (checkIn?.latitude != null && checkIn.longitude != null) {
                             String.format(Locale.US, "%.4f, %.4f", checkIn.latitude, checkIn.longitude)
