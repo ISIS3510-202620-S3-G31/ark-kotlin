@@ -106,7 +106,7 @@ class ProfileViewModel(
             it.copy(
                 isEditing = true,
                 editName = state.name,
-                editAge = if (state.age > 0) state.age.toString() else "",
+                editBirthDate = state.birthDate,
                 editError = null
             )
         }
@@ -116,9 +116,9 @@ class ProfileViewModel(
         _uiState.update { it.copy(editName = name, editError = null) }
     }
 
-    //solo numeros y maximo 3 cifras
-    fun onEditAgeChange(age: String) {
-        _uiState.update { it.copy(editAge = age.filter { c -> c.isDigit() }.take(3), editError = null) }
+    //YYYY-MM-DD: solo numeros y guiones, maximo 10 caracteres (el selector de fecha ya la entrega asi)
+    fun onEditBirthDateChange(birthDate: String) {
+        _uiState.update { it.copy(editBirthDate = birthDate.filter { c -> c.isDigit() || c == '-' }.take(10), editError = null) }
     }
 
     fun onEditDismiss() {
@@ -132,11 +132,11 @@ class ProfileViewModel(
             name = state.editName.trim(),
             email = state.email,
             memberSince = 0L,
-            age = state.editAge.toIntOrNull() ?: 0
+            birthDate = state.editBirthDate.trim()
         )
         val error = when {
             !edited.isValidName() -> "Your name needs ${UserProfile.MIN_NAME_LENGTH} to ${UserProfile.MAX_NAME_LENGTH} letters"
-            !edited.isValidAge() -> "Enter an age between 1 and 120"
+            !edited.isValidBirthDate() -> "Enter a valid birth date (YYYY-MM-DD); you need to be ${UserProfile.MIN_AGE} to ${UserProfile.MAX_AGE} years old"
             else -> null
         }
         if (error != null) {
@@ -145,7 +145,8 @@ class ProfileViewModel(
         }
         _uiState.update { it.copy(isSaving = true) }
         viewModelScope.launch {
-            userRepository.updateProfile(edited.name, edited.age)
+            //se guarda la fecha y la edad se calcula de ella, asi se mantiene al dia con los cumpleanos
+            userRepository.updateProfile(edited.name, edited.birthDate)
                 .onSuccess { _uiState.update { it.copy(isSaving = false, isEditing = false, message = "Profile saved") } }
                 .onFailure { _uiState.update { it.copy(isSaving = false, editError = "Could not save your profile, try again") } }
         }
@@ -178,6 +179,7 @@ class ProfileViewModel(
                 initials = initialsOf(name),
                 email = profile.email,
                 age = profile.getCalculatedAge(),
+                birthDate = profile.birthDate,
                 avatarPath = profile.avatarPath,
                 memberSince = formatMemberSince(profile.memberSince),
                 daysWithArk = daysSince(profile.memberSince),

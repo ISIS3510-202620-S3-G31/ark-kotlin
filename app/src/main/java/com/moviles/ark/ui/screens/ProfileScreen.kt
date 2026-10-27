@@ -1,5 +1,7 @@
 package com.moviles.ark.ui.screens
 
+import android.app.DatePickerDialog
+import android.content.Context
 import android.graphics.BitmapFactory
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.PaddingValues
@@ -37,6 +39,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Whatshot
@@ -45,6 +48,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -67,8 +71,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -85,6 +88,9 @@ import com.moviles.ark.ui.viewmodels.ProfileViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 
 //solo se usan colores de la paleta (ms6); las tarjetas son el texto muy transparente sobre el fondo
 private val CardFill = TextColor.copy(alpha = 0.06f)
@@ -99,7 +105,7 @@ fun ProfileScreen(
     onAvatarSelect: (String) -> Unit = {},
     onEditProfileClick: () -> Unit = {},
     onEditNameChange: (String) -> Unit = {},
-    onEditAgeChange: (String) -> Unit = {},
+    onEditBirthDateChange: (String) -> Unit = {},
     onEditDismiss: () -> Unit = {},
     onSaveProfileClick: () -> Unit = {}
 ) {
@@ -208,7 +214,7 @@ fun ProfileScreen(
             uiState = uiState,
             onAvatarSelect = onAvatarSelect,
             onNameChange = onEditNameChange,
-            onAgeChange = onEditAgeChange,
+            onBirthDateChange = onEditBirthDateChange,
             onDismiss = onEditDismiss,
             onSaveClick = onSaveProfileClick
         )
@@ -384,16 +390,18 @@ private fun rememberAvatar(path: String?): ImageBitmap? {
     return avatar
 }
 
-//dialogo para cambiar nombre, edad y avatar; el correo no se edita porque es el de la cuenta
+//dialogo para cambiar nombre, fecha de nacimiento y avatar; el correo no se edita porque es el de la cuenta
+//se edita la fecha y no la edad: la edad se calcula de la fecha y asi se actualiza sola con cada cumpleanos
 @Composable
 private fun EditProfileDialog(
     uiState: ProfileUiState,
     onAvatarSelect: (String) -> Unit,
     onNameChange: (String) -> Unit,
-    onAgeChange: (String) -> Unit,
+    onBirthDateChange: (String) -> Unit,
     onDismiss: () -> Unit,
     onSaveClick: () -> Unit
 ) {
+    val context = LocalContext.current
     val fieldColors = OutlinedTextFieldDefaults.colors(
         focusedBorderColor = SecondaryColor,
         unfocusedBorderColor = TextColor.copy(alpha = 0.3f),
@@ -420,14 +428,19 @@ private fun EditProfileDialog(
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedTextField(
-                    value = uiState.editAge,
-                    onValueChange = onAgeChange,
+                    value = uiState.editBirthDate,
+                    onValueChange = onBirthDateChange,
                     enabled = !uiState.isSaving,
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = TextColor),
-                    label = { Text("Age", style = LocalTextStyle.current.copy(fontFamily = FigtreeFontFamily)) },
+                    label = { Text("Date of birth (YYYY-MM-DD)", style = LocalTextStyle.current.copy(fontFamily = FigtreeFontFamily)) },
+                    //el calendario evita errores al escribir la fecha, igual que en el registro
+                    trailingIcon = {
+                        IconButton(onClick = { showBirthDatePicker(context, uiState.editBirthDate, onBirthDateChange) }, enabled = !uiState.isSaving) {
+                            Icon(Icons.Filled.DateRange, contentDescription = "Select birth date", tint = TextColor)
+                        }
+                    },
                     colors = fieldColors
                 )
                 if (uiState.editError != null) {
@@ -462,6 +475,20 @@ private fun EditProfileDialog(
             }
         }
     )
+}
+
+//selector de fecha del sistema; abre en la fecha guardada o, si no hay, hace 20 anos, y devuelve YYYY-MM-DD
+private fun showBirthDatePicker(context: Context, current: String, onPicked: (String) -> Unit) {
+    val calendar = Calendar.getInstance()
+    val saved = runCatching { SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).apply { isLenient = false }.parse(current) }.getOrNull()
+    if (saved != null) calendar.time = saved else calendar.add(Calendar.YEAR, -20)
+    DatePickerDialog(
+        context,
+        { _, year, month, day -> onPicked(String.format(Locale.ROOT, "%04d-%02d-%02d", year, month + 1, day)) },
+        calendar.get(Calendar.YEAR),
+        calendar.get(Calendar.MONTH),
+        calendar.get(Calendar.DAY_OF_MONTH)
+    ).apply { datePicker.maxDate = System.currentTimeMillis() }.show()
 }
 
 //tarjeta de un dato: icono en cuadro secondary (como las tarjetas del home), numero y texto
@@ -524,7 +551,7 @@ fun ProfileRoute(
         onAvatarSelect = viewModel::onAvatarSelected,
         onEditProfileClick = viewModel::onEditProfileClick,
         onEditNameChange = viewModel::onEditNameChange,
-        onEditAgeChange = viewModel::onEditAgeChange,
+        onEditBirthDateChange = viewModel::onEditBirthDateChange,
         onEditDismiss = viewModel::onEditDismiss,
         onSaveProfileClick = viewModel::onSaveProfileClick
     )
@@ -583,7 +610,7 @@ fun ProfileScreenEditingPreview() {
                 memberSince = "October 2026",
                 isEditing = true,
                 editName = "Laura Avelino",
-                editAge = "21"
+                editBirthDate = "2005-03-14"
             ),
             onSignOutClick = {},
             onRetryClick = {}
