@@ -2,7 +2,7 @@ package com.moviles.ark.domain.models
 
 import com.moviles.ark.domain.repositories.AnalyticsRepository
 
-//mide cuanto tarda en abrirse una herramienta (#8)
+//mide cuanto tarda en abrirse una herramienta
 //1. al tocar la herramienta se llama start(toolId)
 //2. cuando su pantalla termina de dibujarse se llama onToolRendered(toolId)
 //vive en el AppContainer (uno solo para toda la app), porque el toque y la pantalla estan en lugares distintos

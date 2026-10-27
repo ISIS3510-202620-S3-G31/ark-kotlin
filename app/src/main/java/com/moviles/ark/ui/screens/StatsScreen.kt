@@ -70,6 +70,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.domain.composite.Emotion
+import com.moviles.ark.domain.models.StatsCalculator
+import com.moviles.ark.domain.models.EmotionShare
 import com.moviles.ark.domain.models.StatsModel
 import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.ui.components.getEmotionColor
@@ -88,7 +90,7 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-//paleta consistente de superficies de tarjeta sobre BackgroundColor (#158)
+//paleta consistente de superficies de tarjeta sobre BackgroundColor
 private val CardSurfaceColor = Color(0xFFF3E4CF)
 private val CardBorderColor = TextColor.copy(alpha = 0.12f)
 
@@ -100,12 +102,12 @@ fun StatsScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
 
-    //recarga automaticamente al entrar a la pantalla para mostrar check-ins recientes con cache-then-network (#147, #158)
+    //recarga automaticamente al entrar a la pantalla para mostrar check-ins recientes con cache-then-network
     LaunchedEffect(Unit) {
         viewModel.loadStats()
     }
 
-    //aviso corto cuando el refresco no pudo traer datos nuevos (#147)
+    //aviso corto cuando el refresco no pudo traer datos nuevos
     LaunchedEffect(uiState.noticeMessage) {
         uiState.noticeMessage?.let { message ->
             Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
@@ -189,7 +191,7 @@ fun StatsScreenContent(
                 }
             }
 
-            //deslizar hacia abajo pide datos nuevos al backend en firestore (#147, #158)
+            //deslizar hacia abajo pide datos nuevos al backend en firestore
             val pullState = rememberPullToRefreshState()
             PullToRefreshBox(
                 isRefreshing = isRefreshing,
@@ -215,8 +217,8 @@ fun StatsScreenContent(
                     }
                 } else if (stats == null) {
                     PullableContent {
-                        if (isOffline || errorMessage?.contains("offline", ignoreCase = true) == true) {
-                            //cuando no hay nada en disco y no hay internet: fallback ilustrado amigable (#158)
+                        if (isOffline) {
+                            //cuando no hay nada en disco y no hay internet: fallback ilustrado amigable
                             StatsOfflineView(onRetry = onRefresh)
                         } else if (errorMessage != null) {
                             StatsErrorView(
@@ -229,7 +231,7 @@ fun StatsScreenContent(
                             )
                         }
                     }
-                } else if (stats.totalCheckIns == 0 && stats.toolUsagePercentages.isEmpty()) {
+                } else if (stats.isEmpty()) {
                     PullableContent {
                         StatsEmptyView(
                             onExploreTools = { onNavigateToToolsCatalog(null) }
@@ -243,30 +245,7 @@ fun StatsScreenContent(
     }
 }
 
-//formatea el timestamp de las estadisticas para mostrar al usuario la frescura de los datos (#158)
-private fun formatLastUpdated(timestamp: Long): String {
-    if (timestamp <= 0L) return ""
-    return try {
-        val date = Date(timestamp)
-        val timeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
-        val dateFormat = SimpleDateFormat("MMM d, h:mm a", Locale.getDefault())
-
-        val todayCal = Calendar.getInstance()
-        val dateCal = Calendar.getInstance().apply { time = date }
-
-        if (todayCal.get(Calendar.YEAR) == dateCal.get(Calendar.YEAR) &&
-            todayCal.get(Calendar.DAY_OF_YEAR) == dateCal.get(Calendar.DAY_OF_YEAR)
-        ) {
-            "Updated today at ${timeFormat.format(date)}"
-        } else {
-            "Updated on ${dateFormat.format(date)}"
-        }
-    } catch (e: Exception) {
-        ""
-    }
-}
-
-//las vistas fijas van en una lista de un solo item para que el gesto de pull-to-refresh tambien funcione en ellas (#147)
+//las vistas fijas van en una lista de un solo item para que el gesto de pull-to-refresh tambien funcione en ellas
 @Composable
 private fun PullableContent(content: @Composable () -> Unit) {
     LazyColumn(modifier = Modifier.fillMaxSize()) {
@@ -357,7 +336,7 @@ private fun StatsErrorView(
     }
 }
 
-//tarjeta ilustrada cuando no hay datos en disco y no hay conexion a internet (#158)
+//tarjeta ilustrada cuando no hay datos en disco y no hay conexion a internet
 @Composable
 private fun StatsOfflineView(
     onRetry: () -> Unit
@@ -380,7 +359,7 @@ private fun StatsOfflineView(
                 modifier = Modifier.padding(26.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                //composicion ilustrada calida con icono de offline (#158)
+                //composicion ilustrada calida con icono de offline
                 Box(
                     modifier = Modifier
                         .size(88.dp)
@@ -451,7 +430,7 @@ private fun StatsOfflineView(
     }
 }
 
-//tarjeta ilustrada de estado vacio cuando el usuario aun no ha registrado check-ins ni herramientas (#158)
+//tarjeta ilustrada de estado vacio cuando el usuario aun no ha registrado check-ins ni herramientas
 @Composable
 private fun StatsEmptyView(
     onExploreTools: () -> Unit = {}
@@ -474,7 +453,7 @@ private fun StatsEmptyView(
                 modifier = Modifier.padding(26.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                //composicion ilustrada con halo concentrico calido de la paleta oficial (#158)
+                //composicion ilustrada con halo concentrico calido de la paleta oficial
                 Box(
                     modifier = Modifier
                         .size(88.dp)
@@ -569,7 +548,7 @@ private fun StatsMainView(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                //capsula 1 (izquierda): top feeling con relieve y paleta oficial (#158)
+                //capsula 1 (izquierda): top feeling con relieve y paleta oficial
                 Surface(
                     modifier = Modifier
                         .weight(1f)
@@ -659,7 +638,7 @@ private fun StatsMainView(
                     }
                 }
 
-                //capsula 2 (derecha): total de checkins con profundidad e icono tactil (#158)
+                //capsula 2 (derecha): total de checkins con profundidad e icono tactil
                 Surface(
                     modifier = Modifier
                         .weight(1f)
@@ -738,15 +717,17 @@ private fun StatsMainView(
             )
         }
 
-        //distribucion de frecuencias discretas de emociones (reemplaza promedios planos, #140)
+        //distribucion de frecuencias discretas de emociones (reemplaza promedios planos)
         item {
             EmotionDistributionCard(
                 emotionFrequencies = stats.emotionFrequencies,
+                distribution = stats.emotionDistribution(),
+                totalRecords = stats.emotionRecordCount(),
                 onShowTooltip = { activeTooltip = it }
             )
         }
 
-        //grafico de torta: frecuencia de herramientas con relieve (#158)
+        //grafico de torta: frecuencia de herramientas con relieve
         item {
             ToolsUsagePieChartCard(toolUsagePercentages = stats.toolUsagePercentages)
         }
@@ -782,14 +763,15 @@ private fun StatsMainView(
     }
 }
 
-//grafico de barras para el journey emocional de la semana con escala visible de 1 a 5 y tipografia oficial (#158)
+//grafico de barras para el journey emocional de la semana con escala visible de 1 a 5 y tipografia oficial
 @Composable
 private fun WeeklyEmotionJourneyCard(
     weeklyIntensities: Map<String, Float>,
     weeklyEmotions: Map<String, Emotion>,
     onShowTooltip: (TooltipInfo) -> Unit = {}
 ) {
-    val dayLabels = if (weeklyIntensities.isNotEmpty()) weeklyIntensities.keys.toList() else listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+    //orden fijo de hace 6 dias hasta hoy, sin depender del orden del mapa que llega de firestore o del cache
+    val dayLabels = StatsCalculator.lastSevenDayLabels()
 
     Card(
         modifier = Modifier
@@ -898,7 +880,7 @@ private fun WeeklyEmotionJourneyCard(
                         val hasEntry = intensity > 0f && emotion != null
                         val barColor = if (emotion != null) getEmotionColor(emotion) else PrimaryColor
                         val emoji = if (emotion != null) getEmotionEmoji(emotion) else ""
-                        val intensityRatio = (intensity / 5f).coerceIn(0f, 1f)
+                        val intensityRatio = StatsModel.intensityRatio(intensity)
 
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
@@ -955,7 +937,7 @@ private fun WeeklyEmotionJourneyCard(
 
                             Spacer(modifier = Modifier.height(6.dp))
 
-                            //etiqueta del dia con tipografia oficial (#158)
+                            //etiqueta del dia con tipografia oficial
                             Text(
                                 text = day.take(3),
                                 style = MaterialTheme.typography.bodySmall,
@@ -973,21 +955,21 @@ private fun WeeklyEmotionJourneyCard(
 }
 
 
-//tarjeta de distribucion de frecuencias de emociones discretas (#140)
+//tarjeta de distribucion de frecuencias de emociones discretas
 @Composable
 private fun EmotionDistributionCard(
     emotionFrequencies: Map<Emotion, Int>,
+    distribution: List<EmotionShare>,
+    totalRecords: Int,
     onShowTooltip: (TooltipInfo) -> Unit = {}
 ) {
-    val total = emotionFrequencies.values.sum().coerceAtLeast(1)
-
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .shadow(6.dp, RoundedCornerShape(24.dp), ambientColor = Color(0x35351B08), spotColor = Color(0x35351B08)),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF5E6)),
-        border = BorderStroke(1.2.dp, Color(0xFFE8D3B9))
+        colors = CardDefaults.cardColors(containerColor = CardSurfaceColor),
+        border = BorderStroke(1.dp, CardBorderColor)
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             Row(
@@ -1027,7 +1009,7 @@ private fun EmotionDistributionCard(
                     }
                 }
                 Text(
-                    text = if (emotionFrequencies.isEmpty()) "" else "$total check-ins",
+                    text = if (emotionFrequencies.isEmpty()) "" else "$totalRecords check-ins",
                     style = MaterialTheme.typography.bodyLarge,
                     color = TextColor.copy(alpha = 0.65f),
                     fontSize = 12.sp
@@ -1039,14 +1021,14 @@ private fun EmotionDistributionCard(
             if (emotionFrequencies.isEmpty()) {
                 Text(
                     text = "No emotion records yet",
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyLarge,
                     color = TextColor.copy(alpha = 0.5f)
                 )
             } else {
-                val sorted = emotionFrequencies.entries.sortedByDescending { it.value }
+                //el modelo ordena las emociones y calcula los porcentajes
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    for ((emotion, count) in sorted) {
-                        val percentage = (count.toFloat() / total * 100f).toInt()
+                    for (share in distribution) {
+                        val (emotion, count, percentage) = share
                         val color = getEmotionColor(emotion)
                         Column {
                             Row(
@@ -1063,7 +1045,7 @@ private fun EmotionDistributionCard(
                                 )
                                 Text(
                                     text = "$count ($percentage%)",
-                                    style = MaterialTheme.typography.bodyMedium,
+                                    style = MaterialTheme.typography.bodyLarge,
                                     color = TextColor.copy(alpha = 0.7f),
                                     fontSize = 12.sp
                                 )
@@ -1074,11 +1056,12 @@ private fun EmotionDistributionCard(
                                     .fillMaxWidth()
                                     .height(8.dp)
                                     .clip(RoundedCornerShape(4.dp))
-                                    .background(Color(0xFFE8D3B9).copy(alpha = 0.45f))
+                                    //pista de la barra con el color de texto suave, como los fondos vacios del resto de la app
+                                    .background(TextColor.copy(alpha = 0.08f))
                             ) {
                                 Box(
                                     modifier = Modifier
-                                        .fillMaxWidth(fraction = (count.toFloat() / total).coerceIn(0f, 1f))
+                                        .fillMaxWidth(fraction = share.fraction)
                                         .fillMaxHeight()
                                         .background(color)
                                 )
@@ -1201,7 +1184,7 @@ private fun ToolsUsagePieChartCard(
 
                     Spacer(modifier = Modifier.width(16.dp))
 
-                    //leyenda de herramientas con sus porcentajes y tipografia oficial (#158)
+                    //leyenda de herramientas con sus porcentajes y tipografia oficial
                     Column(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(8.dp)

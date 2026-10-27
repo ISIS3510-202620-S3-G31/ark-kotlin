@@ -4,6 +4,7 @@ import com.moviles.ark.domain.composite.Emotion
 
 data class FeedbackUiState(
     val toolId: String = "",
+    val duration: Int = 0,
     val rating: Int = 0,
     val comment: String = "",
     val selectedEmotions: Set<Emotion> = emptySet(),

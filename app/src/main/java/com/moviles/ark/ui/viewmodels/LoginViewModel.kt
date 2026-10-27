@@ -5,11 +5,10 @@ import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.AP
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import com.google.firebase.FirebaseNetworkException
-import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
-import com.google.firebase.auth.FirebaseAuthInvalidUserException
 import com.moviles.ark.ArkApplication
+import com.moviles.ark.domain.exceptions.InvalidCredentialsException
 import com.moviles.ark.domain.exceptions.NetworkUnavailableException
+import com.moviles.ark.domain.models.LoginCredentials
 import com.moviles.ark.domain.repositories.AuthRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,31 +19,15 @@ class LoginViewModel(private val authRepository: AuthRepository) : ViewModel() {
     private val _uiState = MutableStateFlow(LoginUiState())
     val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()
 
+    //las reglas de cada campo estan en el modelo LoginCredentials; aqui solo se guarda el resultado
     fun onEmailChange(newEmail: String) {
-        val current = _uiState.value
-        val emailError = when {
-            newEmail.isNotBlank() && (newEmail.contains("@") && newEmail.contains(".")) && !newEmail.matches(EMAIL_REGEX) -> "Please enter a valid email address"
-            newEmail.length >= 6 && !newEmail.contains("@") -> "Email must contain @"
-            else -> null
-        }
-        val updated = current.copy(email = newEmail, emailError = emailError, errorMessage = null)
-        _uiState.value = updated.copy(isFormValid = checkFormValidity(updated))
+        val updated = _uiState.value.copy(email = newEmail, emailError = LoginCredentials.emailErrorWhileTyping(newEmail), errorMessage = null)
+        _uiState.value = updated.copy(isFormValid = LoginCredentials(updated.email, updated.password).isValid())
     }
 
     fun onPasswordChange(newPassword: String) {
-        val current = _uiState.value
-        val passError = when {
-            newPassword.isNotBlank() && newPassword.length < 6 -> "Password must be at least 6 characters"
-            else -> null
-        }
-        val updated = current.copy(password = newPassword, passwordError = passError, errorMessage = null)
-        _uiState.value = updated.copy(isFormValid = checkFormValidity(updated))
-    }
-
-    private fun checkFormValidity(state: LoginUiState): Boolean {
-        val emailValid = state.email.isNotBlank() && state.email.matches(EMAIL_REGEX)
-        val passValid = state.password.length >= 6
-        return emailValid && passValid
+        val updated = _uiState.value.copy(password = newPassword, passwordError = LoginCredentials.passwordErrorWhileTyping(newPassword), errorMessage = null)
+        _uiState.value = updated.copy(isFormValid = LoginCredentials(updated.email, updated.password).isValid())
     }
 
     fun dismissNoInternetDialog() {
@@ -53,13 +36,10 @@ class LoginViewModel(private val authRepository: AuthRepository) : ViewModel() {
 
     fun onLoginClick(onSuccess: () -> Unit) {
         val state = _uiState.value
-        if (state.email.isBlank() || state.password.isBlank()) {
-            _uiState.value = state.copy(errorMessage = "Please fill in all fields")
-            return
-        }
-
-        if (!state.email.matches(EMAIL_REGEX)) {
-            _uiState.value = state.copy(emailError = "Please enter a valid email address", errorMessage = "Please check highlighted errors")
+        val credentials = LoginCredentials(state.email, state.password)
+        val submitError = credentials.submitError()
+        if (submitError != null) {
+            _uiState.value = state.copy(emailError = credentials.emailSubmitError() ?: state.emailError, errorMessage = submitError)
             return
         }
 
@@ -70,21 +50,16 @@ class LoginViewModel(private val authRepository: AuthRepository) : ViewModel() {
 
             result.onSuccess { onSuccess() }
             result.onFailure { error ->
-                val isNetworkError = error is NetworkUnavailableException ||
-                        error is FirebaseNetworkException ||
-                        (error.cause != null && (error.cause is NetworkUnavailableException || error.cause is FirebaseNetworkException))
-
-                if (isNetworkError) {
-                    val isAirplane = (error as? NetworkUnavailableException)?.isAirplaneMode == true ||
-                            (error.cause as? NetworkUnavailableException)?.isAirplaneMode == true
+                //el repositorio ya traduce los errores de firebase a excepciones del dominio
+                if (error is NetworkUnavailableException) {
                     _uiState.value = _uiState.value.copy(
                         showNoInternetDialog = true,
-                        isAirplaneModeError = isAirplane,
+                        isAirplaneModeError = error.isAirplaneMode,
                         errorMessage = null
                     )
                 } else {
                     val message = when (error) {
-                        is FirebaseAuthInvalidCredentialsException, is FirebaseAuthInvalidUserException -> "Incorrect email or password"
+                        is InvalidCredentialsException -> "Incorrect email or password"
                         else -> "Could not log in, try again"
                     }
                     _uiState.value = _uiState.value.copy(errorMessage = message)
@@ -94,8 +69,6 @@ class LoginViewModel(private val authRepository: AuthRepository) : ViewModel() {
     }
 
     companion object {
-        private val EMAIL_REGEX = Regex("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")
-
         val Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as ArkApplication

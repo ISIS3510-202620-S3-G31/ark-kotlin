@@ -1,6 +1,6 @@
 package com.moviles.ark.ui.viewmodels
 
-import com.moviles.ark.data.local.AvatarPreferences
+import com.moviles.ark.domain.models.Avatar
 import com.moviles.ark.domain.models.CheckInModel
 import com.moviles.ark.domain.models.Tool
 import com.moviles.ark.domain.models.ToolCategory
@@ -14,13 +14,20 @@ data class HomeUiState(
     val tools: List<Tool> = emptyList(),
     val filteredTools: List<Tool> = emptyList(),
     val selectedCategory: ToolCategory? = null,
-    val surpriseTool: Tool? = null,
+    //categorias con alguna herramienta, para los filtros del catalogo
+    val availableCategories: List<ToolCategory> = emptyList(),
+    //la herramienta que eligio la estrategia de recomendacion; null mientras carga
+    val recommendedTool: Tool? = null,
     val navigateToToolId: String? = null,
     val isCheckInCompleted: Boolean = false,
+    //true una sola vez al abrir el home sin check-in de hoy: la pantalla abre el check-in
+    val showCheckInPrompt: Boolean = false,
     //ultimo check-in registrado hoy para la vista de revision no editable
     val todayCheckIn: CheckInModel? = null,
     val errorMessage: String? = null,
-    //tarjeta aparte segun el clima de afuera; null sin internet, sin ubicacion o si el clima no sugiere nada (#134)
+    //tarjeta aparte segun el clima de afuera; null sin internet, sin ubicacion o si el clima no sugiere nada
     val weatherSuggestion: WeatherSuggestion? = null,
-    val avatarId: String = AvatarPreferences.DEFAULT_AVATAR_ID
+    val avatarId: String = Avatar.DEFAULT_ID,
+    //nombre guardado en el telefono para el saludo del home
+    val userName: String = ""
 )

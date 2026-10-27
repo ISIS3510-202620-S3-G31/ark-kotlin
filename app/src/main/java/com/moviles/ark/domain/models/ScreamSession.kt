@@ -2,7 +2,7 @@ package com.moviles.ark.domain.models
 
 import java.util.Date
 
-//una sesion del scream tank (#157): solo se guardan numeros, nunca el audio
+//una sesion del scream tank: solo se guardan numeros, nunca el audio
 data class ScreamSession(
     //el grito mas fuerte de la sesion, de 0 a 100 (DecibelMeter)
     val peakLevel: Int,

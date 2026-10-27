@@ -8,6 +8,7 @@ import android.media.ExifInterface
 import android.net.Uri
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.moviles.ark.data.local.ProfilePreferences
 import com.moviles.ark.data.local.daos.UserDao
 import com.moviles.ark.data.local.entities.UserEntity
 import com.moviles.ark.data.local.entities.toDomain
@@ -68,19 +69,27 @@ class UserRepositoryImpl(
             val remoteName = document?.getString("name").orEmpty()
             val remoteBirthDate = document?.getString("birthDate").orEmpty()
             val remoteAge = document?.getLong("age")?.toInt() ?: 0
+            val resolvedName = remoteName.ifBlank { local?.name.orEmpty() }
+            val resolvedAge = if (remoteAge > 0) remoteAge else local?.age ?: 0
             userDao.upsertUser(
                 UserEntity(
                     uid = user.uid,
-                    name = remoteName.ifBlank { local?.name.orEmpty() },
+                    name = resolvedName,
                     email = user.email.orEmpty(),
                     birthDate = remoteBirthDate.ifBlank { local?.birthDate.orEmpty() },
-                    age = if (remoteAge > 0) remoteAge else local?.age ?: 0,
+                    age = resolvedAge,
                     streakDays = local?.streakDays ?: 0,
                     lastCheckInAt = local?.lastCheckInAt,
                     createdAt = user.metadata?.creationTimestamp ?: local?.createdAt ?: 0L,
                     avatarPath = local?.avatarPath,
                     isSynced = true
                 )
+            )
+            //persiste los datos escalares en sharedpreferences en segundo plano (offline-first)
+            ProfilePreferences.saveProfile(
+                name = resolvedName,
+                email = user.email.orEmpty(),
+                age = resolvedAge
             )
             //si firestore no respondio y room tampoco tenia nada, la pantalla debe saber que fallo
             if (document == null && local == null) error("Could not load the profile")
@@ -98,6 +107,11 @@ class UserRepositoryImpl(
             val uid = auth.currentUser?.uid ?: error("No user is logged in")
             //primero room: la pantalla cambia de una vez, haya o no internet
             userDao.updateProfile(uid, name.trim(), birthDate)
+            ProfilePreferences.saveProfile(
+                name = name.trim(),
+                email = auth.currentUser?.email.orEmpty(),
+                age = com.moviles.ark.domain.models.UserModel.ageOf(birthDate) ?: 0
+            )
             pushProfile(uid, name.trim(), birthDate)
         }.onFailure { error ->
             CrashlyticsHelper.logNonFatal(
@@ -113,6 +127,11 @@ class UserRepositoryImpl(
         runCatching {
             val uid = auth.currentUser?.uid ?: error("No user is logged in")
             userDao.updateProfileWithAge(uid, name.trim(), age)
+            ProfilePreferences.saveProfile(
+                name = name.trim(),
+                email = auth.currentUser?.email.orEmpty(),
+                age = age
+            )
             pushProfileWithAge(uid, name.trim(), age)
         }.onFailure { error ->
             CrashlyticsHelper.logNonFatal(
@@ -149,6 +168,19 @@ class UserRepositoryImpl(
         }
     }
 
+    //copia en sharedpreferences para mostrar el perfil y el saludo al instante
+    override fun cachedProfile(): UserProfile? {
+        val cached = ProfilePreferences.getScalarProfile()
+        if (cached.name.isBlank() && cached.email.isBlank()) return null
+        return UserProfile(name = cached.name, email = cached.email, memberSince = 0L, age = cached.age)
+    }
+
+    override fun observeCachedName(): Flow<String> = ProfilePreferences.userProfile.map { it.name }
+
+    override suspend fun clearCachedProfile() {
+        ProfilePreferences.clear()
+    }
+
     override suspend fun saveStreak(streakDays: Int, lastCheckInAt: Long?): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val uid = auth.currentUser?.uid ?: error("No user is logged in")
@@ -158,8 +190,8 @@ class UserRepositoryImpl(
 
     //las reglas de firestore aceptan name, birthDate, age y email en users/{uid}: la racha y el avatar se quedan en room
     private suspend fun pushProfile(uid: String, name: String, birthDate: String) {
-        val dummy = com.moviles.ark.domain.models.UserModel(name = name, birthDate = birthDate, email = "", password = "")
-        val calculatedAge = dummy.getCalculatedAge()
+        //la edad la calcula el modelo a partir de la fecha
+        val calculatedAge = com.moviles.ark.domain.models.UserModel.ageOf(birthDate) ?: 0
         val updates = if (calculatedAge > 0) {
             mapOf("name" to name, "birthDate" to birthDate, "age" to calculatedAge)
         } else {

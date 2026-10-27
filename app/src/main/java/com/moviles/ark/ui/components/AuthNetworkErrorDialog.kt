@@ -29,7 +29,7 @@ import com.moviles.ark.ui.theme.TextColor
 
 /**
  * Dialogo informativo amigable que se muestra cuando la autenticacion falla por falta de conexion a internet
- * o por tener activado el modo avion (#141).
+ * o por tener activado el modo avion.
  */
 @Composable
 fun AuthNetworkErrorDialog(

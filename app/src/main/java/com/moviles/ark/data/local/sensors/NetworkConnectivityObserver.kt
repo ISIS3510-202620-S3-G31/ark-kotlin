@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 
-//observador reactivo que monitorea en tiempo real si el celular tiene conexion a internet (#32)
+//observador reactivo que monitorea en tiempo real si el celular tiene conexion a internet
 class NetworkConnectivityObserver(
     context: Context
 ) {
@@ -60,7 +60,7 @@ class NetworkConnectivityObserver(
                 capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 
-    //detecta si el modo avion esta activado (#141)
+    //detecta si el modo avion esta activado
     fun isAirplaneModeOn(): Boolean {
         return try {
             Settings.Global.getInt(

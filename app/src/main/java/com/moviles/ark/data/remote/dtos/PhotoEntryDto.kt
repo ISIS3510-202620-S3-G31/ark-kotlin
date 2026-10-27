@@ -4,8 +4,8 @@ import com.google.firebase.firestore.Exclude
 import com.moviles.ark.data.local.entities.PhotoEntryEntity
 import com.moviles.ark.domain.models.PhotoEntryModel
 
-//dto para serializar y transferir registros de fotos en firebase firestore (#28, #31)
-//documento users/{uid}/photos/{id} (#163)
+//dto para serializar y transferir registros de fotos en firebase firestore
+//documento users/{uid}/photos/{id}
 data class PhotoEntryDto(
     //id del documento en firestore; no se guarda como campo porque firestore ya lo tiene
     @get:Exclude
@@ -18,8 +18,8 @@ data class PhotoEntryDto(
     val remoteUrl: String = ""
 )
 
-//de fila de room a dto, para subir las fotos guardadas sin conexion (#33)
-//el userId sale de la fila (#133): la foto siempre va a la carpeta de quien la tomo
+//de fila de room a dto, para subir las fotos guardadas sin conexion
+//el userId sale de la fila: la foto siempre va a la carpeta de quien la tomo
 fun PhotoEntryEntity.toDto(): PhotoEntryDto {
     return PhotoEntryDto(
         userId = userId,

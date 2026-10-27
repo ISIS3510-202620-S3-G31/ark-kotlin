@@ -4,8 +4,8 @@ import com.moviles.ark.data.local.entities.ToolInteractionEntity
 import com.moviles.ark.domain.models.ToolInteraction
 import java.util.Date
 
-//dto del documento users/{uid}/tool_interactions/{id} en firestore (#163)
-//mismos campos que ToolInteraction del diagrama de clases; stats (#15) y la bq del #34 los leen por nombre
+//dto del documento users/{uid}/tool_interactions/{id} en firestore
+//mismos campos que ToolInteraction del diagrama de clases; stats y la pregunta de negocio #4 los leen por nombre
 data class ToolInteractionDto(
     val userId: String = "",
     val toolId: String = "",
@@ -20,7 +20,7 @@ data class ToolInteractionDto(
     val description: String = ""
 )
 
-//de fila de room a dto; el userId es el del usuario con sesion, igual que antes en el sync (#33)
+//de fila de room a dto; el userId es el del usuario con sesion, igual que antes en el sync
 fun ToolInteractionEntity.toDto(userId: String): ToolInteractionDto {
     return ToolInteractionDto(
         userId = userId,

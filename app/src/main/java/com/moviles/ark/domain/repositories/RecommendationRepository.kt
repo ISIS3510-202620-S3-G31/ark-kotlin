@@ -2,7 +2,7 @@ package com.moviles.ark.domain.repositories
 
 import com.moviles.ark.domain.models.CachedRecommendation
 
-//cache en disco de la ultima recomendacion del home (#159)
+//cache en disco de la ultima recomendacion del home
 //el dominio no sabe que detras hay un archivo json; la implementacion vive en data
 interface RecommendationRepository {
     suspend fun saveLastRecommendation(recommendation: CachedRecommendation): Result<Unit>
