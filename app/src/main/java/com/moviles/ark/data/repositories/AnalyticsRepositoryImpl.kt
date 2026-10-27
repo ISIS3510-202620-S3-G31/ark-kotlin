@@ -13,7 +13,7 @@ import com.moviles.ark.domain.repositories.AnalyticsRepository
 import java.util.Date
 
 //envia los eventos de analitica a firebase analytics
-//la latencia de herramientas tambien se guarda en firestore para que llegue a bigquery en segundos
+//la latencia de herramientas y el tiempo de pantalla tambien se guardan en firestore para que lleguen a bigquery en segundos
 class AnalyticsRepositoryImpl(
     private val analytics: FirebaseAnalytics,
     private val auth: FirebaseAuth,
@@ -51,6 +51,17 @@ class AnalyticsRepositoryImpl(
             param(PARAM_DURATION_MS, entry.durationMs)
             param(PARAM_START_HOUR, entry.startHour.toLong())
         }
+        saveScreenTime(entry)
+    }
+
+    //igual que la latencia: users/{uid}/screen_time llega a bigquery en segundos, analytics tarda hasta una hora
+    private fun saveScreenTime(entry: ScreenTimeEntry) {
+        val userId = auth.currentUser?.uid ?: return
+        firestore.collection("users")
+            .document(userId)
+            .collection(COLLECTION_SCREEN_TIME)
+            .add(entry.toDto(userId, deviceModel, osVersion, Date()))
+            .addOnFailureListener { Log.w("AnalyticsRepository", "Could not save screen time", it) }
     }
 
     override fun setUserId(userId: String?) {
@@ -79,6 +90,8 @@ class AnalyticsRepositoryImpl(
         const val PARAM_DAY = "day"
         const val PARAM_DURATION_MS = "duration_ms"
         const val PARAM_START_HOUR = "start_hour"
+        //coleccion users/{uid}/screen_time en firestore (la lee la extension que la copia a bigquery)
+        const val COLLECTION_SCREEN_TIME = "screen_time"
 
         //nombres de la pregunta de negocio #4
         const val EVENT_TOOL_ENTRY_COMPLETED = "tool_entry_completed"

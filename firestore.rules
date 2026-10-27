@@ -46,13 +46,13 @@ service cloud.firestore {
 
       // Private data of each user
       // Flutter: photos, breathing_sessions, tear_entries, tool_sessions, stats, feedback
-      // Kotlin: mood_checkins, photos, tool_interactions, stats_summary, useful_insights, tool_load_latency
+      // Kotlin: mood_checkins, photos, tool_interactions, stats_summary, useful_insights, tool_load_latency, screen_time
       match /{collection}/{docId} {
         allow read, write: if isOwner(userId)
           && collection in ['photos', 'breathing_sessions', 'mood_checkins', 'tear_entries',
                             'tool_sessions', 'stats', 'feedback',
                             'tool_interactions', 'stats_summary', 'useful_insights',
-                            'tool_load_latency'];
+                            'tool_load_latency', 'screen_time'];
       }
     }
   }
