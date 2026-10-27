@@ -1,14 +1,26 @@
 package com.moviles.ark.data.repositories
 
+import android.os.Build
+import android.util.Log
 import com.google.firebase.analytics.FirebaseAnalytics
 import com.google.firebase.analytics.logEvent
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
+import com.moviles.ark.data.remote.dtos.toDto
 import com.moviles.ark.domain.models.ScreenTimeEntry
 import com.moviles.ark.domain.models.ToolLoadLatency
 import com.moviles.ark.domain.repositories.AnalyticsRepository
+import java.util.Date
 
 //envia los eventos de analitica a firebase analytics
+//la latencia de herramientas tambien se guarda en firestore para que llegue a bigquery en segundos
 class AnalyticsRepositoryImpl(
-    private val analytics: FirebaseAnalytics
+    private val analytics: FirebaseAnalytics,
+    private val auth: FirebaseAuth,
+    private val firestore: FirebaseFirestore,
+    //telefono donde se midio; el dashboard separa el emulador de los celulares reales
+    private val deviceModel: String = Build.MODEL.orEmpty(),
+    private val osVersion: String = Build.VERSION.RELEASE.orEmpty()
 ) : AnalyticsRepository {
 
     override fun logToolLoadLatency(latency: ToolLoadLatency) {
@@ -19,6 +31,18 @@ class AnalyticsRepositoryImpl(
             //analytics no tiene booleanos: 1 si es la primera herramienta desde que arranco la app, 0 si no
             param(PARAM_FIRST_OPEN, if (latency.firstOpen) 1L else 0L)
         }
+        saveToolLoadLatency(latency)
+    }
+
+    //sin sesion no hay carpeta users/{uid} donde guardarla; el evento de analytics se envia igual
+    //no se espera la respuesta: firestore la sube en cuanto hay red y, sin red, la deja en cola hasta que vuelva
+    private fun saveToolLoadLatency(latency: ToolLoadLatency) {
+        val userId = auth.currentUser?.uid ?: return
+        firestore.collection("users")
+            .document(userId)
+            .collection(COLLECTION_TOOL_LOAD_LATENCY)
+            .add(latency.toDto(userId, deviceModel, osVersion, Date()))
+            .addOnFailureListener { Log.w("AnalyticsRepository", "Could not save tool load latency", it) }
     }
 
     override fun logScreenTime(entry: ScreenTimeEntry) {
@@ -47,6 +71,8 @@ class AnalyticsRepositoryImpl(
         const val PARAM_LATENCY_MS = "latency_ms"
         const val PARAM_ENTRY_POINT = "entry_point"
         const val PARAM_FIRST_OPEN = "first_open"
+        //coleccion users/{uid}/tool_load_latency en firestore (la lee la extension que la copia a bigquery)
+        const val COLLECTION_TOOL_LOAD_LATENCY = "tool_load_latency"
 
         //nombres de la pregunta de negocio del tiempo de pantalla diario
         const val EVENT_APP_SCREEN_TIME = "app_screen_time"

@@ -44,12 +44,14 @@ service cloud.firestore {
 
       // Private data of each user
       // Flutter: photos, breathing_sessions, tear_entries, tool_sessions, stats, feedback
-      // Kotlin: mood_checkins, photos, tool_interactions, stats_summary and useful_insights (Stats)
+      // Kotlin: mood_checkins, photos, tool_interactions, stats_summary and useful_insights (Stats),
+      // tool_load_latency (business question 1, streamed to BigQuery)
       match /{collection}/{docId} {
         allow read, write: if isOwner(userId)
           && collection in ['photos', 'breathing_sessions', 'mood_checkins', 'tear_entries',
                             'tool_sessions', 'stats', 'feedback',
-                            'tool_interactions', 'stats_summary', 'useful_insights'];
+                            'tool_interactions', 'stats_summary', 'useful_insights',
+                            'tool_load_latency'];
       }
     }
   }
