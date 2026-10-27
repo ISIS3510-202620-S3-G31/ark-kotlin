@@ -6,19 +6,10 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
-import com.moviles.ark.domain.models.PhotoDay
-import com.moviles.ark.domain.models.PhotoDayState
 import com.moviles.ark.domain.models.PhotoEntryModel
 import com.moviles.ark.domain.models.PhotoWeek
-import android.os.SystemClock
-import com.google.firebase.auth.FirebaseAuth
-import com.moviles.ark.data.local.daos.ToolRecordDao
-import com.moviles.ark.data.local.entities.ToolInteractionEntity
 import com.moviles.ark.domain.models.ToolLatencyTracker
 import com.moviles.ark.domain.repositories.PhotoEntryRepository
-import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,56 +27,36 @@ class PhotoOfTheDayViewModel(
     private val zone: TimeZone = TimeZone.getDefault(),
     private val now: () -> Long = { System.currentTimeMillis() },
     //mide cuanto tardo en abrirse la herramienta; null en previews
-    private val toolLatencyTracker: ToolLatencyTracker? = null,
-    private val toolRecordDao: ToolRecordDao? = null,
-    private val auth: FirebaseAuth? = null,
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+    private val toolLatencyTracker: ToolLatencyTracker? = null
 ) : ViewModel() {
-
+    //privado: solo el viewmodel lo modifica
     private val _uiState = MutableStateFlow(PhotoOfTheDayUiState())
+
+    //publico: la pantalla solo lo escucha
     val uiState: StateFlow<PhotoOfTheDayUiState> = _uiState.asStateFlow()
 
-    private var weekPhotos: List<PhotoEntryModel> = emptyList()
-    private val sessionStartRealtime: Long = SystemClock.elapsedRealtime()
-
-    fun getSessionDurationSeconds(): Int =
-        ((SystemClock.elapsedRealtime() - sessionStartRealtime) / 1000L).toInt().coerceAtLeast(1)
-
-    private suspend fun recordPhotoInteraction(durationSeconds: Int) {
-        val userId = auth?.currentUser?.uid ?: "anonymous"
-        val interaction = ToolInteractionEntity(
-            userId = userId,
-            toolId = TOOL_ID,
-            duration = durationSeconds,
-            interactionType = "PHOTO",
-            intensity = 1,
-            complete = true,
-            value = 1,
-            timestamp = Date(now()),
-            isSynced = false
-        )
-        withContext(ioDispatcher) {
-            toolRecordDao?.insertInteraction(interaction)
-        }
-    }
-
+    //se empieza a escuchar apenas se crea el viewmodel; si la pantalla rota no se vuelve a pedir
     init {
         observeWeek()
     }
 
-    //escucha las fotos de la semana; cada vez que se guarda una, la tira y la foto de hoy se actualizan solas
+    //escucha las fotos de los ultimos 7 dias; cada vez que se guarda una, la tira y la foto de hoy se actualizan solas
     private fun observeWeek() {
         val starts = PhotoWeek.dayStarts(now(), zone)
+        //las de dias pasados que falten en el telefono se traen de la nube; llegan solas por el flow de room
+        //hoy no se trae: la de hoy se puede borrar o repetir y la nube podria devolver una ya borrada
+        viewModelScope.launch {
+            photoRepository.refreshFromCloud(starts.first(), starts[starts.size - 2])
+        }
         viewModelScope.launch {
             photoRepository.getPhotosBetween(starts.first(), starts.last())
                 .catch {
                     _uiState.update { it.copy(isLoading = false, errorMessage = "Could not load your photos") }
                 }
                 .collect { photos ->
-                    weekPhotos = photos
                     val time = now()
-                    _uiState.update { current ->
-                        current.copy(
+                    _uiState.update {
+                        it.copy(
                             todayLabel = formatToday(time),
                             week = PhotoWeek.build(photos, time, zone),
                             todayPhoto = PhotoWeek.todayPhoto(photos, time, zone),
@@ -101,17 +72,32 @@ class PhotoOfTheDayViewModel(
         toolLatencyTracker?.onToolRendered(TOOL_ID)
     }
 
-    //la camara captura una foto: si hoy ya existia una foto, se reemplaza la anterior por la nueva
+    fun hasCameraPermission(): Boolean = photoRepository.hasCameraPermission()
+
+    //prepara el archivo para la camara y devuelve su direccion para abrirla; null si no se pudo crear
+    fun prepareCapture(): String? {
+        val uri = photoRepository.createCaptureUri()
+        _uiState.update { it.copy(captureUri = uri, errorMessage = if (uri == null) "Could not open the camera, try again" else null) }
+        return uri
+    }
+
+    //respuesta de la camara: si tomo la foto se guarda la del archivo preparado
+    fun onCaptureResult(success: Boolean) {
+        val uri = _uiState.value.captureUri
+        _uiState.update { it.copy(captureUri = null) }
+        if (success && uri != null) onPhotoCaptured(uri)
+    }
+
+    //la camara llama esto con la direccion de la foto capturada; se guarda sin caption de texto
+    //si hoy ya habia foto es un retake: se borra la anterior y la nueva queda como la de hoy
     fun onPhotoCaptured(uri: String) {
         val previousTodayPhoto = _uiState.value.todayPhoto
         _uiState.update { it.copy(pendingPhotoUri = uri, caption = "", isSaving = true, errorMessage = null) }
         viewModelScope.launch {
-            if (previousTodayPhoto != null) {
-                photoRepository.deletePhoto(previousTodayPhoto.id)
-            }
+            if (previousTodayPhoto != null) photoRepository.deletePhoto(previousTodayPhoto.id)
             val result = photoRepository.savePhoto(uri, "", now())
             result.onSuccess {
-                recordPhotoInteraction(getSessionDurationSeconds())
+                //la foto nueva llega sola por observeWeek; aqui solo se limpia lo pendiente y avisa que se guardo
                 _uiState.update { it.copy(isSaving = false, pendingPhotoUri = null, caption = "", isPhotoSaved = true) }
             }
             result.onFailure {
@@ -120,48 +106,14 @@ class PhotoOfTheDayViewModel(
         }
     }
 
-    //selecciona un dia de la tira semanal; si es un dia pasado, se visualiza en modo lectura
-    fun onSelectDay(day: PhotoDay) {
-        if (day.state == PhotoDayState.TODAY) {
-            _uiState.update { it.copy(isPastDaySelected = false, selectedDayPhoto = null, selectedDayName = null) }
-            return
-        }
-        val photo = PhotoWeek.photoForDay(weekPhotos, day.dayIndex, now(), zone)
-        _uiState.update {
-            it.copy(
-                isPastDaySelected = true,
-                selectedDayPhoto = photo,
-                selectedDayName = day.name
-            )
+    //mantiene compatibilidad (flujo sin caption)
+    fun onCaptionChange(newCaption: String) {
+        if (newCaption.length <= PhotoEntryModel.MAX_CAPTION_LENGTH) {
+            _uiState.update { it.copy(caption = newCaption) }
         }
     }
 
-    //regresa a la vista del dia de hoy
-    fun onBackToToday() {
-        _uiState.update { it.copy(isPastDaySelected = false, selectedDayPhoto = null, selectedDayName = null) }
-    }
-
-    //muestra u oculta el dialogo modal para confirmar la eliminacion
-    fun onShowDeleteDialog(show: Boolean) {
-        _uiState.update { it.copy(showDeleteDialog = show) }
-    }
-
-    //elimina la foto de hoy con confirmacion del usuario
-    fun onDeleteTodayPhoto() {
-        val todayPhoto = _uiState.value.todayPhoto ?: return
-        _uiState.update { it.copy(isSaving = true, showDeleteDialog = false, errorMessage = null) }
-        viewModelScope.launch {
-            val result = photoRepository.deletePhoto(todayPhoto.id)
-            result.onSuccess {
-                _uiState.update { it.copy(isSaving = false, todayPhoto = null) }
-            }
-            result.onFailure {
-                _uiState.update { it.copy(isSaving = false, errorMessage = "Could not delete your photo, try again") }
-            }
-        }
-    }
-
-    //descarta la foto pendiente sin guardar para tomar otra
+    //descarta la foto sin guardar para tomar otra
     fun onRetakeClick() {
         _uiState.update { it.copy(pendingPhotoUri = null, errorMessage = null) }
     }
@@ -173,13 +125,11 @@ class PhotoOfTheDayViewModel(
 
         _uiState.update { it.copy(isSaving = true, errorMessage = null) }
         viewModelScope.launch {
-            val previousTodayPhoto = state.todayPhoto
-            if (previousTodayPhoto != null) {
-                photoRepository.deletePhoto(previousTodayPhoto.id)
-            }
+            //una foto por dia: si hoy ya habia una, la nueva la reemplaza
+            state.todayPhoto?.let { photoRepository.deletePhoto(it.id) }
             val result = photoRepository.savePhoto(uri, "", now())
             result.onSuccess {
-                recordPhotoInteraction(getSessionDurationSeconds())
+                //la foto nueva llega sola por observeWeek; aqui solo se limpia lo pendiente y avisa que se guardo
                 _uiState.update { it.copy(isSaving = false, pendingPhotoUri = null, caption = "", isPhotoSaved = true) }
             }
             result.onFailure {
@@ -188,8 +138,20 @@ class PhotoOfTheDayViewModel(
         }
     }
 
-    fun onCaptionChange(newCaption: String) {
-        //mantiene compatibilidad pero no muestra campos en pantalla
+    //muestra u oculta el dialogo que confirma el borrado
+    fun onShowDeleteDialog(show: Boolean) {
+        _uiState.update { it.copy(showDeleteDialog = show) }
+    }
+
+    //borra la foto de hoy despues de que el usuario confirma; las de dias pasados no se pueden borrar
+    fun onDeleteTodayPhoto() {
+        val todayPhoto = _uiState.value.todayPhoto ?: return
+        _uiState.update { it.copy(isSaving = true, showDeleteDialog = false, errorMessage = null) }
+        viewModelScope.launch {
+            photoRepository.deletePhoto(todayPhoto.id)
+                .onSuccess { _uiState.update { it.copy(isSaving = false) } }
+                .onFailure { _uiState.update { it.copy(isSaving = false, errorMessage = "Could not delete your photo, try again") } }
+        }
     }
 
     fun onNavigatedToFeedback() {
@@ -205,6 +167,7 @@ class PhotoOfTheDayViewModel(
 
     //factory para que el viewmodel reciba el photoRepository del AppContainer
     companion object {
+        //id de la herramienta en el catalogo
         const val TOOL_ID = "photo_of_the_day"
 
         val Factory = viewModelFactory {
@@ -212,9 +175,7 @@ class PhotoOfTheDayViewModel(
                 val app = this[APPLICATION_KEY] as ArkApplication
                 PhotoOfTheDayViewModel(
                     photoRepository = app.container.photoRepository,
-                    toolLatencyTracker = app.container.toolLatencyTracker,
-                    toolRecordDao = app.container.toolRecordDao,
-                    auth = app.container.auth
+                    toolLatencyTracker = app.container.toolLatencyTracker
                 )
             }
         }

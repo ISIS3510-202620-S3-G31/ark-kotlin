@@ -23,32 +23,17 @@ import java.util.Locale
 import java.util.concurrent.Executors
 import kotlin.coroutines.resume
 import android.location.Location as AndroidLocation
+import com.moviles.ark.domain.models.LocationResult
+import com.moviles.ark.domain.models.LocationStatus
 
-//por que hay o no hay coordenadas; la pantalla muestra un texto distinto en cada caso (#144)
-enum class LocationStatus {
-    //coordenadas tomadas ahora
-    CAPTURED,
-    //sin permiso o con la ubicacion apagada en ajustes
-    DISABLED,
-    //ubicacion encendida pero el gps no dio una posicion a tiempo
-    UNAVAILABLE
-}
-
-//coordenadas en null cuando no se pudo leer; el check-in se guarda igual (#144)
-data class LocationResult(
-    val latitude: Double? = null,
-    val longitude: Double? = null,
-    val status: LocationStatus
-)
-
-//el gps del telefono funciona sin datos ni wifi; solo el nombre de la ciudad (geocoder) necesita red (#144)
+//el gps del telefono funciona sin datos ni wifi; solo el nombre de la ciudad (geocoder) necesita red
 class Location(private val context: Context) {
     private val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
     private val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
     //hilo propio para las respuestas del gps, asi nunca se usa el hilo principal
     private val callbackExecutor = Executors.newSingleThreadExecutor()
 
-    //nunca lanza excepcion: sin permiso, con gps apagado o sin respuesta a tiempo devuelve coordenadas null (#144)
+    //nunca lanza excepcion: sin permiso, con gps apagado o sin respuesta a tiempo devuelve coordenadas null
     suspend fun fetchCurrentLocation(): LocationResult = withContext(Dispatchers.IO) {
         try {
             if (!hasLocationPermission()) return@withContext LocationResult(status = LocationStatus.DISABLED)
@@ -88,7 +73,7 @@ class Location(private val context: Context) {
         return hasFine || hasCoarse
     }
 
-    //la ultima posicion guardada solo sirve si es reciente: nunca se usan coordenadas viejas (#144)
+    //la ultima posicion guardada solo sirve si es reciente: nunca se usan coordenadas viejas
     private fun freshLastKnownLocation(manager: LocationManager): AndroidLocation? {
         return enabledProviders(manager)
             .mapNotNull { provider ->
@@ -172,7 +157,7 @@ class Location(private val context: Context) {
         }
     }
 
-    //nombre de la ciudad con geocoder; necesita red, asi que tiene tiempo maximo y sin respuesta devuelve null (#144)
+    //nombre de la ciudad con geocoder; necesita red, asi que tiene tiempo maximo y sin respuesta devuelve null
     suspend fun resolveCityName(latitude: Double, longitude: Double): String? = withContext(Dispatchers.IO) {
         try {
             if (!Geocoder.isPresent()) return@withContext null

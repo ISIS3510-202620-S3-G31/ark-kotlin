@@ -2,7 +2,7 @@ package com.moviles.ark.domain.models
 
 import java.util.TimeZone
 
-//ultima recomendacion que se calculo con internet (#159); se guarda en disco para usarla sin conexion
+//ultima recomendacion que se calculo con internet; se guarda en disco para usarla sin conexion
 //solo guarda el orden de los ids, asi sirve aunque el catalogo cambie despues
 data class CachedRecommendation(
     val reason: RecommendationReason,

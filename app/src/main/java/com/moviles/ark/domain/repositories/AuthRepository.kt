@@ -7,5 +7,5 @@ interface AuthRepository {
     suspend fun login(email: String, password: String): Result<Unit>
     suspend fun registerUser(user: UserModel): Result<Unit>
     fun logout()
-    //el perfil se lee desde UserRepository (room primero, #119)
+    //el perfil se lee desde UserRepository (room primero)
 }

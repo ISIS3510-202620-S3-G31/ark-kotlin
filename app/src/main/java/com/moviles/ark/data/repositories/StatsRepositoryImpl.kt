@@ -10,6 +10,7 @@ import com.moviles.ark.data.local.daos.ToolRecordDao
 import com.moviles.ark.data.local.entities.toDomain
 import com.moviles.ark.domain.composite.CompoundMood
 import com.moviles.ark.domain.composite.Emotion
+import com.moviles.ark.domain.composite.MoodFactory
 import com.moviles.ark.domain.composite.SingleEmotion
 import com.moviles.ark.domain.models.CheckInModel
 import com.moviles.ark.domain.models.InsightModel
@@ -28,10 +29,10 @@ import java.util.Locale
 class StatsRepositoryImpl(
     private val auth: FirebaseAuth,
     private val firestore: FirebaseFirestore,
-    //los daos de room se quedan en el repositorio: el viewmodel nunca toca la base directo (#135)
+    //los daos de room se quedan en el repositorio: el viewmodel nunca toca la base directo
     private val emotionCheckInDao: EmotionCheckInDao,
     private val toolRecordDao: ToolRecordDao,
-    //cache en disco de las stats que llegaron de firestore (#147)
+    //cache en disco de las stats que llegaron de firestore
     private val statsDiskCache: StatsDiskCache? = null,
     private val statsCalculator: StatsCalculator = StatsCalculator()
 ) : StatsRepository {
@@ -41,7 +42,7 @@ class StatsRepositoryImpl(
         return statsDiskCache?.read(currentUserId)
     }
 
-    //lee check-ins e interacciones de room en IO y calcula en Default; si la base esta vacia devuelve stats en cero (#135)
+    //lee check-ins e interacciones de room en IO y calcula en Default; si la base esta vacia devuelve stats en cero
     override suspend fun getLocalStats(): Result<StatsModel> = runCatching {
         val (checkInEntities, interactionEntities) = withContext(Dispatchers.IO) {
             emotionCheckInDao.getCheckIns().first() to toolRecordDao.getInteractions().first()
@@ -50,12 +51,12 @@ class StatsRepositoryImpl(
             statsCalculator.calculateStats(
                 checkIns = checkInEntities.map { it.toDomain() },
                 interactions = interactionEntities.map { it.toDomain() },
-                toolPercentages = computeToolPercentages(interactionEntities.map { it.toolId })
+                toolPercentages = StatsCalculator.toolUsagePercentages(interactionEntities.map { it.toolId })
             )
         }
     }
 
-    //pide a firestore en IO (Source.SERVER: sin red falla en vez de devolver datos viejos) y actualiza el cache (#147, #158)
+    //pide a firestore en IO (Source.SERVER: sin red falla en vez de devolver datos viejos) y actualiza el cache
     override suspend fun getUserStats(): Result<StatsModel> = withContext(Dispatchers.IO) { fetchAndCacheStats() }
 
     @Suppress("UNCHECKED_CAST")
@@ -63,7 +64,7 @@ class StatsRepositoryImpl(
         val currentUserId = auth.currentUser?.uid ?: "anonymous"
         val todayKey = SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date())
 
-        //consulta primero el resumen precomputado directamente del backend en firestore (#158)
+        //consulta primero el resumen precomputado directamente del backend en firestore
         val summaryDoc = try {
             firestore.collection("users")
                 .document(currentUserId)
@@ -76,9 +77,14 @@ class StatsRepositoryImpl(
             null
         }
 
-        if (summaryDoc != null && summaryDoc.exists()) {
+        //un resumen guardado antes de existir emotionFrequencies no sirve para la tarjeta de distribucion:
+        //si hay check-ins y le falta el campo se recalcula abajo y se vuelve a guardar ya completo
+        val summaryIsComplete = summaryDoc != null && summaryDoc.exists() &&
+            ((summaryDoc.getLong("totalCheckIns") ?: 0L) == 0L || summaryDoc.contains("emotionFrequencies"))
+
+        if (summaryDoc != null && summaryIsComplete) {
             val totalCheckIns = (summaryDoc.getLong("totalCheckIns") ?: 0L).toInt()
-            val topEmotion = summaryDoc.getString("topEmotion")?.let { parseEmotionSafe(it) }
+            val topEmotion = summaryDoc.getString("topEmotion")?.let { MoodFactory.emotionOrDefault(it) }
             val lastUpdated = summaryDoc.getLong("lastUpdated") ?: System.currentTimeMillis()
 
             val rawIntensities = summaryDoc.get("weeklyIntensities") as? Map<String, Any> ?: emptyMap()
@@ -90,13 +96,20 @@ class StatsRepositoryImpl(
             val rawEmotions = summaryDoc.get("weeklyEmotions") as? Map<String, Any> ?: emptyMap()
             val weeklyEmotions = LinkedHashMap<String, Emotion>()
             for ((day, emName) in rawEmotions) {
-                weeklyEmotions[day] = parseEmotionSafe(emName.toString())
+                weeklyEmotions[day] = MoodFactory.emotionOrDefault(emName.toString())
             }
 
             val rawPercentages = summaryDoc.get("toolUsagePercentages") as? Map<String, Any> ?: emptyMap()
             val toolPercentages = LinkedHashMap<String, Float>()
             for ((tool, pct) in rawPercentages) {
                 toolPercentages[tool] = (pct as? Number)?.toFloat() ?: 0f
+            }
+
+            val rawFrequencies = summaryDoc.get("emotionFrequencies") as? Map<String, Any> ?: emptyMap()
+            val emotionFrequencies = LinkedHashMap<Emotion, Int>()
+            for ((emName, count) in rawFrequencies) {
+                val emotion = MoodFactory.emotionOrDefault(emName)
+                emotionFrequencies[emotion] = emotionFrequencies.getOrDefault(emotion, 0) + ((count as? Number)?.toInt() ?: 0)
             }
 
             val rawInsight = summaryDoc.get("currentInsight") as? Map<String, Any>
@@ -118,6 +131,7 @@ class StatsRepositoryImpl(
                 toolUsagePercentages = toolPercentages,
                 currentInsight = currentInsight,
                 allInsights = if (currentInsight != null) listOf(currentInsight) else emptyList(),
+                emotionFrequencies = emotionFrequencies,
                 lastUpdated = lastUpdated
             )
 
@@ -145,7 +159,7 @@ class StatsRepositoryImpl(
         val toolDocs = toolsSnapshot.documents
         val totalToolEntries = toolDocs.size
 
-        //si el usuario es nuevo y no tiene registros, devuelve modelo vacio para mostrar empty state ilustrado (#158)
+        //si el usuario es nuevo y no tiene registros, devuelve modelo vacio para mostrar empty state ilustrado
         if (totalCheckIns == 0 && totalToolEntries == 0) {
             val emptyStats = StatsModel(
                 totalCheckIns = 0,
@@ -173,20 +187,12 @@ class StatsRepositoryImpl(
             val parsedEmotions = mutableListOf<SingleEmotion>()
             for (em in emotionsRaw) {
                 val rawName = em["name"] as? String ?: continue
-                val emotionEnum = parseEmotionSafe(rawName)
-                val intensity = (em["intensity"] as? Number)?.toInt() ?: 3
+                val emotionEnum = MoodFactory.emotionOrDefault(rawName)
+                val intensity = (em["intensity"] as? Number)?.toInt() ?: SingleEmotion.DEFAULT_INTENSITY
                 parsedEmotions.add(SingleEmotion(emotion = emotionEnum, intensity = intensity))
             }
 
-            val moodComponent = when {
-                parsedEmotions.size > 1 -> {
-                    val compound = CompoundMood()
-                    parsedEmotions.forEach { compound.add(it) }
-                    compound
-                }
-                parsedEmotions.size == 1 -> parsedEmotions[0]
-                else -> SingleEmotion(Emotion.HAPPINESS, 3)
-            }
+            val moodComponent = if (parsedEmotions.isEmpty()) MoodFactory.default() else MoodFactory.fromParts(parsedEmotions)
 
             checkInModels.add(
                 CheckInModel(
@@ -201,12 +207,12 @@ class StatsRepositoryImpl(
 
         val toolInteractions = mutableListOf<ToolInteraction>()
         for (doc in toolDocs) {
-            val toolId = doc.getString("toolId") ?: "breathing_pacer"
+            val toolId = doc.getString("toolId") ?: ToolInteraction.LEGACY_TOOL_ID
             val timestampDate = doc.getDate("timestamp")
                 ?: doc.getLong("timestamp")?.let { Date(it) }
                 ?: Date()
-            val duration = (doc.getLong("duration") ?: 60L).toInt()
-            val interactionType = doc.getString("interactionType") ?: "touch"
+            val duration = doc.getLong("duration")?.toInt() ?: ToolInteraction.DEFAULT_DURATION_SECONDS
+            val interactionType = doc.getString("interactionType") ?: ToolInteraction.DEFAULT_INTERACTION_TYPE
             val intensity = (doc.getLong("intensity") ?: 0L).toInt()
             val complete = doc.getBoolean("complete") ?: true
             val value = (doc.getLong("value") ?: 0L).toInt()
@@ -227,7 +233,7 @@ class StatsRepositoryImpl(
             )
         }
 
-        val toolPercentages = computeToolPercentages(toolDocs.mapNotNull { it.getString("toolName") ?: it.getString("toolId") })
+        val toolPercentages = StatsCalculator.toolUsagePercentages(toolDocs.mapNotNull { it.getString("toolName") ?: it.getString("toolId") })
 
         //la logica de calculo de estadisticas e insights vive en StatsCalculator (dominio)
         val calculated = statsCalculator.calculateStats(
@@ -237,10 +243,10 @@ class StatsRepositoryImpl(
         )
         val computedStats = calculated.copy(lastUpdated = System.currentTimeMillis())
 
-        //guarda el resumen en el disco del telefono para pintarlo al instante la proxima vez (#147)
+        //guarda el resumen en el disco del telefono para pintarlo al instante la proxima vez
         statsDiskCache?.write(currentUserId, computedStats)
 
-        //guarda el resumen precomputado e insights en firestore para futuras lecturas directas del backend (#158)
+        //guarda el resumen precomputado e insights en firestore para futuras lecturas directas del backend
         saveUserStatsInternal(currentUserId, computedStats, totalToolEntries, todayKey)
 
         Log.d("StatsRepository", "Calculated and persisted stats with ${computedStats.allInsights.size} insights: total=$totalCheckIns")
@@ -275,6 +281,7 @@ class StatsRepositoryImpl(
             "weeklyIntensities" to stats.weeklyIntensities,
             "weeklyEmotions" to stats.weeklyEmotions.mapValues { it.value.name },
             "toolUsagePercentages" to stats.toolUsagePercentages,
+            "emotionFrequencies" to stats.emotionFrequencies.mapKeys { it.key.name },
             "currentInsight" to currentInsightMap,
             "lastDayKey" to dayKey,
             "lastUpdated" to if (stats.lastUpdated > 0L) stats.lastUpdated else System.currentTimeMillis()
@@ -305,50 +312,6 @@ class StatsRepositoryImpl(
             }
         } catch (e: Exception) {
             Log.e("StatsRepository", "Error saving stats summary and insights to firestore", e)
-        }
-    }
-
-    //convierte el string de emocion en el enum oficial del patron composite
-    private fun parseEmotionSafe(name: String): Emotion {
-        return try {
-            Emotion.valueOf(name.uppercase())
-        } catch (e: Exception) {
-            Emotion.HAPPINESS
-        }
-    }
-
-    //calcula la distribucion porcentual de herramientas a partir de sus nombres o ids (firestore o room)
-    private fun computeToolPercentages(rawToolNames: List<String>): Map<String, Float> {
-        val toolCountsMap = mutableMapOf<String, Int>()
-
-        for (rawName in rawToolNames) {
-            if (rawName.isNotBlank()) {
-                val toolName = formatToolName(rawName)
-                toolCountsMap[toolName] = toolCountsMap.getOrDefault(toolName, 0) + 1
-            }
-        }
-
-        if (toolCountsMap.isEmpty()) {
-            return emptyMap()
-        }
-
-        val total = toolCountsMap.values.sum()
-        val result = mutableMapOf<String, Float>()
-        for ((name, count) in toolCountsMap) {
-            result[name] = (count.toFloat() / total.toFloat()) * 100f
-        }
-        return result
-    }
-
-    private fun formatToolName(raw: String): String {
-        return when (raw.lowercase().replace("-", "_").trim()) {
-            "breathing_pacer", "breathing", "respiracion" -> "Breathing Pacer"
-            "photo_of_the_day", "photo", "foto" -> "Photo of the Day"
-            "achievement_jar", "jar", "frasco" -> "Achievement Jar"
-            "blow_it_out", "blow", "sopla" -> "Blow It Out"
-            else -> raw.split("_", "-").joinToString(" ") { word ->
-                word.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
-            }
         }
     }
 }

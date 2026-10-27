@@ -23,4 +23,13 @@ interface UserRepository {
 
     //guarda la racha calculada para poder mostrarla sin internet
     suspend fun saveStreak(streakDays: Int, lastCheckInAt: Long?): Result<Unit>
+
+    //copia rapida del perfil guardada en el telefono (nombre, correo, edad); null si no hay
+    fun cachedProfile(): UserProfile?
+
+    //nombre de esa copia; vuelve a emitir cuando cambia
+    fun observeCachedName(): Flow<String>
+
+    //borra esa copia, por ejemplo al cerrar sesion
+    suspend fun clearCachedProfile()
 }

@@ -4,21 +4,22 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.net.Uri
+import com.moviles.ark.domain.adapters.AmbientAudioPlayer
 
-//helper para reproducir audio ambiental de jamendo con el mediaplayer de android (#7)
+//helper para reproducir audio ambiental de jamendo con el mediaplayer de android
 class AudioPlayerHelper(
     private val context: Context? = null
-) {
+) : AmbientAudioPlayer {
     private var mediaPlayer: MediaPlayer? = null
     private var currentUrl: String? = null
     private var isPrepared = false
 
     //inicia la reproduccion de una url de audio
-    //onError avisa si no se pudo reproducir (por ejemplo una pista de internet sin conexion) (#82)
-    fun playUrl(
+    //onError avisa si no se pudo reproducir (por ejemplo una pista de internet sin conexion)
+    override fun playUrl(
         url: String,
-        onPlaybackStateChanged: (isPlaying: Boolean) -> Unit = {},
-        onError: () -> Unit = {}
+        onPlaybackStateChanged: (isPlaying: Boolean) -> Unit,
+        onError: () -> Unit
     ) {
         if (url == currentUrl && mediaPlayer != null && isPrepared) {
             mediaPlayer?.start()
@@ -38,7 +39,7 @@ class AudioPlayerHelper(
                         .setUsage(AudioAttributes.USAGE_MEDIA)
                         .build()
                 )
-                //las pistas que vienen dentro de la app (res/raw) se abren con el context (#82)
+                //las pistas que vienen dentro de la app (res/raw) se abren con el context
                 if (url.startsWith(LOCAL_RESOURCE_SCHEME) && context != null) {
                     setDataSource(context, Uri.parse(url))
                 } else {
@@ -70,7 +71,7 @@ class AudioPlayerHelper(
     }
 
     //pausa la reproduccion actual
-    fun pause() {
+    override fun pause() {
         if (mediaPlayer?.isPlaying == true) {
             mediaPlayer?.pause()
         }
@@ -110,7 +111,7 @@ class AudioPlayerHelper(
     }
 
     //libera los recursos del reproductor
-    fun release() {
+    override fun release() {
         stop()
     }
 

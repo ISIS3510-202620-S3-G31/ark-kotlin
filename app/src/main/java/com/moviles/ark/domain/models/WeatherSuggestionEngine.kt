@@ -1,6 +1,6 @@
 package com.moviles.ark.domain.models
 
-//sugerencia segun el clima de afuera (#134); es una funcionalidad aparte de las estrategias de recomendacion
+//sugerencia segun el clima de afuera; es una funcionalidad aparte de las estrategias de recomendacion
 //(mood, frecuencia, default): no cambia el orden del catalogo, solo llena la tarjeta del clima del home
 //frio o lluvia -> respiracion para calmarse adentro; despejado y de dia -> foto del dia
 class WeatherSuggestionEngine(

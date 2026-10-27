@@ -2,7 +2,7 @@ package com.moviles.ark.domain.models
 
 import java.util.Date
 
-//una sesion de respiracion guiada que el usuario hizo en Custom breathing (#82)
+//una sesion de respiracion guiada que el usuario hizo en Custom breathing
 //se guarda en room (breathing_sessions) y tambien como ToolInteraction, que la usan estadisticas, insights y recomendaciones
 data class BreathingSession(
     //ciclos completos (inhalar, sostener y exhalar)
