@@ -109,7 +109,7 @@ fun AppNavigation(
                 )
             }
             composable("tools_catalog_screen") { backStackEntry ->
-                //categoria que deja el filtro del catalogo; se aplica una vez y vuelve a null
+                //categoria que deja la tarjeta de insight de stats; se aplica una vez y vuelve a null
                 val catalogViewModel: com.moviles.ark.ui.viewmodels.HomeViewModel =
                     viewModel(factory = com.moviles.ark.ui.viewmodels.HomeViewModel.Factory)
                 val pendingCategoryId by backStackEntry.savedStateHandle
@@ -134,7 +134,7 @@ fun AppNavigation(
             }
             composable("stats_screen") {
                 StatsScreen(
-                    //abre el catalogo de herramientas desde stats con filtro opcional de categoria
+                    //la tarjeta de insight abre el catalogo con la categoria ya filtrada
                     onNavigateToToolsCatalog = { category ->
                         navController.navigateToTab("tools_catalog_screen")
                         if (category != null) {
@@ -156,8 +156,8 @@ fun AppNavigation(
                 PhotoOfTheDayRoute(
                     //vuelve a donde se abrio: home o el catalogo
                     onBack = { navController.popBackStack() },
-                    onPhotoSaved = {
-                        navController.navigate("post_tool_feedback/photo_of_the_day") {
+                    onPhotoSaved = { duration ->
+                        navController.navigate("post_tool_feedback/photo_of_the_day?duration=$duration") {
                             popUpTo("photo_of_the_day_screen") { inclusive = true }
                         }
                     }
@@ -165,9 +165,9 @@ fun AppNavigation(
             }
             //herramienta de respiracion guiada; si completo al menos 1 ciclo navega a feedback
             composable("custom_breathing_screen") {
-                CustomBreathingRoute(onBack = { wasCompleted ->
+                CustomBreathingRoute(onBack = { wasCompleted, duration ->
                     if (wasCompleted) {
-                        navController.navigate("post_tool_feedback/custom_breathing") {
+                        navController.navigate("post_tool_feedback/custom_breathing?duration=$duration") {
                             popUpTo("custom_breathing_screen") { inclusive = true }
                         }
                     } else {
@@ -177,9 +177,9 @@ fun AppNavigation(
             }
             //herramienta scream tank; si el microfono alcanzo a escuchar navega a feedback
             composable("scream_tank_screen") {
-                ScreamTankRoute(onBack = { wasCompleted ->
+                ScreamTankRoute(onBack = { wasCompleted, duration ->
                     if (wasCompleted) {
-                        navController.navigate("post_tool_feedback/scream_tank") {
+                        navController.navigate("post_tool_feedback/scream_tank?duration=$duration") {
                             popUpTo("scream_tank_screen") { inclusive = true }
                         }
                     } else {

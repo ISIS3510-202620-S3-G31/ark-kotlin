@@ -617,14 +617,15 @@ private const val MAX_THUMBNAIL_SIZE = 1080
 fun PhotoOfTheDayRoute(
     viewModel: PhotoOfTheDayViewModel = viewModel(factory = PhotoOfTheDayViewModel.Factory),
     onBack: () -> Unit,
-    onPhotoSaved: () -> Unit = {}
+    onPhotoSaved: (Int) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     LaunchedEffect(uiState.isPhotoSaved) {
         if (uiState.isPhotoSaved) {
+            val duration = viewModel.getSessionDurationSeconds()
             viewModel.onNavigatedToFeedback()
-            onPhotoSaved()
+            onPhotoSaved(duration)
         }
     }
 

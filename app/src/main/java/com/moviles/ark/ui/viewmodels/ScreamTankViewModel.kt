@@ -163,24 +163,30 @@ class ScreamTankViewModel(
 
     //el usuario termina o sale de la herramienta: si el microfono alcanzo a escuchar, se guarda la sesion
     fun finishSession(): Boolean {
+        val (completed, _) = finishSessionWithDuration()
+        return completed
+    }
+
+    fun finishSessionWithDuration(): Pair<Boolean, Int> {
         pauseListening()
+        val durationSeconds = listenedSeconds()
         val session = ScreamSession(
             peakLevel = _uiState.value.peakLevel,
-            durationSeconds = listenedSeconds(),
+            durationSeconds = durationSeconds,
             timestamp = System.currentTimeMillis()
         )
         //se reinicia el tiempo para que la misma sesion no se guarde dos veces
         listenedNanos = 0L
         //le preguntamos al modelo si la sesion cuenta antes de guardarla
-        if (!session.isComplete()) return false
-        val repository = screamTankRepository ?: return true
+        if (!session.isComplete()) return Pair(false, durationSeconds)
+        val repository = screamTankRepository ?: return Pair(true, durationSeconds)
         viewModelScope.launch {
             //NonCancellable: al salir de la pantalla el viewmodel se limpia enseguida y no debe cortar el guardado
             withContext(NonCancellable) {
                 repository.saveSession(session)
             }
         }
-        return true
+        return Pair(true, durationSeconds)
     }
 
     private fun stopClock() {

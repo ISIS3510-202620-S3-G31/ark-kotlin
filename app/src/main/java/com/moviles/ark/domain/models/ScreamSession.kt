@@ -24,7 +24,8 @@ data class ScreamSession(
             duration = durationSeconds,
             interactionType = INTERACTION_TYPE,
             intensity = peakLevel.coerceIn(0, DecibelMeter.MAX_LEVEL),
-            complete = true,
+            complete = isComplete(),
+            value = peakLevel,
             timestamp = Date(timestamp)
         )
     }
@@ -34,7 +35,7 @@ data class ScreamSession(
         const val TOOL_ID = "scream_tank"
 
         //la herramienta se usa con la voz
-        const val INTERACTION_TYPE = "voice"
+        const val INTERACTION_TYPE = "VOICE"
 
         const val MIN_DURATION_SECONDS = 1
     }
