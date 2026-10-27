@@ -145,6 +145,22 @@ class ScreamTankViewModel(
         }
     }
 
+    //boton de reiniciar: suelta el microfono y empieza de cero sin guardar lo anterior
+    fun restartSession() {
+        pauseListening()
+        listenedNanos = 0L
+        _uiState.update {
+            it.copy(
+                hasStarted = false,
+                peakLevel = 0,
+                elapsedSeconds = 0,
+                currentLevel = 0,
+                currentDbfs = DecibelMeter.MIN_DBFS,
+                errorMessage = null
+            )
+        }
+    }
+
     //el usuario termina o sale de la herramienta: si el microfono alcanzo a escuchar, se guarda la sesion
     fun finishSession(): Boolean {
         pauseListening()
