@@ -76,7 +76,12 @@ class StatsRepositoryImpl(
             null
         }
 
-        if (summaryDoc != null && summaryDoc.exists()) {
+        //un resumen guardado antes de existir emotionFrequencies no sirve para la tarjeta de distribucion:
+        //si hay check-ins y le falta el campo se recalcula abajo y se vuelve a guardar ya completo
+        val summaryIsComplete = summaryDoc != null && summaryDoc.exists() &&
+            ((summaryDoc.getLong("totalCheckIns") ?: 0L) == 0L || summaryDoc.contains("emotionFrequencies"))
+
+        if (summaryDoc != null && summaryIsComplete) {
             val totalCheckIns = (summaryDoc.getLong("totalCheckIns") ?: 0L).toInt()
             val topEmotion = summaryDoc.getString("topEmotion")?.let { parseEmotionSafe(it) }
             val lastUpdated = summaryDoc.getLong("lastUpdated") ?: System.currentTimeMillis()
@@ -99,6 +104,13 @@ class StatsRepositoryImpl(
                 toolPercentages[tool] = (pct as? Number)?.toFloat() ?: 0f
             }
 
+            val rawFrequencies = summaryDoc.get("emotionFrequencies") as? Map<String, Any> ?: emptyMap()
+            val emotionFrequencies = LinkedHashMap<Emotion, Int>()
+            for ((emName, count) in rawFrequencies) {
+                val emotion = parseEmotionSafe(emName)
+                emotionFrequencies[emotion] = emotionFrequencies.getOrDefault(emotion, 0) + ((count as? Number)?.toInt() ?: 0)
+            }
+
             val rawInsight = summaryDoc.get("currentInsight") as? Map<String, Any>
             val currentInsight = rawInsight?.let {
                 InsightModel(
@@ -118,6 +130,7 @@ class StatsRepositoryImpl(
                 toolUsagePercentages = toolPercentages,
                 currentInsight = currentInsight,
                 allInsights = if (currentInsight != null) listOf(currentInsight) else emptyList(),
+                emotionFrequencies = emotionFrequencies,
                 lastUpdated = lastUpdated
             )
 
@@ -275,6 +288,7 @@ class StatsRepositoryImpl(
             "weeklyIntensities" to stats.weeklyIntensities,
             "weeklyEmotions" to stats.weeklyEmotions.mapValues { it.value.name },
             "toolUsagePercentages" to stats.toolUsagePercentages,
+            "emotionFrequencies" to stats.emotionFrequencies.mapKeys { it.key.name },
             "currentInsight" to currentInsightMap,
             "lastDayKey" to dayKey,
             "lastUpdated" to if (stats.lastUpdated > 0L) stats.lastUpdated else System.currentTimeMillis()
