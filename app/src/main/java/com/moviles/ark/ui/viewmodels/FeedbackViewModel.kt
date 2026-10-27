@@ -104,7 +104,7 @@ class FeedbackViewModel(
         )
     }
 
-    // Persiste en Room SQLite y sincroniza a Firestore desacoplado via FeedbackRepository (#166)
+    // Persiste en Room SQLite y sincroniza a Firestore desacoplado via FeedbackRepository
     // Vincula la calificacion tanto a toolId como a interactionId
     fun saveFeedback(onSavedCallback: () -> Unit = {}) {
         val state = privateUiState.value
@@ -123,7 +123,7 @@ class FeedbackViewModel(
                 val format = toolRepository?.getToolById(state.toolId)?.format ?: "touch"
                 val durationSeconds = if (state.duration > 0) state.duration else 60
 
-                // 1. Grabar la interaccion en Room SQLite para obtener el interactionId generado (#154)
+                // 1. Grabar la interaccion en Room SQLite para obtener el interactionId generado
                 val interactionId = toolRecordDao?.insertInteraction(
                     ToolInteractionEntity(
                         userId = userId,
@@ -136,7 +136,7 @@ class FeedbackViewModel(
                     )
                 )
 
-                // 2. Persistir ratings (1 a 5 estrellas) y comentarios en Room vinculados a toolId e interactionId, sincronizando a Firestore (#166)
+                // 2. Persistir ratings (1 a 5 estrellas) y comentarios en Room vinculados a toolId e interactionId, sincronizando a Firestore
                 val feedbackModel = FeedbackModel(
                     toolId = state.toolId,
                     rating = state.rating,
@@ -164,7 +164,7 @@ class FeedbackViewModel(
                     moodRepository.saveCheckIn(checkIn)
                 }
 
-                // 4. Registrar evento de finalizacion de herramienta en Firebase Analytics (#34)
+                // 4. Registrar evento de finalizacion de herramienta en Firebase Analytics
                 analyticsRepository?.logToolEntryCompleted(
                     toolId = state.toolId.ifBlank { "custom_breathing" },
                     toolFormat = format

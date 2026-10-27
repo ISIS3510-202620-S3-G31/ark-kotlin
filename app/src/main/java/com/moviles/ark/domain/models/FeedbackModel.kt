@@ -1,6 +1,6 @@
 package com.moviles.ark.domain.models
 
-// Calificacion y comentario que deja el usuario al terminar una herramienta (#21, #166)
+// Calificacion y comentario que deja el usuario al terminar una herramienta
 // Modelo del dominio desacoplado de Room (FeedbackEntity) y de Firestore (FeedbackDto)
 data class FeedbackModel(
     // Identificador local autogenerado por Room; 0 si aun no ha sido persistido

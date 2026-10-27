@@ -41,7 +41,7 @@ fun FeedbackDto.toEntity(): FeedbackEntity {
     )
 }
 
-//de modelo de dominio a dto para Firestore (#166)
+//de modelo de dominio a dto para Firestore
 fun FeedbackModel.toDto(userId: String): FeedbackDto {
     return FeedbackDto(
         userId = userId,
@@ -53,7 +53,7 @@ fun FeedbackModel.toDto(userId: String): FeedbackDto {
     )
 }
 
-//de dto de Firestore a modelo de dominio (#166)
+//de dto de Firestore a modelo de dominio
 fun FeedbackDto.toDomain(id: Long = 0L, isSynced: Boolean = true): FeedbackModel {
     return FeedbackModel(
         id = id,

@@ -123,7 +123,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         )
     }
     override val feedbackDao: FeedbackDao by lazy { database.feedbackDao() }
-    // repositorio de feedback desacoplado de Room y Firestore (#166)
+    // repositorio de feedback desacoplado de Room y Firestore
     override val feedbackRepository: FeedbackRepository by lazy {
         FeedbackRepositoryImpl(
             feedbackDao = database.feedbackDao(),

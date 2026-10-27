@@ -22,7 +22,7 @@ data class FeedbackEntity(
     val isSynced: Boolean = false,
 )
 
-//de fila de Room a modelo de dominio (#166)
+//de fila de Room a modelo de dominio
 fun FeedbackEntity.toDomain(): FeedbackModel {
     return FeedbackModel(
         id = id,
@@ -35,7 +35,7 @@ fun FeedbackEntity.toDomain(): FeedbackModel {
     )
 }
 
-//de modelo de dominio a fila de Room (#166)
+//de modelo de dominio a fila de Room
 fun FeedbackModel.toEntity(): FeedbackEntity {
     return FeedbackEntity(
         id = id,
