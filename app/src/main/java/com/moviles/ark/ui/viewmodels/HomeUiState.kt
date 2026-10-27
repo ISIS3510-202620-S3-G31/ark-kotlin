@@ -14,7 +14,6 @@ data class HomeUiState(
     val tools: List<Tool> = emptyList(),
     val filteredTools: List<Tool> = emptyList(),
     val selectedCategory: ToolCategory? = null,
-    val surpriseTool: Tool? = null,
     val navigateToToolId: String? = null,
     val isCheckInCompleted: Boolean = false,
     //ultimo check-in registrado hoy para la vista de revision no editable

@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
@@ -73,7 +74,6 @@ import com.moviles.ark.data.local.AvatarPreferences
 import com.moviles.ark.data.repositories.ToolRepositoryImpl
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.border
-import com.moviles.ark.domain.models.Tool
 import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.domain.models.WeatherCondition
 import com.moviles.ark.domain.models.WeatherSuggestion
@@ -313,21 +313,11 @@ fun HomeScreen(
                 }
             }
 
-            //2. recomendacion al azar (Surprise me)
+            //2. recomendacion al azar (Surprise me): abre directamente una herramienta al azar
             item {
                 LeaveItToChanceCard(
                     onSurpriseMe = onSurpriseMe
                 )
-            }
-
-            //banner si eligio una herramienta al azar
-            if (uiState.surpriseTool != null) {
-                item {
-                    SurpriseResultBanner(
-                        tool = uiState.surpriseTool,
-                        onOpenTool = { onToolClick(uiState.surpriseTool.id) }
-                    )
-                }
             }
 
             //3. recomendacion basada en el clima: solo aparece cuando el clima sugiere una herramienta,
@@ -357,11 +347,14 @@ fun HomeScreen(
                 checkInViewModel.resetDraft()
                 showCheckInPopup = false
             },
-            properties = DialogProperties(usePlatformDefaultWidth = false)
+            //decorFitsSystemWindows en false: el dialogo no se encoge solo con el teclado, asi que
+            //safeDrawingPadding le quita el espacio del teclado y de las barras y el formulario puede hacer scroll
+            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .safeDrawingPadding()
                     .padding(horizontal = 16.dp, vertical = 24.dp)
                     .shadow(16.dp, RoundedCornerShape(26.dp))
                     .clip(RoundedCornerShape(26.dp))
@@ -732,53 +725,6 @@ private fun LeaveItToChanceCard(
                     tint = Color.White,
                     modifier = Modifier.size(16.dp)
                 )
-            }
-        }
-    }
-}
-
-@Composable
-private fun SurpriseResultBanner(
-    tool: Tool,
-    onOpenTool: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onOpenTool() },
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = SecondaryColor),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "WE PICKED FOR YOU",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontFamily = FigtreeFontFamily,
-                    fontWeight = FontWeight.Bold,
-                    color = TextColor.copy(alpha = 0.8f),
-                    fontSize = 11.sp,
-                    letterSpacing = 0.5.sp
-                )
-                Text(
-                    text = tool.name,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = TextColor,
-                )
-            }
-            Button(
-                onClick = onOpenTool,
-                colors = ButtonDefaults.buttonColors(containerColor = PrimaryColor),
-                shape = RoundedCornerShape(14.dp),
-            ) {
-                Text("Open", color = TextColor, fontWeight = FontWeight.Bold)
             }
         }
     }

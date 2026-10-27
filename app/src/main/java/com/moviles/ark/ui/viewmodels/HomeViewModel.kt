@@ -157,9 +157,9 @@ class HomeViewModel(
             _uiState.value.tools
         }
 
+        //abre la herramienta elegida de una vez, por el mismo camino que las demas entradas del home
         if (available.isNotEmpty()) {
-            val randomTool = available.random()
-            _uiState.value = _uiState.value.copy(surpriseTool = randomTool)
+            onToolClick(available.random().id)
         }
     }
 

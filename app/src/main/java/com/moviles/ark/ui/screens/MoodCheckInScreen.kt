@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -149,7 +151,10 @@ fun MoodCheckInScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                //con el teclado abierto el area visible se achica y el scroll alcanza la nota y el boton de guardar
                 .statusBarsPadding()
+                .navigationBarsPadding()
+                .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(start = 22.dp, end = 22.dp, top = 16.dp, bottom = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
