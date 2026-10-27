@@ -51,13 +51,8 @@ class MoodRepositoryImpl(
     override suspend fun hasCheckedInToday(): Result<Boolean> = withContext(Dispatchers.IO) {
         runCatching {
             val currentUserId = auth.currentUser?.uid ?: return@runCatching false
-            val calendar = Calendar.getInstance().apply {
-                set(Calendar.HOUR_OF_DAY, 0)
-                set(Calendar.MINUTE, 0)
-                set(Calendar.SECOND, 0)
-                set(Calendar.MILLISECOND, 0)
-            }
-            val todayStartMillis = calendar.timeInMillis
+            //el modelo define desde cuando cuenta "hoy"
+            val todayStartMillis = CheckInModel.startOfToday()
 
             //primero room: incluye los check-ins que todavia no se han subido
             if (emotionCheckInDao.countCheckInsSince(currentUserId, todayStartMillis) > 0) return@runCatching true

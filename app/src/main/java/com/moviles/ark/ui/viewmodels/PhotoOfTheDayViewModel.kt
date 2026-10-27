@@ -72,6 +72,22 @@ class PhotoOfTheDayViewModel(
         toolLatencyTracker?.onToolRendered(TOOL_ID)
     }
 
+    fun hasCameraPermission(): Boolean = photoRepository.hasCameraPermission()
+
+    //prepara el archivo para la camara y devuelve su direccion para abrirla; null si no se pudo crear
+    fun prepareCapture(): String? {
+        val uri = photoRepository.createCaptureUri()
+        _uiState.update { it.copy(captureUri = uri, errorMessage = if (uri == null) "Could not open the camera, try again" else null) }
+        return uri
+    }
+
+    //respuesta de la camara: si tomo la foto se guarda la del archivo preparado
+    fun onCaptureResult(success: Boolean) {
+        val uri = _uiState.value.captureUri
+        _uiState.update { it.copy(captureUri = null) }
+        if (success && uri != null) onPhotoCaptured(uri)
+    }
+
     //la camara llama esto con la direccion de la foto capturada; se guarda sin caption de texto
     //si hoy ya habia foto es un retake: se borra la anterior y la nueva queda como la de hoy
     fun onPhotoCaptured(uri: String) {

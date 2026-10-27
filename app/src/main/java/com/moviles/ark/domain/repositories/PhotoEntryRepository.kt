@@ -17,4 +17,10 @@ interface PhotoEntryRepository {
     //trae de firestore las fotos de ese rango que no esten en el telefono (otro telefono o app reinstalada)
     //sin red no hace nada: se queda con lo que ya hay en room
     suspend fun refreshFromCloud(fromMillis: Long, toMillis: Long)
+
+    //true si el usuario ya dio permiso de camara
+    fun hasCameraPermission(): Boolean
+
+    //crea el archivo donde la camara deja la foto y devuelve su direccion; null si no se pudo crear
+    fun createCaptureUri(): String?
 }

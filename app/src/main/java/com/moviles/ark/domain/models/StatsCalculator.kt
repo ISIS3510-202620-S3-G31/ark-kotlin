@@ -97,6 +97,27 @@ class StatsCalculator(
     }
 
     companion object {
+        //porcentaje de uso de cada herramienta a partir de sus nombres o ids (firestore o room)
+        fun toolUsagePercentages(rawToolNames: List<String>): Map<String, Float> {
+            val counts = rawToolNames.filter { it.isNotBlank() }.groupingBy { displayToolName(it) }.eachCount()
+            if (counts.isEmpty()) return emptyMap()
+            val total = counts.values.sum().toFloat()
+            return counts.mapValues { (_, count) -> count / total * 100f }
+        }
+
+        //nombre visible de una herramienta; junta los alias viejos (espanol, ids cortos) bajo un mismo nombre
+        fun displayToolName(raw: String): String {
+            return when (raw.lowercase().replace("-", "_").trim()) {
+                "breathing_pacer", "breathing", "respiracion" -> "Breathing Pacer"
+                "photo_of_the_day", "photo", "foto" -> "Photo of the Day"
+                "achievement_jar", "jar", "frasco" -> "Achievement Jar"
+                "blow_it_out", "blow", "sopla" -> "Blow It Out"
+                else -> raw.split("_", "-").joinToString(" ") { word ->
+                    word.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.getDefault()) else it.toString() }
+                }
+            }
+        }
+
         //nombres cortos de los ultimos 7 dias, de hace 6 dias hasta hoy; la grafica semanal los recorre en este orden
         //porque el mapa que vuelve de firestore no conserva el orden en que se guardaron los dias
         fun lastSevenDayLabels(): List<String> {

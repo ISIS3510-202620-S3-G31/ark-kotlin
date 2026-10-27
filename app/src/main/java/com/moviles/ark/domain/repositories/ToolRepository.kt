@@ -10,6 +10,9 @@ interface ToolRepository {
     //emite el catalogo guardado en el telefono y vuelve a emitir cada vez que cambia
     fun getTools(): Flow<List<Tool>>
 
+    //una sola lectura del catalogo guardado en el telefono (sin red); failure si no se pudo leer
+    suspend fun getLocalTools(): Result<List<Tool>>
+
     //busca una herramienta en el catalogo local, null si no existe
     suspend fun getToolById(id: String): Tool?
 

@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.moviles.ark.domain.composite.SingleEmotion
 import com.moviles.ark.domain.models.CheckInModel
 import com.moviles.ark.ui.components.MoodSelectorComponent
 import com.moviles.ark.ui.components.getEmotionColor
@@ -213,10 +214,10 @@ fun MoodCheckInScreen(
             )
             Spacer(modifier = Modifier.height(22.dp))
             //caja de nota con paleta calida, sombra difusa y borde adaptativo de 20dp
-            //calcula los caracteres restantes con coerceAtLeast para evitar negativos si ingresan emojis o caracteres multibyte
-            val remainingChars = (CheckInModel.MAX_NOTE_LENGTH - uiState.value.note.length).coerceAtLeast(0)
-            val isNearLimit = remainingChars <= 40
-            val isAtLimit = remainingChars == 0
+            //el estado trae cuantos caracteres quedan y si esta cerca del limite (reglas del modelo)
+            val remainingChars = uiState.value.remainingNoteChars
+            val isNearLimit = uiState.value.isNoteNearLimit
+            val isAtLimit = uiState.value.isNoteAtLimit
             //retroalimentacion visual progresiva: naranja primario cuando faltan 40 caracteres y rojo suave al agotarse
             val counterColor = when {
                 isAtLimit -> Color(0xFFD32F2F)
@@ -252,14 +253,10 @@ fun MoodCheckInScreen(
                                 color = TextColor.copy(alpha = 0.45f)
                             )
                         }
-                        //filtro en composable para descartar eventos del teclado virtual cuando se alcanza el tope del modelo
+                        //el viewmodel recorta la nota al limite del modelo
                         BasicTextField(
                             value = uiState.value.note,
-                            onValueChange = { input ->
-                                if (input.length <= CheckInModel.MAX_NOTE_LENGTH) {
-                                    viewModel.onNoteChange(input)
-                                }
-                            },
+                            onValueChange = { input -> viewModel.onNoteChange(input) },
                             textStyle = TextStyle(
                                 color = TextColor,
                                 fontSize = 14.sp
@@ -532,7 +529,7 @@ private fun MoodCheckInReviewContent(
                         color = TextColor.copy(alpha = 0.65f)
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                        for (i in 1..5) {
+                        for (i in SingleEmotion.MIN_INTENSITY..SingleEmotion.MAX_INTENSITY) {
                             Box(
                                 modifier = Modifier
                                     .size(8.dp)

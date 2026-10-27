@@ -11,6 +11,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
 import com.moviles.ark.data.local.daos.PhotoEntryDao
 import com.moviles.ark.data.local.entities.PhotoEntryEntity
+import com.moviles.ark.data.local.sensors.CameraHelper
 import com.moviles.ark.data.remote.CrashlyticsHelper
 import com.moviles.ark.data.remote.dtos.PhotoEntryDto
 import com.moviles.ark.domain.models.PhotoEntryModel
@@ -89,6 +90,13 @@ class PhotoEntryRepositoryImpl(
         }
         Unit
     }
+
+    //la camara del sistema guarda la foto en un archivo que se crea aqui (FileProvider)
+    private val cameraHelper by lazy { CameraHelper(context) }
+
+    override fun hasCameraPermission(): Boolean = cameraHelper.hasCameraPermission()
+
+    override fun createCaptureUri(): String? = cameraHelper.createPictureUri()?.toString()
 
     override suspend fun savePhoto(sourceUri: String, caption: String, takenAt: Long): Result<PhotoEntryModel> = withContext(Dispatchers.IO) {
         runCatching {

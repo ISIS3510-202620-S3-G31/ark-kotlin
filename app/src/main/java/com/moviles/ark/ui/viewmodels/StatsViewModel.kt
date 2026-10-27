@@ -109,7 +109,8 @@ class StatsViewModel(
         } else {
             val errorMsg = result.exceptionOrNull()?.localizedMessage ?: "Could not load statistics"
             Log.e("StatsViewModel", "Error loading stats: $errorMsg")
-            val isNetError = !isOnline()
+            //firestore tambien avisa "client is offline" aunque el telefono crea tener red
+            val isNetError = !isOnline() || errorMsg.contains("offline", ignoreCase = true)
             privateUiState.value = privateUiState.value.copy(
                 isLoading = false,
                 isRefreshing = false,

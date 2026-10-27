@@ -24,4 +24,12 @@ data class ToolInteraction(
     val timestamp: Date,
     //detalle opcional
     val description: String = ""
-)
+) {
+    companion object {
+        //valores que se usan cuando un registro no trae el dato
+        const val DEFAULT_DURATION_SECONDS = 60
+        const val DEFAULT_INTERACTION_TYPE = "touch"
+        //id de la respiracion en los registros viejos de firestore
+        const val LEGACY_TOOL_ID = "breathing_pacer"
+    }
+}

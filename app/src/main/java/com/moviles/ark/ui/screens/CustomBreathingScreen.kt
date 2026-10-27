@@ -69,7 +69,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.moviles.ark.data.local.sensors.HapticFeedbackHelper
 import com.moviles.ark.domain.models.AmbientTrackModel
 import com.moviles.ark.domain.models.BreathingPreset
 import com.moviles.ark.ui.theme.AppTheme
@@ -77,7 +76,8 @@ import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.theme.PrimaryColor
 import com.moviles.ark.ui.theme.SecondaryColor
 import com.moviles.ark.ui.theme.TextColor
-import com.moviles.ark.ui.viewmodels.BreathingPhase
+import com.moviles.ark.domain.models.BreathingPattern
+import com.moviles.ark.domain.models.BreathingPhase
 import com.moviles.ark.ui.viewmodels.BreathingUiState
 import com.moviles.ark.ui.viewmodels.BreathingViewModel
 
@@ -90,17 +90,7 @@ fun CustomBreathingRoute(
     onBack: (Boolean) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val context = LocalContext.current
-    val hapticHelper = remember(context) { HapticFeedbackHelper(context) }
-
-    //fase anterior para saber de donde viene el cambio; solo vibra de hold a exhale
-    var previousPhase by remember { mutableStateOf<BreathingPhase?>(null) }
-    LaunchedEffect(uiState.phase) {
-        if (uiState.isRunning) {
-            hapticHelper.onPhaseChanged(previousPhase, uiState.phase)
-        }
-        previousPhase = uiState.phase
-    }
+    //la vibracion al pasar de hold a exhale la dispara el viewmodel
 
     //guarda la sesion localmente antes de retroceder al home o al catalogo
     val leave = {
@@ -398,7 +388,7 @@ private fun BreathingControls(
     onTogglePlayPause: () -> Unit,
     onOpenMusic: () -> Unit
 ) {
-    val canReset = uiState.phase != BreathingPhase.READY || uiState.completedCycles > 0
+    val canReset = uiState.canReset
     Row(
         horizontalArrangement = Arrangement.spacedBy(48.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -554,8 +544,9 @@ private fun CustomRhythmSheet(
     var inhale by remember { mutableIntStateOf(uiState.customInhale) }
     var hold by remember { mutableIntStateOf(uiState.customHold) }
     var exhale by remember { mutableIntStateOf(uiState.customExhale) }
-    val minBreath = BreathingViewModel.CUSTOM_MIN_BREATH_SECONDS
-    val max = BreathingViewModel.CUSTOM_MAX_SECONDS
+    //los rangos del ritmo Custom son reglas del modelo
+    val breathRange = BreathingPattern.CUSTOM_BREATH_RANGE
+    val holdRange = BreathingPattern.CUSTOM_HOLD_RANGE
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -575,11 +566,11 @@ private fun CustomRhythmSheet(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
             )
             Spacer(modifier = Modifier.height(8.dp))
-            StepperRow(label = "Inhale", value = inhale, range = minBreath..max, onValueChange = { inhale = it })
+            StepperRow(label = "Inhale", value = inhale, range = breathRange, onValueChange = { inhale = it })
             Spacer(modifier = Modifier.height(8.dp))
-            StepperRow(label = "Hold", value = hold, range = 0..max, onValueChange = { hold = it })
+            StepperRow(label = "Hold", value = hold, range = holdRange, onValueChange = { hold = it })
             Spacer(modifier = Modifier.height(8.dp))
-            StepperRow(label = "Exhale", value = exhale, range = minBreath..max, onValueChange = { exhale = it })
+            StepperRow(label = "Exhale", value = exhale, range = breathRange, onValueChange = { exhale = it })
             Spacer(modifier = Modifier.height(16.dp))
             Button(
                 onClick = { onDone(inhale, hold, exhale) },

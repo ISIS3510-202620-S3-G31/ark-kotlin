@@ -72,6 +72,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.domain.composite.Emotion
 import com.moviles.ark.domain.models.InsightModel
 import com.moviles.ark.domain.models.StatsCalculator
+import com.moviles.ark.domain.models.EmotionShare
 import com.moviles.ark.domain.models.StatsModel
 import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.ui.components.UsefulInsightComponent
@@ -218,7 +219,7 @@ fun StatsScreenContent(
                     }
                 } else if (stats == null) {
                     PullableContent {
-                        if (isOffline || errorMessage?.contains("offline", ignoreCase = true) == true) {
+                        if (isOffline) {
                             //cuando no hay nada en disco y no hay internet: fallback ilustrado amigable
                             StatsOfflineView(onRetry = onRefresh)
                         } else if (errorMessage != null) {
@@ -232,7 +233,7 @@ fun StatsScreenContent(
                             )
                         }
                     }
-                } else if (stats.totalCheckIns == 0 && stats.toolUsagePercentages.isEmpty()) {
+                } else if (stats.isEmpty()) {
                     PullableContent {
                         StatsEmptyView(
                             onExploreTools = { onNavigateToToolsCatalog(null) }
@@ -243,29 +244,6 @@ fun StatsScreenContent(
                 }
             }
         }
-    }
-}
-
-//formatea el timestamp de las estadisticas para mostrar al usuario la frescura de los datos
-private fun formatLastUpdated(timestamp: Long): String {
-    if (timestamp <= 0L) return ""
-    return try {
-        val date = Date(timestamp)
-        val timeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
-        val dateFormat = SimpleDateFormat("MMM d, h:mm a", Locale.getDefault())
-
-        val todayCal = Calendar.getInstance()
-        val dateCal = Calendar.getInstance().apply { time = date }
-
-        if (todayCal.get(Calendar.YEAR) == dateCal.get(Calendar.YEAR) &&
-            todayCal.get(Calendar.DAY_OF_YEAR) == dateCal.get(Calendar.DAY_OF_YEAR)
-        ) {
-            "Updated today at ${timeFormat.format(date)}"
-        } else {
-            "Updated on ${dateFormat.format(date)}"
-        }
-    } catch (e: Exception) {
-        ""
     }
 }
 
@@ -745,6 +723,8 @@ private fun StatsMainView(
         item {
             EmotionDistributionCard(
                 emotionFrequencies = stats.emotionFrequencies,
+                distribution = stats.emotionDistribution(),
+                totalRecords = stats.emotionRecordCount(),
                 onShowTooltip = { activeTooltip = it }
             )
         }
@@ -902,7 +882,7 @@ private fun WeeklyEmotionJourneyCard(
                         val hasEntry = intensity > 0f && emotion != null
                         val barColor = if (emotion != null) getEmotionColor(emotion) else PrimaryColor
                         val emoji = if (emotion != null) getEmotionEmoji(emotion) else ""
-                        val intensityRatio = (intensity / 5f).coerceIn(0f, 1f)
+                        val intensityRatio = StatsModel.intensityRatio(intensity)
 
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
@@ -981,10 +961,10 @@ private fun WeeklyEmotionJourneyCard(
 @Composable
 private fun EmotionDistributionCard(
     emotionFrequencies: Map<Emotion, Int>,
+    distribution: List<EmotionShare>,
+    totalRecords: Int,
     onShowTooltip: (TooltipInfo) -> Unit = {}
 ) {
-    val total = emotionFrequencies.values.sum().coerceAtLeast(1)
-
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -1031,7 +1011,7 @@ private fun EmotionDistributionCard(
                     }
                 }
                 Text(
-                    text = if (emotionFrequencies.isEmpty()) "" else "$total check-ins",
+                    text = if (emotionFrequencies.isEmpty()) "" else "$totalRecords check-ins",
                     style = MaterialTheme.typography.bodyLarge,
                     color = TextColor.copy(alpha = 0.65f),
                     fontSize = 12.sp
@@ -1047,10 +1027,10 @@ private fun EmotionDistributionCard(
                     color = TextColor.copy(alpha = 0.5f)
                 )
             } else {
-                val sorted = emotionFrequencies.entries.sortedByDescending { it.value }
+                //el modelo ordena las emociones y calcula los porcentajes
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    for ((emotion, count) in sorted) {
-                        val percentage = (count.toFloat() / total * 100f).toInt()
+                    for (share in distribution) {
+                        val (emotion, count, percentage) = share
                         val color = getEmotionColor(emotion)
                         Column {
                             Row(
@@ -1083,7 +1063,7 @@ private fun EmotionDistributionCard(
                             ) {
                                 Box(
                                     modifier = Modifier
-                                        .fillMaxWidth(fraction = (count.toFloat() / total).coerceIn(0f, 1f))
+                                        .fillMaxWidth(fraction = share.fraction)
                                         .fillMaxHeight()
                                         .background(color)
                                 )

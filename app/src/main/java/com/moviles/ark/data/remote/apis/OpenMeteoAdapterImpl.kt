@@ -71,6 +71,8 @@ class OpenMeteoAdapterImpl(
     }
 
     //sirve el clima de la cache si aun es valido (TTL < 1 hora), sin requerir red ni coordenadas
+    override fun getCachedWeather(): WeatherModel? = getCachedWeatherIfValid()
+
     fun getCachedWeatherIfValid(): WeatherModel? {
         val file = cacheFile ?: return null
         if (!file.exists()) return null

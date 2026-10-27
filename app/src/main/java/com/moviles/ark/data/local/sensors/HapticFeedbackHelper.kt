@@ -5,13 +5,13 @@ import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
-import com.moviles.ark.ui.viewmodels.BreathingPhase
+import com.moviles.ark.domain.adapters.HapticFeedbackAdapter
 
 /**
  * Sensor helper that triggers a subtle haptic cue via VibrationEffect
  * when the guided breathing goes from Hold to Exhale.
  */
-class HapticFeedbackHelper(private val context: Context) {
+class HapticFeedbackHelper(private val context: Context) : HapticFeedbackAdapter {
 
     private val vibrator: Vibrator? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
@@ -21,15 +21,8 @@ class HapticFeedbackHelper(private val context: Context) {
         context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
     }
 
-    //la unica vibracion del ejercicio es al pasar de hold a exhale: avisa que ya se puede soltar el aire
-    //los demas cambios de fase no vibran para no distraer
-    fun onPhaseChanged(previous: BreathingPhase?, current: BreathingPhase) {
-        if (previous == BreathingPhase.HOLD && current == BreathingPhase.EXHALE) {
-            vibrateExhaleCue()
-        }
-    }
-
-    private fun vibrateExhaleCue() {
+    //doble pulsacion suave; cuando vibrar lo decide BreathingPattern.cuesExhale
+    override fun vibrateExhaleCue() {
         val targetVibrator = vibrator ?: return
         if (!targetVibrator.hasVibrator()) return
 

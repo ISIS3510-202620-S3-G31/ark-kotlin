@@ -21,5 +21,7 @@ data class PhotoOfTheDayUiState(
     val isSaving: Boolean = false,
     //flag para navegar al feedback tras guardar
     val isPhotoSaved: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    //archivo donde la camara esta dejando la foto; se guarda aqui para no perderlo si la pantalla se recrea
+    val captureUri: String? = null
 )

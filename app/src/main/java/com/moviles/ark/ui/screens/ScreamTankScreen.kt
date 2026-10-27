@@ -71,6 +71,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.domain.models.DecibelMeter
+import com.moviles.ark.domain.models.Loudness
 import com.moviles.ark.ui.theme.AccentColor
 import com.moviles.ark.ui.theme.AppTheme
 import com.moviles.ark.ui.theme.BackgroundColor
@@ -303,10 +304,11 @@ private fun DecibelGauge(level: Int, dbfs: Double, peakLevel: Int, isListening: 
 }
 
 //suave en secondary, fuerte en primary y muy fuerte en accent
-private fun levelColor(level: Int): Color = when {
-    level >= 85 -> AccentColor
-    level >= 60 -> PrimaryColor
-    else -> SecondaryColor
+//los umbrales de volumen son del modelo (DecibelMeter); aqui solo se elige el color
+private fun levelColor(level: Int): Color = when (DecibelMeter.loudnessOf(level)) {
+    Loudness.VERY_LOUD -> AccentColor
+    Loudness.LOUD -> PrimaryColor
+    Loudness.SOFT -> SecondaryColor
 }
 
 @Composable

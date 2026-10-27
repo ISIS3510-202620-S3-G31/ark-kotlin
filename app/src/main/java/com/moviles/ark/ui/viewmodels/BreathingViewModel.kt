@@ -9,7 +9,10 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
-import com.moviles.ark.data.local.sensors.AudioPlayerHelper
+import com.moviles.ark.domain.adapters.AmbientAudioPlayer
+import com.moviles.ark.domain.adapters.HapticFeedbackAdapter
+import com.moviles.ark.domain.models.BreathingPattern
+import com.moviles.ark.domain.models.BreathingPhase
 import com.moviles.ark.domain.models.AmbientTrackModel
 import com.moviles.ark.domain.models.BreathingPreset
 import com.moviles.ark.domain.models.BreathingSession
@@ -31,7 +34,9 @@ import kotlinx.coroutines.withContext
  */
 class BreathingViewModel(
     private val breathingRepository: BreathingRepository? = null,
-    private val audioPlayerHelper: AudioPlayerHelper? = null,
+    private val audioPlayerHelper: AmbientAudioPlayer? = null,
+    //vibracion al pasar de hold a exhale; null en previews
+    private val hapticFeedback: HapticFeedbackAdapter? = null,
     //cierra la medicion de latencia que empezo con el toque en el home
     private val toolLatencyTracker: ToolLatencyTracker? = null
 ) : ViewModel() {
@@ -230,19 +235,19 @@ class BreathingViewModel(
         val wasRunning = _uiState.value.isRunning
         pause()
         phaseElapsedMs = 0L
-        val matchingPreset = BreathingPreset.entries.find {
-            it.inhale == inhale && it.hold == hold && it.exhale == exhale && it.holdPostExhale == holdPostExhale
-        } ?: _uiState.value.selectedPreset
+        //el modelo normaliza el ritmo y dice si coincide con un preset
+        val pattern = BreathingPattern(inhale, hold, exhale, holdPostExhale).normalized()
+        val matchingPreset = pattern.matchingPreset() ?: _uiState.value.selectedPreset
 
         _uiState.update { current ->
             current.copy(
                 selectedPreset = matchingPreset,
-                inhaleDuration = inhale.coerceAtLeast(1),
-                holdDuration = hold.coerceAtLeast(0),
-                exhaleDuration = exhale.coerceAtLeast(1),
-                holdPostExhaleDuration = holdPostExhale.coerceAtLeast(0),
+                inhaleDuration = pattern.inhale,
+                holdDuration = pattern.hold,
+                exhaleDuration = pattern.exhale,
+                holdPostExhaleDuration = pattern.holdPostExhale,
                 phase = BreathingPhase.READY,
-                secondsRemainingInPhase = inhale,
+                secondsRemainingInPhase = pattern.inhale,
                 phaseProgress = 0f
             )
         }
@@ -270,16 +275,15 @@ class BreathingViewModel(
 
     //boton Done de la hoja: guarda el ritmo (solo mientras la pantalla siga abierta) y lo aplica al circulo
     fun saveCustomRhythm(inhale: Int, hold: Int, exhale: Int) {
-        val safeInhale = inhale.coerceIn(CUSTOM_MIN_BREATH_SECONDS, CUSTOM_MAX_SECONDS)
-        val safeHold = hold.coerceIn(0, CUSTOM_MAX_SECONDS)
-        val safeExhale = exhale.coerceIn(CUSTOM_MIN_BREATH_SECONDS, CUSTOM_MAX_SECONDS)
-        updateDurations(safeInhale, safeHold, safeExhale)
+        //el modelo deja el ritmo Custom dentro de los rangos permitidos
+        val custom = BreathingPattern.custom(inhale, hold, exhale)
+        updateDurations(custom.inhale, custom.hold, custom.exhale)
         _uiState.update {
             it.copy(
                 isCustomSelected = true,
-                customInhale = safeInhale,
-                customHold = safeHold,
-                customExhale = safeExhale,
+                customInhale = custom.inhale,
+                customHold = custom.hold,
+                customExhale = custom.exhale,
                 isCustomConfigured = true,
                 showCustomRhythmSheet = false
             )
@@ -324,25 +328,10 @@ class BreathingViewModel(
         phaseElapsedMs = (SystemClock.elapsedRealtime() - phaseStartRealtime).coerceAtLeast(0L)
         val currentPhase = _uiState.value.phase
 
-        val state = _uiState.value
-        val (nextPhase, isCycleCompleted) = when (currentPhase) {
-            BreathingPhase.READY -> Pair(BreathingPhase.INHALE, false)
-            BreathingPhase.INHALE -> {
-                if (state.holdDuration > 0) {
-                    Pair(BreathingPhase.HOLD, false)
-                } else {
-                    Pair(BreathingPhase.EXHALE, false)
-                }
-            }
-            BreathingPhase.HOLD -> Pair(BreathingPhase.EXHALE, false)
-            BreathingPhase.EXHALE -> {
-                if (state.holdPostExhaleDuration > 0) {
-                    Pair(BreathingPhase.HOLD_POST_EXHALE, false)
-                } else {
-                    Pair(BreathingPhase.INHALE, true)
-                }
-            }
-            BreathingPhase.HOLD_POST_EXHALE -> Pair(BreathingPhase.INHALE, true)
+        //el modelo dice que fase sigue y si se completo un ciclo
+        val (nextPhase, isCycleCompleted) = _uiState.value.pattern.next(currentPhase)
+        if (BreathingPattern.cuesExhale(currentPhase, nextPhase)) {
+            hapticFeedback?.vibrateExhaleCue()
         }
 
         val updatedCycles = if (isCycleCompleted) {
@@ -391,15 +380,7 @@ class BreathingViewModel(
         return true
     }
 
-    private fun getPhaseDuration(phase: BreathingPhase): Int {
-        return when (phase) {
-            BreathingPhase.READY -> _uiState.value.inhaleDuration
-            BreathingPhase.INHALE -> _uiState.value.inhaleDuration
-            BreathingPhase.HOLD -> _uiState.value.holdDuration
-            BreathingPhase.EXHALE -> _uiState.value.exhaleDuration
-            BreathingPhase.HOLD_POST_EXHALE -> _uiState.value.holdPostExhaleDuration
-        }
-    }
+    private fun getPhaseDuration(phase: BreathingPhase): Int = _uiState.value.pattern.durationOf(phase)
 
     override fun onCleared() {
         super.onCleared()
@@ -408,16 +389,13 @@ class BreathingViewModel(
     }
 
     companion object {
-        //rangos del ritmo Custom: inhalar y exhalar de 2 a 10 s, sostener de 0 a 10 s
-        const val CUSTOM_MIN_BREATH_SECONDS = 2
-        const val CUSTOM_MAX_SECONDS = 10
-
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as ArkApplication
                 BreathingViewModel(
                     breathingRepository = app.container.breathingRepository,
                     audioPlayerHelper = app.container.audioPlayerHelper,
+                    hapticFeedback = app.container.hapticFeedback,
                     toolLatencyTracker = app.container.toolLatencyTracker
                 )
             }

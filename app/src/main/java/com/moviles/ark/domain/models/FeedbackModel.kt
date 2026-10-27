@@ -17,4 +17,16 @@ data class FeedbackModel(
     val createdAt: Long = System.currentTimeMillis(),
     // Indicador de si ya fue sincronizado con Firestore
     val isSynced: Boolean = false
-)
+) {
+    //reglas de negocio
+    fun isValidRating(): Boolean = ratingError(rating) == null
+
+    companion object {
+        const val MIN_RATING = 1
+        const val MAX_RATING = 5
+
+        //la calificacion es de 1 a 5 estrellas; 0 significa que todavia no se eligio
+        fun ratingError(rating: Int): String? =
+            if (rating in MIN_RATING..MAX_RATING) null else "Please select a rating from $MIN_RATING to $MAX_RATING stars"
+    }
+}

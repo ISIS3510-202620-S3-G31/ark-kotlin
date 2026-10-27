@@ -12,7 +12,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
-import com.moviles.ark.data.local.AvatarPreferences
+import com.moviles.ark.ui.components.avatarDrawable
+import com.moviles.ark.ui.components.presetAvatars
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -243,7 +244,7 @@ private fun Avatar(
                 Image(bitmap = avatar, contentDescription = "Profile photo", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
             } else {
                 Image(
-                    painter = painterResource(AvatarPreferences.getDrawableRes(avatarId)),
+                    painter = painterResource(avatarDrawable(avatarId)),
                     contentDescription = "Profile avatar",
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
@@ -309,7 +310,7 @@ private fun AvatarSelectionCarousel(
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             contentPadding = PaddingValues(horizontal = 2.dp, vertical = 4.dp)
         ) {
-            items(AvatarPreferences.PRESET_AVATARS) { preset ->
+            items(presetAvatars) { preset ->
                 val isSelected = preset.id == selectedAvatarId
                 val scale by animateFloatAsState(
                     targetValue = if (isSelected) 1.08f else 1.0f,
@@ -339,7 +340,7 @@ private fun AvatarSelectionCarousel(
                         contentAlignment = Alignment.Center
                     ) {
                         Image(
-                            painter = painterResource(preset.drawableRes),
+                            painter = painterResource(avatarDrawable(preset.id)),
                             contentDescription = preset.name,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()

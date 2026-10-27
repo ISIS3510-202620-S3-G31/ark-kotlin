@@ -25,6 +25,16 @@ object DecibelMeter {
 
     const val MAX_LEVEL = 100
 
+    //desde estos niveles (0 a 100) el grito cuenta como fuerte y muy fuerte
+    const val LOUD_LEVEL = 60
+    const val VERY_LOUD_LEVEL = 85
+
+    fun loudnessOf(level: Int): Loudness = when {
+        level >= VERY_LOUD_LEVEL -> Loudness.VERY_LOUD
+        level >= LOUD_LEVEL -> Loudness.LOUD
+        else -> Loudness.SOFT
+    }
+
     //rms de las primeras count muestras; el buffer se reutiliza, por eso no se usa su tamano completo
     fun rms(samples: ShortArray, count: Int = samples.size): Double {
         val n = count.coerceIn(0, samples.size)
@@ -55,3 +65,6 @@ object DecibelMeter {
         return DecibelReading(rms = rms, dbfs = dbfs, level = toLevel(dbfs))
     }
 }
+
+//que tan fuerte es un nivel del medidor; la pantalla elige el color de cada uno
+enum class Loudness { SOFT, LOUD, VERY_LOUD }

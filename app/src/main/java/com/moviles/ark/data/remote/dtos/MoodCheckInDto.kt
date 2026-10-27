@@ -4,6 +4,7 @@ import com.moviles.ark.data.local.entities.CheckInEntity
 import com.moviles.ark.domain.composite.CompoundMood
 import com.moviles.ark.domain.composite.Emotion
 import com.moviles.ark.domain.composite.MoodComponent
+import com.moviles.ark.domain.composite.MoodFactory
 import com.moviles.ark.domain.composite.SingleEmotion
 import com.moviles.ark.domain.models.CheckInModel
 
@@ -58,14 +59,10 @@ fun CheckInModel.toDto(userId: String): MoodCheckInDto {
 //si llega un nombre que ya no existe en el enum, se ignora en vez de cerrar la app
 fun MoodCheckInDto.toDomain(): CheckInModel {
     val parsedEmotions = emotions.mapNotNull { dto ->
-        val emotion = Emotion.entries.find { it.name.equals(dto.name, ignoreCase = true) } ?: return@mapNotNull null
+        val emotion = MoodFactory.emotionFromName(dto.name) ?: return@mapNotNull null
         SingleEmotion(emotion, dto.intensity)
     }
-    val mood: MoodComponent = when {
-        parsedEmotions.size == 1 -> parsedEmotions.first()
-        parsedEmotions.size > 1 -> CompoundMood(customName = moodName).apply { parsedEmotions.forEach { add(it) } }
-        else -> SingleEmotion(Emotion.HAPPINESS, 3)
-    }
+    val mood = if (parsedEmotions.isEmpty()) MoodFactory.default() else MoodFactory.fromParts(parsedEmotions, moodName)
     return CheckInModel(
         mood = mood,
         note = note,
@@ -81,7 +78,7 @@ fun MoodCheckInDto.toEntity(): CheckInEntity {
         userId = userId,
         moodName = moodName,
         emotions = emotions.map { it.name },
-        intensity = emotions.firstOrNull()?.intensity ?: 3,
+        intensity = emotions.firstOrNull()?.intensity ?: SingleEmotion.DEFAULT_INTENSITY,
         note = note,
         latitude = latitude,
         longitude = longitude,

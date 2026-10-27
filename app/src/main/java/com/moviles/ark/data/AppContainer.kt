@@ -55,6 +55,7 @@ interface AppContainer {
     val toolInteractionRepository: ToolInteractionRepository
     val statsRepository: StatsRepository
     val photoRepository: PhotoEntryRepository
+    val avatarRepository: com.moviles.ark.domain.repositories.AvatarRepository
     val analyticsRepository: AnalyticsRepository
     val toolLatencyTracker: ToolLatencyTracker
     val recommendationRepository: com.moviles.ark.domain.repositories.RecommendationRepository
@@ -62,10 +63,10 @@ interface AppContainer {
     val musicServiceAdapter: com.moviles.ark.domain.adapters.MusicServiceAdapter
     val feedbackDao: FeedbackDao
     val feedbackRepository: FeedbackRepository
-    val toolRecordDao: ToolRecordDao
     val breathingRepository: BreathingRepository
     val screamTankRepository: com.moviles.ark.domain.repositories.ScreamTankRepository
     val audioPlayerHelper: AudioPlayerHelper
+    val hapticFeedback: com.moviles.ark.domain.adapters.HapticFeedbackAdapter
     val networkConnectivityObserver: NetworkConnectivityObserver
     val syncRepository: SyncRepository
     val syncManager: SyncManager
@@ -101,13 +102,15 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         ToolRepositoryImpl(database.toolDao(), firestore, com.moviles.ark.data.local.ToolCatalogFileStore(context))
     }
     // interacciones con herramientas guardadas en room; las usa la recomendacion por frecuencia del home
-    override val toolInteractionRepository: ToolInteractionRepository by lazy { ToolInteractionRepositoryImpl(database.toolRecordDao()) }
+    override val toolInteractionRepository: ToolInteractionRepository by lazy { ToolInteractionRepositoryImpl(database.toolRecordDao(), auth) }
     override val statsRepository: StatsRepository by lazy { StatsRepositoryImpl(auth, firestore, database.emotionCheckInDao(), database.toolRecordDao(), com.moviles.ark.data.local.StatsDiskCache(context.cacheDir)) }
     // real photo repository with Room persistence and the public gallery (MediaStore) for the jpg files
     override val photoRepository: PhotoEntryRepository by lazy {
         //cada usuario solo ve sus fotos; sus archivos van en Pictures/Ark/User_<uid>
         PhotoEntryRepositoryImpl(context, auth, database.photoEntryDao(), firestore, storage)
     }
+    // avatar elegido, guardado en SharedPreferences
+    override val avatarRepository: com.moviles.ark.domain.repositories.AvatarRepository by lazy { com.moviles.ark.data.repositories.AvatarRepositoryImpl() }
     override val analyticsRepository: AnalyticsRepository by lazy { AnalyticsRepositoryImpl(Firebase.analytics) }
     // one tracker for the whole app: the tap on a tool and its screen live in different places
     override val toolLatencyTracker: ToolLatencyTracker by lazy { ToolLatencyTracker(analyticsRepository) }
@@ -136,7 +139,6 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             onFeedbackSaved = { syncManager.requestSync() }
         )
     }
-    override val toolRecordDao: ToolRecordDao by lazy { database.toolRecordDao() }
     // repositorio de la herramienta de respiracion desacoplado mediante el adapter de musica y sesiones en room
     override val breathingRepository: BreathingRepository by lazy {
         BreathingRepositoryImpl(
@@ -156,6 +158,8 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         )
     }
     override val audioPlayerHelper: AudioPlayerHelper by lazy { AudioPlayerHelper(context) }
+    // vibracion de la respiracion guiada
+    override val hapticFeedback: com.moviles.ark.domain.adapters.HapticFeedbackAdapter by lazy { com.moviles.ark.data.local.sensors.HapticFeedbackHelper(context) }
     // observador reactivo de conectividad a internet
     override val networkConnectivityObserver: NetworkConnectivityObserver by lazy { NetworkConnectivityObserver(context) }
     // repositorio y gestor de resincronizacion de datos offline

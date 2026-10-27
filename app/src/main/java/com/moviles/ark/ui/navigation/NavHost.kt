@@ -6,8 +6,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
@@ -17,9 +17,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.moviles.ark.ArkApplication
 import com.moviles.ark.domain.models.ToolCategory
-import com.moviles.ark.domain.repositories.AuthRepository
 import com.moviles.ark.ui.components.BottomNavItem
 import com.moviles.ark.ui.components.BottomNavigationBar
 import com.moviles.ark.ui.components.OfflineBannerComponent
@@ -35,23 +33,18 @@ import com.moviles.ark.ui.screens.ScreamTankRoute
 import com.moviles.ark.ui.screens.StatsScreen
 import com.moviles.ark.ui.screens.ToolsCatalogRoute
 import com.moviles.ark.ui.theme.BackgroundColor
+import com.moviles.ark.ui.viewmodels.AppViewModel
 
 @Composable
 fun AppNavigation(
-    authRepository: AuthRepository? = null
+    appViewModel: AppViewModel = viewModel(factory = AppViewModel.Factory)
 ) {
     val navController = rememberNavController()
-    val context = LocalContext.current
-    val app = context.applicationContext as? ArkApplication
-    val connectivityObserver = app?.container?.networkConnectivityObserver
-
-    //observa en tiempo real el estado de la conexion para el banner offline
-    val isConnected by (connectivityObserver?.observe() ?: kotlinx.coroutines.flow.flowOf(true))
-        .collectAsStateWithLifecycle(initialValue = connectivityObserver?.isConnected() ?: true)
-
-    //si ya hay una sesion activa en el celular entra directo a home
-    val isUserLoggedIn = authRepository?.isLoggedIn() ?: false
-    val startRoute = if (isUserLoggedIn) "home_screen" else "register_screen"
+    //ruta inicial (con o sin sesion) y conexion para el banner offline: las decide el viewmodel
+    val appState by appViewModel.uiState.collectAsStateWithLifecycle()
+    val isConnected = appState.isConnected
+    //la ruta inicial se toma una sola vez para que el NavHost no se reinicie
+    val startRoute = remember { appState.startRoute }
 
     //ruta que se esta mostrando, para saber si va la barra y que pestana resaltar
     val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route

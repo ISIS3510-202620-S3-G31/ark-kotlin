@@ -34,6 +34,7 @@ import java.util.Date
 import java.text.SimpleDateFormat
 import com.moviles.ark.ui.components.getEmotionEmoji
 import com.moviles.ark.ui.components.getEmotionColor
+import com.moviles.ark.domain.composite.SingleEmotion
 import com.moviles.ark.domain.models.CheckInModel
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.GridView
@@ -70,10 +71,10 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.R
-import com.moviles.ark.data.local.AvatarPreferences
-import com.moviles.ark.data.repositories.ToolRepositoryImpl
+import com.moviles.ark.ui.components.avatarDrawable
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.border
+import com.moviles.ark.domain.models.Tool
 import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.domain.models.WeatherCondition
 import com.moviles.ark.domain.models.WeatherSuggestion
@@ -119,23 +120,24 @@ fun HomeRoute(
         onSurpriseMe = viewModel::onSurpriseMe,
         onToolClick = viewModel::onToolClick,
         onCheckInSaved = viewModel::onCheckInSaved,
+        onCheckInPromptShown = viewModel::onCheckInPromptShown,
         onNavigateToTool = onNavigateToTool
     )
 }
 
 @Composable
 fun HomeScreen(
-    uiState: HomeUiState = HomeUiState(tools = ToolRepositoryImpl.sampleTools, filteredTools = ToolRepositoryImpl.sampleTools),
+    uiState: HomeUiState = HomeUiState(tools = Tool.DEFAULT_CATALOG, filteredTools = Tool.DEFAULT_CATALOG),
     onCategorySelect: (ToolCategory?) -> Unit = {},
     onSurpriseMe: () -> Unit = {},
     onToolClick: (String) -> Unit = {},
     onCheckInSaved: () -> Unit = {},
+    onCheckInPromptShown: () -> Unit = {},
     onNavigateToTool: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     var showCheckInPopup by remember { mutableStateOf(false) }
     var showReviewPopup by remember { mutableStateOf(false) }
-    var hasAutoPrompted by remember { mutableStateOf(false) }
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -148,10 +150,13 @@ fun HomeScreen(
                 Manifest.permission.ACCESS_COARSE_LOCATION
             )
         )
-        if (!uiState.isCheckInCompleted && !hasAutoPrompted) {
-            delay(1500)
-            hasAutoPrompted = true
+    }
+
+    //el viewmodel decide cuando ofrecer el check-in; la pantalla solo abre el dialogo
+    LaunchedEffect(uiState.showCheckInPrompt) {
+        if (uiState.showCheckInPrompt) {
             showCheckInPopup = true
+            onCheckInPromptShown()
         }
     }
 
@@ -186,7 +191,7 @@ fun HomeScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Image(
-                                painter = painterResource(AvatarPreferences.getDrawableRes(uiState.avatarId)),
+                                painter = painterResource(avatarDrawable(uiState.avatarId)),
                                 contentDescription = "User Avatar",
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()
@@ -260,7 +265,7 @@ fun HomeScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Image(
-                                painter = painterResource(AvatarPreferences.getDrawableRes(uiState.avatarId)),
+                                painter = painterResource(avatarDrawable(uiState.avatarId)),
                                 contentDescription = "Active Avatar Badge",
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()
@@ -304,8 +309,8 @@ fun HomeScreen(
                 )
             }
 
-            //1. recomendacion inteligente por Strategy
-            val recommendedTool = uiState.tools.firstOrNull()
+            //1. recomendacion inteligente por Strategy (la elige el viewmodel)
+            val recommendedTool = uiState.recommendedTool
             if (recommendedTool != null) {
                 item {
                     RecommendationCardComponent(
@@ -884,7 +889,7 @@ private fun DailyCheckInReviewDialog(
                                 color = TextColor.copy(alpha = 0.65f)
                             )
                             Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                                for (i in 1..5) {
+                                for (i in SingleEmotion.MIN_INTENSITY..SingleEmotion.MAX_INTENSITY) {
                                     Box(
                                         modifier = Modifier
                                             .size(8.dp)

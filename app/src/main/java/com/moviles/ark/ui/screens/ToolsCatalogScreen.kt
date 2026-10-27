@@ -57,7 +57,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.moviles.ark.data.repositories.ToolRepositoryImpl
 import com.moviles.ark.domain.models.Tool
 import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.ui.theme.AppTheme
@@ -98,8 +97,9 @@ fun ToolsCatalogRoute(
 @Composable
 fun ToolsCatalogScreen(
     uiState: HomeUiState = HomeUiState(
-        tools = ToolRepositoryImpl.sampleTools,
-        filteredTools = ToolRepositoryImpl.sampleTools
+        tools = Tool.DEFAULT_CATALOG,
+        filteredTools = Tool.DEFAULT_CATALOG,
+        availableCategories = Tool.availableCategories(Tool.DEFAULT_CATALOG, null)
     ),
     onCategorySelect: (ToolCategory?) -> Unit = {},
     onToolClick: (String) -> Unit = {}
@@ -127,10 +127,8 @@ fun ToolsCatalogScreen(
                 //filtros de categoria colocados al inicio de la cuadricula
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     CatalogCategoryFilterRow(
-                        //solo las categorias que tienen alguna herramienta; la elegida se deja para poder quitarla
-                        categories = ToolCategory.entries.filter { category ->
-                            category == uiState.selectedCategory || uiState.tools.any { it.category == category }
-                        },
+                        //solo las categorias que tienen alguna herramienta (las calcula el viewmodel)
+                        categories = uiState.availableCategories,
                         selectedCategory = uiState.selectedCategory,
                         onCategorySelect = onCategorySelect
                     )

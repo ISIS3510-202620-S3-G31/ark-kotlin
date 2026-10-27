@@ -1,6 +1,6 @@
 package com.moviles.ark.domain.repositories
 
-import com.moviles.ark.data.local.sensors.LocationResult
+import com.moviles.ark.domain.models.LocationResult
 
 //interfaz de dominio para el acceso a la ubicacion gps
 interface LocationRepository {

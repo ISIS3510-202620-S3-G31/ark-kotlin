@@ -10,6 +10,7 @@ import com.moviles.ark.data.local.daos.ToolRecordDao
 import com.moviles.ark.data.local.entities.toDomain
 import com.moviles.ark.domain.composite.CompoundMood
 import com.moviles.ark.domain.composite.Emotion
+import com.moviles.ark.domain.composite.MoodFactory
 import com.moviles.ark.domain.composite.SingleEmotion
 import com.moviles.ark.domain.models.CheckInModel
 import com.moviles.ark.domain.models.InsightModel
@@ -50,7 +51,7 @@ class StatsRepositoryImpl(
             statsCalculator.calculateStats(
                 checkIns = checkInEntities.map { it.toDomain() },
                 interactions = interactionEntities.map { it.toDomain() },
-                toolPercentages = computeToolPercentages(interactionEntities.map { it.toolId })
+                toolPercentages = StatsCalculator.toolUsagePercentages(interactionEntities.map { it.toolId })
             )
         }
     }
@@ -83,7 +84,7 @@ class StatsRepositoryImpl(
 
         if (summaryDoc != null && summaryIsComplete) {
             val totalCheckIns = (summaryDoc.getLong("totalCheckIns") ?: 0L).toInt()
-            val topEmotion = summaryDoc.getString("topEmotion")?.let { parseEmotionSafe(it) }
+            val topEmotion = summaryDoc.getString("topEmotion")?.let { MoodFactory.emotionOrDefault(it) }
             val lastUpdated = summaryDoc.getLong("lastUpdated") ?: System.currentTimeMillis()
 
             val rawIntensities = summaryDoc.get("weeklyIntensities") as? Map<String, Any> ?: emptyMap()
@@ -95,7 +96,7 @@ class StatsRepositoryImpl(
             val rawEmotions = summaryDoc.get("weeklyEmotions") as? Map<String, Any> ?: emptyMap()
             val weeklyEmotions = LinkedHashMap<String, Emotion>()
             for ((day, emName) in rawEmotions) {
-                weeklyEmotions[day] = parseEmotionSafe(emName.toString())
+                weeklyEmotions[day] = MoodFactory.emotionOrDefault(emName.toString())
             }
 
             val rawPercentages = summaryDoc.get("toolUsagePercentages") as? Map<String, Any> ?: emptyMap()
@@ -107,7 +108,7 @@ class StatsRepositoryImpl(
             val rawFrequencies = summaryDoc.get("emotionFrequencies") as? Map<String, Any> ?: emptyMap()
             val emotionFrequencies = LinkedHashMap<Emotion, Int>()
             for ((emName, count) in rawFrequencies) {
-                val emotion = parseEmotionSafe(emName)
+                val emotion = MoodFactory.emotionOrDefault(emName)
                 emotionFrequencies[emotion] = emotionFrequencies.getOrDefault(emotion, 0) + ((count as? Number)?.toInt() ?: 0)
             }
 
@@ -186,20 +187,12 @@ class StatsRepositoryImpl(
             val parsedEmotions = mutableListOf<SingleEmotion>()
             for (em in emotionsRaw) {
                 val rawName = em["name"] as? String ?: continue
-                val emotionEnum = parseEmotionSafe(rawName)
-                val intensity = (em["intensity"] as? Number)?.toInt() ?: 3
+                val emotionEnum = MoodFactory.emotionOrDefault(rawName)
+                val intensity = (em["intensity"] as? Number)?.toInt() ?: SingleEmotion.DEFAULT_INTENSITY
                 parsedEmotions.add(SingleEmotion(emotion = emotionEnum, intensity = intensity))
             }
 
-            val moodComponent = when {
-                parsedEmotions.size > 1 -> {
-                    val compound = CompoundMood()
-                    parsedEmotions.forEach { compound.add(it) }
-                    compound
-                }
-                parsedEmotions.size == 1 -> parsedEmotions[0]
-                else -> SingleEmotion(Emotion.HAPPINESS, 3)
-            }
+            val moodComponent = if (parsedEmotions.isEmpty()) MoodFactory.default() else MoodFactory.fromParts(parsedEmotions)
 
             checkInModels.add(
                 CheckInModel(
@@ -214,12 +207,12 @@ class StatsRepositoryImpl(
 
         val toolInteractions = mutableListOf<ToolInteraction>()
         for (doc in toolDocs) {
-            val toolId = doc.getString("toolId") ?: "breathing_pacer"
+            val toolId = doc.getString("toolId") ?: ToolInteraction.LEGACY_TOOL_ID
             val timestampDate = doc.getDate("timestamp")
                 ?: doc.getLong("timestamp")?.let { Date(it) }
                 ?: Date()
-            val duration = (doc.getLong("duration") ?: 60L).toInt()
-            val interactionType = doc.getString("interactionType") ?: "touch"
+            val duration = doc.getLong("duration")?.toInt() ?: ToolInteraction.DEFAULT_DURATION_SECONDS
+            val interactionType = doc.getString("interactionType") ?: ToolInteraction.DEFAULT_INTERACTION_TYPE
             val intensity = (doc.getLong("intensity") ?: 0L).toInt()
             val complete = doc.getBoolean("complete") ?: true
             val value = (doc.getLong("value") ?: 0L).toInt()
@@ -240,7 +233,7 @@ class StatsRepositoryImpl(
             )
         }
 
-        val toolPercentages = computeToolPercentages(toolDocs.mapNotNull { it.getString("toolName") ?: it.getString("toolId") })
+        val toolPercentages = StatsCalculator.toolUsagePercentages(toolDocs.mapNotNull { it.getString("toolName") ?: it.getString("toolId") })
 
         //la logica de calculo de estadisticas e insights vive en StatsCalculator (dominio)
         val calculated = statsCalculator.calculateStats(
@@ -319,50 +312,6 @@ class StatsRepositoryImpl(
             }
         } catch (e: Exception) {
             Log.e("StatsRepository", "Error saving stats summary and insights to firestore", e)
-        }
-    }
-
-    //convierte el string de emocion en el enum oficial del patron composite
-    private fun parseEmotionSafe(name: String): Emotion {
-        return try {
-            Emotion.valueOf(name.uppercase())
-        } catch (e: Exception) {
-            Emotion.HAPPINESS
-        }
-    }
-
-    //calcula la distribucion porcentual de herramientas a partir de sus nombres o ids (firestore o room)
-    private fun computeToolPercentages(rawToolNames: List<String>): Map<String, Float> {
-        val toolCountsMap = mutableMapOf<String, Int>()
-
-        for (rawName in rawToolNames) {
-            if (rawName.isNotBlank()) {
-                val toolName = formatToolName(rawName)
-                toolCountsMap[toolName] = toolCountsMap.getOrDefault(toolName, 0) + 1
-            }
-        }
-
-        if (toolCountsMap.isEmpty()) {
-            return emptyMap()
-        }
-
-        val total = toolCountsMap.values.sum()
-        val result = mutableMapOf<String, Float>()
-        for ((name, count) in toolCountsMap) {
-            result[name] = (count.toFloat() / total.toFloat()) * 100f
-        }
-        return result
-    }
-
-    private fun formatToolName(raw: String): String {
-        return when (raw.lowercase().replace("-", "_").trim()) {
-            "breathing_pacer", "breathing", "respiracion" -> "Breathing Pacer"
-            "photo_of_the_day", "photo", "foto" -> "Photo of the Day"
-            "achievement_jar", "jar", "frasco" -> "Achievement Jar"
-            "blow_it_out", "blow", "sopla" -> "Blow It Out"
-            else -> raw.split("_", "-").joinToString(" ") { word ->
-                word.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
-            }
         }
     }
 }

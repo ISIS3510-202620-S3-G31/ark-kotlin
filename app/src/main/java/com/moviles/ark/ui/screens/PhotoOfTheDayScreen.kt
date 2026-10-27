@@ -9,7 +9,6 @@ import java.io.File
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import com.moviles.ark.data.local.sensors.CameraHelper
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.pager.HorizontalPager
@@ -620,10 +619,7 @@ fun PhotoOfTheDayRoute(
     onBack: () -> Unit,
     onPhotoSaved: () -> Unit = {}
 ) {
-    val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val cameraHelper = remember { CameraHelper(context) }
-    var currentPhotoUri by remember { mutableStateOf<Uri?>(null) }
 
     LaunchedEffect(uiState.isPhotoSaved) {
         if (uiState.isPhotoSaved) {
@@ -636,9 +632,7 @@ fun PhotoOfTheDayRoute(
     val takePictureLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
     ) { success ->
-        if (success && currentPhotoUri != null) {
-            viewModel.onPhotoCaptured(currentPhotoUri.toString())
-        }
+        viewModel.onCaptureResult(success)
     }
 
     //launcher para seleccionar foto de la galeria mediante PickVisualMedia
@@ -655,21 +649,14 @@ fun PhotoOfTheDayRoute(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
-            val uri = cameraHelper.createPictureUri()
-            if (uri != null) {
-                currentPhotoUri = uri
-                takePictureLauncher.launch(uri)
-            }
+            viewModel.prepareCapture()?.let { takePictureLauncher.launch(Uri.parse(it)) }
         }
     }
 
-    val onTakePhoto = {
-        if (cameraHelper.hasCameraPermission()) {
-            val uri = cameraHelper.createPictureUri()
-            if (uri != null) {
-                currentPhotoUri = uri
-                takePictureLauncher.launch(uri)
-            }
+    val onTakePhoto: () -> Unit = {
+        //el viewmodel crea el archivo de la foto; la pantalla solo abre la camara
+        if (viewModel.hasCameraPermission()) {
+            viewModel.prepareCapture()?.let { takePictureLauncher.launch(Uri.parse(it)) }
         } else {
             cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
         }

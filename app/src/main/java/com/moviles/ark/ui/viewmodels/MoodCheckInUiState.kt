@@ -1,7 +1,8 @@
 package com.moviles.ark.ui.viewmodels
 
-import com.moviles.ark.data.local.sensors.LocationStatus
+import com.moviles.ark.domain.models.LocationStatus
 import com.moviles.ark.domain.composite.Emotion
+import com.moviles.ark.domain.composite.SingleEmotion
 import com.moviles.ark.domain.models.CheckInModel
 import java.util.Locale
 
@@ -9,7 +10,7 @@ import java.util.Locale
 data class MoodCheckInUiState(
     val selectedEmotions: Set<Emotion> = emptySet(),
     val activeEmotion: Emotion? = null,
-    val intensity: Float = 3f,
+    val intensity: Float = SingleEmotion.DEFAULT_INTENSITY.toFloat(),
     val note: String = "",
     val latitude: Double? = null,
     val longitude: Double? = null,
@@ -26,6 +27,14 @@ data class MoodCheckInUiState(
     //check-in guardado del dia para desplegar en modo revision no editable
     val existingCheckIn: CheckInModel? = null
 ) {
+    //contador de la nota: el limite y el aviso los define el modelo CheckInModel
+    val remainingNoteChars: Int
+        get() = CheckInModel.remainingNoteChars(note)
+    val isNoteNearLimit: Boolean
+        get() = CheckInModel.isNoteNearLimit(note)
+    val isNoteAtLimit: Boolean
+        get() = remainingNoteChars == 0
+
     //texto del chip de ubicacion; sin red no hay ciudad y se muestran las coordenadas
     val locationLabel: String
         get() = when (locationStatus) {
