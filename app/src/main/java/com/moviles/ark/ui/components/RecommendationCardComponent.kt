@@ -136,7 +136,7 @@ fun RecommendationCardComponent(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                     contentDescription = "Open",
-                    tint = Color.White,
+                    tint = TextColor,
                     modifier = Modifier.size(16.dp)
                 )
             }

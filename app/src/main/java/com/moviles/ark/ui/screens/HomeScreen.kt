@@ -91,6 +91,9 @@ import com.moviles.ark.ui.viewmodels.HomeViewModel
 import com.moviles.ark.ui.viewmodels.MoodCheckInViewModel
 import kotlinx.coroutines.delay
 
+//fondo neutro de chips y cajas internas sacado de la paleta: el color de texto con muy poca opacidad
+private val NeutralSurfaceColor = TextColor.copy(alpha = 0.06f)
+
 @Composable
 fun HomeRoute(
     viewModel: HomeViewModel = viewModel(factory = HomeViewModel.Factory),
@@ -207,7 +210,7 @@ fun HomeScreen(
                                     showCheckInPopup = true
                                 }
                             },
-                        color = if (!uiState.isCheckInCompleted) PrimaryColor.copy(alpha = 0.15f) else Color(0xFFEFE0C2),
+                        color = if (!uiState.isCheckInCompleted) PrimaryColor.copy(alpha = 0.15f) else NeutralSurfaceColor,
                         border = BorderStroke(1.dp, if (!uiState.isCheckInCompleted) PrimaryColor.copy(alpha = 0.4f) else TextColor.copy(alpha = 0.12f)),
                         shape = RoundedCornerShape(20.dp)
                     ) {
@@ -253,7 +256,7 @@ fun HomeScreen(
                                 .size(32.dp)
                                 .clip(CircleShape)
                                 .border(2.dp, BackgroundColor, CircleShape)
-                                .background(Color.White),
+                                .background(SecondaryColor.copy(alpha = 0.15f)),
                             contentAlignment = Alignment.Center
                         ) {
                             Image(
@@ -596,7 +599,7 @@ private fun BrowseCatalogBanner(
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
             .clickable { onOpenCatalog() },
-        color = Color(0xFFEFE0C2),
+        color = NeutralSurfaceColor,
         shape = RoundedCornerShape(18.dp),
         border = BorderStroke(1.dp, TextColor.copy(alpha = 0.08f))
     ) {
@@ -722,7 +725,7 @@ private fun LeaveItToChanceCard(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                     contentDescription = "Surprise me",
-                    tint = Color.White,
+                    tint = TextColor,
                     modifier = Modifier.size(16.dp)
                 )
             }
@@ -773,7 +776,7 @@ private fun DailyCheckInReviewDialog(
                     ) {
                         Surface(
                             shape = RoundedCornerShape(12.dp),
-                            color = Color(0xFFEFE0C2),
+                            color = NeutralSurfaceColor,
                             border = BorderStroke(1.dp, TextColor.copy(alpha = 0.12f))
                         ) {
                             Row(
@@ -801,7 +804,7 @@ private fun DailyCheckInReviewDialog(
                             modifier = Modifier
                                 .size(34.dp)
                                 .clip(CircleShape)
-                                .background(Color.White.copy(alpha = 0.7f))
+                                .background(NeutralSurfaceColor)
                                 .clickable(onClick = onDismiss),
                             contentAlignment = Alignment.Center
                         ) {
@@ -914,8 +917,8 @@ private fun DailyCheckInReviewDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(16.dp))
-                            .background(Color.White.copy(alpha = 0.7f))
-                            .border(1.dp, Color(0xFFEADBCE), RoundedCornerShape(16.dp))
+                            .background(NeutralSurfaceColor)
+                            .border(1.dp, TextColor.copy(alpha = 0.12f), RoundedCornerShape(16.dp))
                             .padding(14.dp)
                     ) {
                         Text(
@@ -939,7 +942,7 @@ private fun DailyCheckInReviewDialog(
                         horizontalArrangement = Arrangement.Center,
                         modifier = Modifier
                             .clip(RoundedCornerShape(10.dp))
-                            .background(Color.White.copy(alpha = 0.35f))
+                            .background(NeutralSurfaceColor)
                             .padding(horizontal = 12.dp, vertical = 5.dp)
                     ) {
                         Text("📍", fontSize = 12.sp)
@@ -971,7 +974,7 @@ private fun DailyCheckInReviewDialog(
                             text = "Close",
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
-                            color = Color.White
+                            color = TextColor
                         )
                     }
                 }
