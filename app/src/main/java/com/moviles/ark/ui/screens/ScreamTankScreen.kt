@@ -94,15 +94,15 @@ private const val GAUGE_SWEEP_ANGLE = 270f
 @Composable
 fun ScreamTankRoute(
     viewModel: ScreamTankViewModel = viewModel(factory = ScreamTankViewModel.Factory),
-    onBack: (Boolean) -> Unit = {}
+    onBack: (wasCompleted: Boolean, durationSeconds: Int) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     //al salir (flecha, boton finish o atras del sistema) se guarda la sesion antes de volver
     val leave = {
-        val wasCompleted = viewModel.finishSession()
-        onBack(wasCompleted)
+        val (wasCompleted, durationSeconds) = viewModel.finishSessionWithDuration()
+        onBack(wasCompleted, durationSeconds)
     }
     BackHandler(onBack = leave)
 

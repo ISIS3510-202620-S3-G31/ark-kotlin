@@ -173,8 +173,8 @@ fun AppNavigation(
             composable("photo_of_the_day_screen") {
                 PhotoOfTheDayRoute(
                     onBack = { navController.popBackStack("home_screen", inclusive = false) },
-                    onPhotoSaved = {
-                        navController.navigate("post_tool_feedback/photo_of_the_day") {
+                    onPhotoSaved = { durationSeconds ->
+                        navController.navigate("post_tool_feedback/photo_of_the_day?duration=$durationSeconds") {
                             popUpTo("photo_of_the_day_screen") { inclusive = true }
                         }
                     }
@@ -182,9 +182,9 @@ fun AppNavigation(
             }
             //herramienta de respiracion guiada (#7); si completo al menos 1 ciclo navega a feedback (#21, #82)
             composable("custom_breathing_screen") {
-                CustomBreathingRoute(onBack = { wasCompleted ->
+                CustomBreathingRoute(onBack = { wasCompleted, durationSeconds ->
                     if (wasCompleted) {
-                        navController.navigate("post_tool_feedback/custom_breathing") {
+                        navController.navigate("post_tool_feedback/custom_breathing?duration=$durationSeconds") {
                             popUpTo("custom_breathing_screen") { inclusive = true }
                         }
                     } else {
@@ -194,9 +194,9 @@ fun AppNavigation(
             }
             //herramienta scream tank (#157); si el microfono alcanzo a escuchar navega a feedback (#21)
             composable("scream_tank_screen") {
-                ScreamTankRoute(onBack = { wasCompleted ->
+                ScreamTankRoute(onBack = { wasCompleted, durationSeconds ->
                     if (wasCompleted) {
-                        navController.navigate("post_tool_feedback/scream_tank") {
+                        navController.navigate("post_tool_feedback/scream_tank?duration=$durationSeconds") {
                             popUpTo("scream_tank_screen") { inclusive = true }
                         }
                     } else {

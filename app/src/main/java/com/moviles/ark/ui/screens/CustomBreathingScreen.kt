@@ -88,7 +88,7 @@ private val SoftCardBorder = TextColor.copy(alpha = 0.12f)
 @Composable
 fun CustomBreathingRoute(
     viewModel: BreathingViewModel = viewModel(factory = BreathingViewModel.Factory),
-    onBack: (Boolean) -> Unit = {}
+    onBack: (wasCompleted: Boolean, durationSeconds: Int) -> Unit = { _, _ -> }
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -103,8 +103,8 @@ fun CustomBreathingRoute(
 
     //guarda la sesion localmente antes de retroceder al home o al catalogo
     val leave = {
-        val wasCompleted = viewModel.finishSession()
-        onBack(wasCompleted)
+        val (wasCompleted, durationSeconds) = viewModel.finishSessionWithDuration()
+        onBack(wasCompleted, durationSeconds)
     }
     BackHandler(onBack = leave)
 

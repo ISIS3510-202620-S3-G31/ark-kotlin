@@ -121,6 +121,37 @@ class FeedbackViewModel(
                 val nowMillis = System.currentTimeMillis()
                 val userId = auth?.currentUser?.uid ?: "anonymous"
                 val format = toolRepository?.getToolById(state.toolId)?.format ?: "touch"
+                val normalizedInteractionType = when (state.toolId) {
+                    "custom_breathing" -> "TOUCH"
+                    "scream_tank" -> "VOICE"
+                    "photo_of_the_day" -> "PHOTO"
+                    else -> when (format.lowercase()) {
+                        "touch" -> "TOUCH"
+                        "voice" -> "VOICE"
+                        "photo" -> "PHOTO"
+                        "text" -> "TEXT"
+                        else -> format.uppercase()
+                    }
+                }
+                // Construir el componente emocional del dominio segun el patron composite
+                val moodResult: MoodComponent? = if (state.selectedEmotions.isNotEmpty()) {
+                    if (state.selectedEmotions.size == 1) {
+                        SingleEmotion(state.selectedEmotions.first(), state.intensity.toInt())
+                    } else {
+                        val compound = CompoundMood()
+                        for (emotion in state.selectedEmotions) {
+                            compound.add(SingleEmotion(emotion, state.intensity.toInt()))
+                        }
+                        compound
+                    }
+                } else null
+
+                // Intensidad derivada directamente del composite de emociones (mood.getIntensity())
+                val intensityValue = when (state.toolId) {
+                    "scream_tank" -> 50
+                    else -> moodResult?.getIntensity()?.toInt()?.coerceIn(1, 5)
+                        ?: state.intensity.toInt().coerceIn(1, 5)
+                }
                 val durationSeconds = if (state.duration > 0) state.duration else 60
 
                 // 1. Grabar la interaccion en Room SQLite para obtener el interactionId generado (#154)
@@ -129,8 +160,10 @@ class FeedbackViewModel(
                         userId = userId,
                         toolId = state.toolId,
                         duration = durationSeconds,
-                        interactionType = format,
+                        interactionType = normalizedInteractionType,
+                        intensity = intensityValue,
                         complete = true,
+                        value = intensityValue,
                         timestamp = Date(nowMillis),
                         isSynced = false
                     )
@@ -147,16 +180,7 @@ class FeedbackViewModel(
                 feedbackRepository?.saveFeedback(feedbackModel)
 
                 // 3. Guardar el post-tool emotion check-in si se seleccionaron emociones
-                if (state.selectedEmotions.isNotEmpty() && moodRepository != null) {
-                    val moodResult: MoodComponent = if (state.selectedEmotions.size == 1) {
-                        SingleEmotion(state.selectedEmotions.first(), state.intensity.toInt())
-                    } else {
-                        val compound = CompoundMood()
-                        for (emotion in state.selectedEmotions) {
-                            compound.add(SingleEmotion(emotion, state.intensity.toInt()))
-                        }
-                        compound
-                    }
+                if (moodResult != null && moodRepository != null) {
                     val checkIn = CheckInModel(
                         mood = moodResult,
                         note = if (state.comment.isNotBlank()) "Post-tool feedback: ${state.comment}" else "Post-tool feedback"

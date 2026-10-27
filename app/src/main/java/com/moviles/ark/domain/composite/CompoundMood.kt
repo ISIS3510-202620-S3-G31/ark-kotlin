@@ -66,15 +66,14 @@ class CompoundMood(val customName: String? = null) : MoodComponent {
         return result
     }
 
-    //calcula el promedio de intensidad de todos sus componentes
+    //calcula la intensidad compuesta de forma inteligente:
+    //prioriza la emocion dominante (pico) para no diluir el estado subjetivo de la persona
     override fun getIntensity(): Float {
-        if (children.isEmpty()) {
-            return 0f
-        }
-        var totalIntensity = 0f //decimal 0
-        for (child in children) {
-            totalIntensity += child.getIntensity()
-        }
-        return totalIntensity / children.size
+        if (children.isEmpty()) return 0f
+        val intensities = children.map { it.getIntensity() }
+        val maxIntensity = intensities.maxOrNull() ?: 0f
+        val avgIntensity = intensities.average().toFloat()
+        //pondera el pico dominante (75%) y la activacion promedio (25%)
+        return ((maxIntensity * 0.75f) + (avgIntensity * 0.25f)).coerceIn(1f, 5f)
     }
 }

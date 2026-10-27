@@ -10,8 +10,15 @@ import com.moviles.ark.domain.models.PhotoDay
 import com.moviles.ark.domain.models.PhotoDayState
 import com.moviles.ark.domain.models.PhotoEntryModel
 import com.moviles.ark.domain.models.PhotoWeek
+import android.os.SystemClock
+import com.google.firebase.auth.FirebaseAuth
+import com.moviles.ark.data.local.daos.ToolRecordDao
+import com.moviles.ark.data.local.entities.ToolInteractionEntity
 import com.moviles.ark.domain.models.ToolLatencyTracker
 import com.moviles.ark.domain.repositories.PhotoEntryRepository
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -29,13 +36,38 @@ class PhotoOfTheDayViewModel(
     private val zone: TimeZone = TimeZone.getDefault(),
     private val now: () -> Long = { System.currentTimeMillis() },
     //mide cuanto tardo en abrirse la herramienta; null en previews
-    private val toolLatencyTracker: ToolLatencyTracker? = null
+    private val toolLatencyTracker: ToolLatencyTracker? = null,
+    private val toolRecordDao: ToolRecordDao? = null,
+    private val auth: FirebaseAuth? = null,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PhotoOfTheDayUiState())
     val uiState: StateFlow<PhotoOfTheDayUiState> = _uiState.asStateFlow()
 
     private var weekPhotos: List<PhotoEntryModel> = emptyList()
+    private val sessionStartRealtime: Long = SystemClock.elapsedRealtime()
+
+    fun getSessionDurationSeconds(): Int =
+        ((SystemClock.elapsedRealtime() - sessionStartRealtime) / 1000L).toInt().coerceAtLeast(1)
+
+    private suspend fun recordPhotoInteraction(durationSeconds: Int) {
+        val userId = auth?.currentUser?.uid ?: "anonymous"
+        val interaction = ToolInteractionEntity(
+            userId = userId,
+            toolId = TOOL_ID,
+            duration = durationSeconds,
+            interactionType = "PHOTO",
+            intensity = 1,
+            complete = true,
+            value = 1,
+            timestamp = Date(now()),
+            isSynced = false
+        )
+        withContext(ioDispatcher) {
+            toolRecordDao?.insertInteraction(interaction)
+        }
+    }
 
     init {
         observeWeek()
@@ -79,6 +111,7 @@ class PhotoOfTheDayViewModel(
             }
             val result = photoRepository.savePhoto(uri, "", now())
             result.onSuccess {
+                recordPhotoInteraction(getSessionDurationSeconds())
                 _uiState.update { it.copy(isSaving = false, pendingPhotoUri = null, caption = "", isPhotoSaved = true) }
             }
             result.onFailure {
@@ -146,6 +179,7 @@ class PhotoOfTheDayViewModel(
             }
             val result = photoRepository.savePhoto(uri, "", now())
             result.onSuccess {
+                recordPhotoInteraction(getSessionDurationSeconds())
                 _uiState.update { it.copy(isSaving = false, pendingPhotoUri = null, caption = "", isPhotoSaved = true) }
             }
             result.onFailure {
@@ -178,7 +212,9 @@ class PhotoOfTheDayViewModel(
                 val app = this[APPLICATION_KEY] as ArkApplication
                 PhotoOfTheDayViewModel(
                     photoRepository = app.container.photoRepository,
-                    toolLatencyTracker = app.container.toolLatencyTracker
+                    toolLatencyTracker = app.container.toolLatencyTracker,
+                    toolRecordDao = app.container.toolRecordDao,
+                    auth = app.container.auth
                 )
             }
         }
