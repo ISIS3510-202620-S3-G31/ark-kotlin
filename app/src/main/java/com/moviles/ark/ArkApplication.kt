@@ -12,6 +12,7 @@ import com.bumptech.glide.GlideBuilder
 import com.bumptech.glide.load.engine.cache.InternalCacheDiskCacheFactory
 import com.moviles.ark.data.AppContainer
 import com.moviles.ark.data.DefaultAppContainer
+import com.moviles.ark.data.local.AvatarPreferences
 import com.moviles.ark.data.local.ProfilePreferences
 import com.moviles.ark.data.remote.ToolsCatalogMessagingService
 import com.moviles.ark.data.workers.SyncWorker

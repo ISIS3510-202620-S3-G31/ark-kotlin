@@ -35,7 +35,6 @@ import java.text.SimpleDateFormat
 import com.moviles.ark.ui.components.getEmotionEmoji
 import com.moviles.ark.ui.components.getEmotionColor
 import com.moviles.ark.domain.composite.SingleEmotion
-import com.moviles.ark.domain.models.CheckInModel
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Umbrella
@@ -74,7 +73,8 @@ import com.moviles.ark.R
 import com.moviles.ark.ui.components.avatarDrawable
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.border
-import com.moviles.ark.domain.models.Tool
+import com.moviles.ark.domain.models.MoodCheckInModel
+import com.moviles.ark.domain.models.ToolModel
 import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.domain.models.ToolEntryPoint
 import com.moviles.ark.domain.models.WeatherCondition
@@ -91,7 +91,6 @@ import com.moviles.ark.ui.theme.TextColor
 import com.moviles.ark.ui.viewmodels.HomeUiState
 import com.moviles.ark.ui.viewmodels.HomeViewModel
 import com.moviles.ark.ui.viewmodels.MoodCheckInViewModel
-import kotlinx.coroutines.delay
 
 //fondo neutro de chips y cajas internas sacado de la paleta: el color de texto con muy poca opacidad
 private val NeutralSurfaceColor = TextColor.copy(alpha = 0.06f)
@@ -128,7 +127,7 @@ fun HomeRoute(
 
 @Composable
 fun HomeScreen(
-    uiState: HomeUiState = HomeUiState(tools = Tool.DEFAULT_CATALOG, filteredTools = Tool.DEFAULT_CATALOG),
+    uiState: HomeUiState = HomeUiState(tools = ToolModel.DEFAULT_CATALOG, filteredTools = ToolModel.DEFAULT_CATALOG),
     onCategorySelect: (ToolCategory?) -> Unit = {},
     onSurpriseMe: () -> Unit = {},
     onToolClick: (String, ToolEntryPoint) -> Unit = { _, _ -> },
@@ -497,7 +496,7 @@ private fun WeatherRecommendationCard(
     modifier: Modifier = Modifier
 ) {
     //la tarjeta abre la herramienta que sugiere el clima
-    val onCardClick = { onOpenTool(suggestion.tool.id) }
+    val onCardClick = { onOpenTool(suggestion.toolModel.id) }
     Card(
         modifier = modifier
             .fillMaxWidth()
@@ -555,7 +554,7 @@ private fun WeatherRecommendationCard(
                     Spacer(modifier = Modifier.height(2.dp))
 
                     Text(
-                        text = suggestion.tool.name,
+                        text = suggestion.toolModel.name,
                         style = MaterialTheme.typography.titleMedium,
                         fontFamily = FigtreeFontFamily,
                         fontWeight = FontWeight.Bold,
@@ -744,7 +743,7 @@ private fun LeaveItToChanceCard(
 //dialogo no editable para revisar el check-in completado del dia sin permitir duplicados
 @Composable
 private fun DailyCheckInReviewDialog(
-    checkIn: CheckInModel?,
+    checkIn: MoodCheckInModel?,
     onDismiss: () -> Unit
 ) {
     val todayFormatted = remember(checkIn?.timestamp) {
@@ -817,7 +816,7 @@ private fun DailyCheckInReviewDialog(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = "✕",
+                                text = "âœ•",
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = TextColor.copy(alpha = 0.75f)
@@ -953,7 +952,7 @@ private fun DailyCheckInReviewDialog(
                             .background(NeutralSurfaceColor)
                             .padding(horizontal = 12.dp, vertical = 5.dp)
                     ) {
-                        Text("📍", fontSize = 12.sp)
+                        Text("ðŸ“", fontSize = 12.sp)
                         Spacer(modifier = Modifier.width(6.dp))
                         val locationText = if (checkIn?.latitude != null && checkIn.longitude != null) {
                             String.format(Locale.US, "%.4f, %.4f", checkIn.latitude, checkIn.longitude)

@@ -16,9 +16,9 @@ data class CachedRecommendation(
             (latestCheckInAt == null || latestCheckInAt <= createdAt)
 
     //ordena el catalogo actual como estaba guardado; las herramientas nuevas quedan al final en su orden normal
-    fun applyTo(tools: List<Tool>): List<Tool> {
+    fun applyTo(toolModels: List<ToolModel>): List<ToolModel> {
         val position = toolIds.withIndex().associate { (index, id) -> id to index }
-        return tools.sortedBy { position[it.id] ?: Int.MAX_VALUE }
+        return toolModels.sortedBy { position[it.id] ?: Int.MAX_VALUE }
     }
 
     private fun dayOf(millis: Long, zone: TimeZone): Long = (millis + zone.getOffset(millis)) / DAY_MILLIS

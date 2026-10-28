@@ -57,7 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.moviles.ark.domain.models.Tool
+import com.moviles.ark.domain.models.ToolModel
 import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.ui.theme.AppTheme
 import com.moviles.ark.ui.theme.BackgroundColor
@@ -97,9 +97,9 @@ fun ToolsCatalogRoute(
 @Composable
 fun ToolsCatalogScreen(
     uiState: HomeUiState = HomeUiState(
-        tools = Tool.DEFAULT_CATALOG,
-        filteredTools = Tool.DEFAULT_CATALOG,
-        availableCategories = Tool.availableCategories(Tool.DEFAULT_CATALOG, null)
+        tools = ToolModel.DEFAULT_CATALOG,
+        filteredTools = ToolModel.DEFAULT_CATALOG,
+        availableCategories = ToolModel.availableCategories(ToolModel.DEFAULT_CATALOG, null)
     ),
     onCategorySelect: (ToolCategory?) -> Unit = {},
     onToolClick: (String) -> Unit = {}
@@ -266,7 +266,7 @@ private fun CatalogCategoryChip(
 
 @Composable
 private fun ToolGridCardItem(
-    tool: Tool,
+    tool: ToolModel,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {

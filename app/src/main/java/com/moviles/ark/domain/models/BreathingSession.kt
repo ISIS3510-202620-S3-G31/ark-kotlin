@@ -20,8 +20,8 @@ data class BreathingSession(
     }
 
     //la misma sesion como interaccion con la herramienta; value = ciclos completos
-    fun toInteraction(userId: String): ToolInteraction {
-        return ToolInteraction(
+    fun toInteraction(userId: String): ToolInteractionModel {
+        return ToolInteractionModel(
             userId = userId,
             toolId = TOOL_ID,
             duration = durationSeconds,

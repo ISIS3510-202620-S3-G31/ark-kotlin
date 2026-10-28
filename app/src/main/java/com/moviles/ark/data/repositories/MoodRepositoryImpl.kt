@@ -9,7 +9,7 @@ import com.moviles.ark.data.local.entities.toEntity
 import com.moviles.ark.data.remote.CrashlyticsHelper
 import com.moviles.ark.data.remote.dtos.MoodCheckInDto
 import com.moviles.ark.data.remote.dtos.toDomain
-import com.moviles.ark.domain.models.CheckInModel
+import com.moviles.ark.domain.models.MoodCheckInModel
 import com.moviles.ark.domain.repositories.MoodRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
@@ -25,7 +25,7 @@ class MoodRepositoryImpl(
     //avisa que hay un check-in pendiente para que se suba ya si hay red; no se espera
     private val onCheckInSaved: () -> Unit = {}
 ) : MoodRepository {
-    override suspend fun saveCheckIn(checkIn: CheckInModel): Result<Unit> = withContext(Dispatchers.IO) {
+    override suspend fun saveCheckIn(checkIn: MoodCheckInModel): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val currentUserId = auth.currentUser?.uid ?: "anonymous"
             //queda con isSynced = false; guardar no depende de la red, asi el check-in es instantaneo
@@ -52,7 +52,7 @@ class MoodRepositoryImpl(
         runCatching {
             val currentUserId = auth.currentUser?.uid ?: return@runCatching false
             //el modelo define desde cuando cuenta "hoy"
-            val todayStartMillis = CheckInModel.startOfToday()
+            val todayStartMillis = MoodCheckInModel.startOfToday()
 
             //primero room: incluye los check-ins que todavia no se han subido
             if (emotionCheckInDao.countCheckInsSince(currentUserId, todayStartMillis) > 0) return@runCatching true
@@ -91,7 +91,7 @@ class MoodRepositoryImpl(
         )
     }
 
-    override suspend fun getLatestCheckIn(): Result<CheckInModel?> = withContext(Dispatchers.IO) {
+    override suspend fun getLatestCheckIn(): Result<MoodCheckInModel?> = withContext(Dispatchers.IO) {
         runCatching {
             val currentUserId = auth.currentUser?.uid ?: return@runCatching null
             //primero room, asi la recomendacion del home funciona sin internet

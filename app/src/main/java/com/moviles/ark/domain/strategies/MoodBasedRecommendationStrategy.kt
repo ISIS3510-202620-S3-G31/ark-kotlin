@@ -1,8 +1,8 @@
 package com.moviles.ark.domain.strategies
 
 import com.moviles.ark.domain.composite.Emotion
-import com.moviles.ark.domain.models.CheckInModel
-import com.moviles.ark.domain.models.Tool
+import com.moviles.ark.domain.models.MoodCheckInModel
+import com.moviles.ark.domain.models.ToolModel
 import com.moviles.ark.domain.models.ToolCategory
 
 /**
@@ -10,13 +10,13 @@ import com.moviles.ark.domain.models.ToolCategory
  * Tools matching the target ToolCategory enum values are placed at the top of the recommended list.
  */
 class MoodBasedRecommendationStrategy(
-    private val defaultCheckIn: CheckInModel? = null
+    private val defaultCheckIn: MoodCheckInModel? = null
 ) : RecommendationStrategy {
 
     override fun recommend(
-        tools: List<Tool>,
+        tools: List<ToolModel>,
         context: RecommendationContext
-    ): List<Tool> {
+    ): List<ToolModel> {
         val checkIn = context.latestCheckIn ?: defaultCheckIn ?: return tools
         val emotions = checkIn.mood.getEmotions()
         if (emotions.isEmpty()) return tools

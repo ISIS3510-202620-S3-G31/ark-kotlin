@@ -33,7 +33,7 @@ enum class WeatherCondition { RAINY, COLD, SUNNY }
 
 //herramienta que sugiere el clima y el motivo que se muestra en el home
 data class WeatherSuggestion(
-    val tool: Tool,
+    val toolModel: ToolModel,
     val condition: WeatherCondition,
     val reason: String
 )

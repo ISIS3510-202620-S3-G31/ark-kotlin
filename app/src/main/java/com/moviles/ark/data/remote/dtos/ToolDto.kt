@@ -1,7 +1,7 @@
 package com.moviles.ark.data.remote.dtos
 
 import com.moviles.ark.data.local.entities.ToolEntity
-import com.moviles.ark.domain.models.Tool
+import com.moviles.ark.domain.models.ToolModel
 import com.moviles.ark.domain.models.ToolCategory
 
 //dto del documento tools/{toolId} en firestore
@@ -18,7 +18,7 @@ data class ToolDto(
 )
 
 //de modelo de dominio a dto
-fun Tool.toDto(): ToolDto {
+fun ToolModel.toDto(): ToolDto {
     return ToolDto(
         id = id,
         name = name,
@@ -30,8 +30,8 @@ fun Tool.toDto(): ToolDto {
 }
 
 //de dto a modelo de dominio
-fun ToolDto.toDomain(): Tool {
-    return Tool(
+fun ToolDto.toDomain(): ToolModel {
+    return ToolModel(
         id = id,
         name = name,
         description = description,

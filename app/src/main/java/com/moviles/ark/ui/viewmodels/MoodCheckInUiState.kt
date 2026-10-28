@@ -3,7 +3,7 @@ package com.moviles.ark.ui.viewmodels
 import com.moviles.ark.domain.models.LocationStatus
 import com.moviles.ark.domain.composite.Emotion
 import com.moviles.ark.domain.composite.SingleEmotion
-import com.moviles.ark.domain.models.CheckInModel
+import com.moviles.ark.domain.models.MoodCheckInModel
 import java.util.Locale
 
 //estado inmutable de la pantalla de check-in con soporte para coordenadas gps y nombre de la ciudad
@@ -25,13 +25,13 @@ data class MoodCheckInUiState(
     //indica si el usuario ya completo su unico check-in diario para bloquear nuevas entradas
     val isAlreadyCheckedInToday: Boolean = false,
     //check-in guardado del dia para desplegar en modo revision no editable
-    val existingCheckIn: CheckInModel? = null
+    val existingCheckIn: MoodCheckInModel? = null
 ) {
     //contador de la nota: el limite y el aviso los define el modelo CheckInModel
     val remainingNoteChars: Int
-        get() = CheckInModel.remainingNoteChars(note)
+        get() = MoodCheckInModel.remainingNoteChars(note)
     val isNoteNearLimit: Boolean
-        get() = CheckInModel.isNoteNearLimit(note)
+        get() = MoodCheckInModel.isNoteNearLimit(note)
     val isNoteAtLimit: Boolean
         get() = remainingNoteChars == 0
 
