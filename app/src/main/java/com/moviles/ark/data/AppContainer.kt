@@ -183,7 +183,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         )
     }
     override val syncManager: SyncManager by lazy {
-        SyncManager(networkConnectivityObserver, syncRepository)
+        SyncManager(context, networkConnectivityObserver, syncRepository)
     }
     // sensor de luz + hora del dia para recomendaciones segun el entorno; uno para toda la app
     override val environmentalSensorManager: EnvironmentalSensorManager by lazy { EnvironmentalSensorManager(context) }
