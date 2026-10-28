@@ -51,7 +51,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.domain.composite.SingleEmotion
-import com.moviles.ark.domain.models.CheckInModel
+import com.moviles.ark.domain.models.MoodCheckInModel
 import com.moviles.ark.ui.components.MoodSelectorComponent
 import com.moviles.ark.ui.components.VoiceDictationComponent
 import com.moviles.ark.ui.components.getEmotionColor
@@ -276,7 +276,7 @@ fun MoodCheckInScreen(
                         VoiceDictationComponent(
                             currentText = uiState.value.note,
                             onAppendText = { viewModel.onNoteChange(it) },
-                            maxLength = CheckInModel.MAX_NOTE_LENGTH
+                            maxLength = MoodCheckInModel.MAX_NOTE_LENGTH
                         )
                         Text(
                             text = if (isAtLimit) "0 remaining (limit reached)" else "$remainingChars remaining",
@@ -341,7 +341,7 @@ fun MoodCheckInScreen(
 //vista no editable de revision cuando el usuario ya realizo su check-in diario
 @Composable
 private fun MoodCheckInReviewContent(
-    checkIn: CheckInModel?,
+    checkIn: MoodCheckInModel?,
     onClose: () -> Unit
 ) {
     val dateFormatted = remember(checkIn?.timestamp) {

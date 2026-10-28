@@ -1,7 +1,7 @@
 package com.moviles.ark.data.remote.dtos
 
 import com.moviles.ark.data.local.entities.ToolInteractionEntity
-import com.moviles.ark.domain.models.ToolInteraction
+import com.moviles.ark.domain.models.ToolInteractionModel
 import java.util.Date
 
 //dto del documento users/{uid}/tool_interactions/{id} en firestore
@@ -36,7 +36,7 @@ fun ToolInteractionEntity.toDto(userId: String): ToolInteractionDto {
 }
 
 //de modelo de dominio a dto
-fun ToolInteraction.toDto(): ToolInteractionDto {
+fun ToolInteractionModel.toDto(): ToolInteractionDto {
     return ToolInteractionDto(
         userId = userId,
         toolId = toolId,
@@ -51,8 +51,8 @@ fun ToolInteraction.toDto(): ToolInteractionDto {
 }
 
 //de dto a modelo de dominio
-fun ToolInteractionDto.toDomain(): ToolInteraction {
-    return ToolInteraction(
+fun ToolInteractionDto.toDomain(): ToolInteractionModel {
+    return ToolInteractionModel(
         userId = userId,
         toolId = toolId,
         duration = duration,

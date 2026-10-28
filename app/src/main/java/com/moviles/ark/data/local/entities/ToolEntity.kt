@@ -2,7 +2,7 @@ package com.moviles.ark.data.local.entities
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
-import com.moviles.ark.domain.models.Tool
+import com.moviles.ark.domain.models.ToolModel
 import com.moviles.ark.domain.models.ToolCategory
 
 @Entity(tableName = "tools")
@@ -17,8 +17,8 @@ data class ToolEntity(
 )
 
 // Extension functions to map between ToolEntity and Tool domain model
-fun ToolEntity.toDomain(): Tool {
-    return Tool(
+fun ToolEntity.toDomain(): ToolModel {
+    return ToolModel(
         id = id,
         name = name,
         description = description,
@@ -28,7 +28,7 @@ fun ToolEntity.toDomain(): Tool {
     )
 }
 
-fun Tool.toEntity(): ToolEntity {
+fun ToolModel.toEntity(): ToolEntity {
     return ToolEntity(
         id = id,
         name = name,
