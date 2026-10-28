@@ -61,6 +61,7 @@ import com.moviles.ark.ui.components.getEmotionColor
 import com.moviles.ark.ui.components.getEmotionEmoji
 import com.moviles.ark.ui.theme.AppTheme
 import com.moviles.ark.ui.theme.FigtreeFontFamily
+import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.theme.PrimaryColor
 import com.moviles.ark.ui.theme.TextColor
 import com.moviles.ark.ui.viewmodels.MoodCheckInViewModel
@@ -140,11 +141,11 @@ fun MoodCheckInScreen(
                         text = "Got it",
                         fontFamily = FigtreeFontFamily,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = BackgroundColor
                     )
                 }
             },
-            containerColor = Color.White,
+            containerColor = BackgroundColor,
             shape = RoundedCornerShape(24.dp)
         )
     }
@@ -174,7 +175,7 @@ fun MoodCheckInScreen(
                     modifier = Modifier
                         .size(38.dp)
                         .clip(CircleShape)
-                        .background(Color.White.copy(alpha = 0.55f))
+                        .background(TextColor.copy(alpha = 0.08f))
                         .clickable(onClick = onNavigateBack),
                     contentAlignment = Alignment.Center
                 ) {
@@ -197,7 +198,7 @@ fun MoodCheckInScreen(
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(12.dp))
-                    .background(Color.White.copy(alpha = 0.45f))
+                    .background(TextColor.copy(alpha = 0.06f))
                     .padding(horizontal = 14.dp, vertical = 5.dp)
             ) {
                 Text(
@@ -230,7 +231,7 @@ fun MoodCheckInScreen(
                 horizontalArrangement = Arrangement.Center,
                 modifier = Modifier
                     .clip(RoundedCornerShape(10.dp))
-                    .background(Color.White.copy(alpha = 0.35f))
+                    .background(TextColor.copy(alpha = 0.06f))
                     .padding(horizontal = 12.dp, vertical = 5.dp)
             ) {
                 Icon(
@@ -313,7 +314,7 @@ private fun MoodCheckInReviewContent(
                     modifier = Modifier
                         .size(38.dp)
                         .clip(CircleShape)
-                        .background(Color.White.copy(alpha = 0.55f))
+                        .background(TextColor.copy(alpha = 0.08f))
                         .clickable(onClick = onClose),
                     contentAlignment = Alignment.Center
                 ) {
@@ -368,7 +369,7 @@ private fun MoodCheckInReviewContent(
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(12.dp))
-                    .background(Color.White.copy(alpha = 0.45f))
+                    .background(TextColor.copy(alpha = 0.06f))
                     .padding(horizontal = 14.dp, vertical = 5.dp)
             ) {
                 Text(
@@ -504,7 +505,7 @@ private fun MoodCheckInReviewContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(20.dp))
-                    .background(Color.White.copy(alpha = 0.90f))
+                    .background(TextColor.copy(alpha = 0.06f))
                     .border(1.2.dp, Color(0xFFEADBCE), RoundedCornerShape(20.dp))
                     .padding(16.dp)
             ) {
@@ -532,7 +533,7 @@ private fun MoodCheckInReviewContent(
                 horizontalArrangement = Arrangement.Center,
                 modifier = Modifier
                     .clip(RoundedCornerShape(10.dp))
-                    .background(Color.White.copy(alpha = 0.35f))
+                    .background(TextColor.copy(alpha = 0.06f))
                     .padding(horizontal = 12.dp, vertical = 5.dp)
             ) {
                 Icon(
@@ -570,7 +571,7 @@ private fun MoodCheckInReviewContent(
                     text = "Close",
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
-                    color = Color.White
+                    color = BackgroundColor
                 )
             }
         }

@@ -63,6 +63,7 @@ import com.moviles.ark.ArkApplication
 import com.moviles.ark.data.local.sensors.SpeechRecognitionState
 import com.moviles.ark.data.local.sensors.SpeechToTextHelper
 import com.moviles.ark.ui.theme.AccentColor
+import com.moviles.ark.ui.theme.ErrorColor
 import com.moviles.ark.ui.theme.AppTheme
 import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.theme.FigtreeFontFamily
@@ -97,15 +98,15 @@ fun ModernVoiceInputBox(
     val isAtLimit = remainingChars == 0
 
     val counterColor = when {
-        isAtLimit -> Color(0xFFD32F2F)
+        isAtLimit -> ErrorColor
         isNearLimit -> PrimaryColor
-        else -> TextColor.copy(alpha = 0.50f)
+        else -> TextColor.copy(alpha = 0.60f)
     }
 
     val borderColor = when {
-        isAtLimit -> Color(0xFFD32F2F).copy(alpha = 0.65f)
-        isNearLimit -> PrimaryColor.copy(alpha = 0.50f)
-        else -> SecondaryColor.copy(alpha = 0.25f)
+        isAtLimit -> ErrorColor.copy(alpha = 0.75f)
+        isNearLimit -> PrimaryColor.copy(alpha = 0.60f)
+        else -> SecondaryColor.copy(alpha = 0.35f)
     }
 
     var fallbackMessage by remember { mutableStateOf<String?>(null) }
@@ -115,7 +116,7 @@ fun ModernVoiceInputBox(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(16.dp))
-                .background(Color.White)
+                .background(TextColor.copy(alpha = 0.06f))
                 .border(1.2.dp, borderColor, RoundedCornerShape(16.dp))
                 .padding(14.dp)
         ) {
