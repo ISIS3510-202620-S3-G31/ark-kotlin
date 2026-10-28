@@ -11,7 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 
-//scream tank: el volumen sale del microfono en memoria y la sesion se guarda en room como ToolInteraction
+//scream tank: el volumen sale del microfono en memoria y la sesion se guarda en room como ToolInteractionModel
 class ScreamTankRepositoryImpl(
     private val microphoneLevelMeter: MicrophoneLevelMeter,
     private val toolRecordDao: ToolRecordDao,

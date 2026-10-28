@@ -11,6 +11,6 @@ interface BreathingRepository {
     //resuelve la uri local de la pista si esta en cache o la descarga para que quede lista sin internet
     suspend fun resolveTrackAudio(track: AmbientTrackModel): String = track.audioUrl
 
-    //guarda en el telefono una sesion terminada y su ToolInteraction; funciona sin internet
+    //guarda en el telefono una sesion terminada y su ToolInteractionModel; funciona sin internet
     suspend fun saveSession(session: BreathingSession): Result<Unit>
 }

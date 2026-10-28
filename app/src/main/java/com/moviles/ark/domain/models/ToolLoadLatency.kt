@@ -3,7 +3,7 @@ package com.moviles.ark.domain.models
 //cuanto tardo una herramienta en abrirse: desde el toque del usuario hasta que su pantalla se dibujo
 //responde la pregunta de negocio #1 con el evento tool_load_latency
 data class ToolLoadLatency(
-    //id de la herramienta, el mismo de Tool (por ejemplo "photo_of_the_day")
+    //id de la herramienta, el mismo de ToolModel (por ejemplo "photo_of_the_day")
     val toolId: String,
     val latencyMs: Long,
     //por donde entro el usuario

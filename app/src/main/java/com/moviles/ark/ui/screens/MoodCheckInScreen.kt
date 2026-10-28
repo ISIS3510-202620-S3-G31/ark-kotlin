@@ -53,7 +53,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.domain.composite.SingleEmotion
 import com.moviles.ark.domain.models.MoodCheckInModel
 import com.moviles.ark.ui.components.MoodSelectorComponent
-import com.moviles.ark.ui.components.VoiceDictationComponent
+import com.moviles.ark.ui.components.ModernVoiceInputBox
+import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.Icon
 import com.moviles.ark.ui.components.getEmotionColor
 import com.moviles.ark.ui.components.getEmotionEmoji
 import com.moviles.ark.ui.theme.AppTheme
@@ -175,11 +178,11 @@ fun MoodCheckInScreen(
                         .clickable(onClick = onNavigateBack),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = "✕",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextColor.copy(alpha = 0.75f)
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Close",
+                        tint = TextColor.copy(alpha = 0.75f),
+                        modifier = Modifier.size(16.dp)
                     )
                 }
             }
@@ -214,80 +217,13 @@ fun MoodCheckInScreen(
                 onIntensityChange = { viewModel.onIntensityChange(it) }
             )
             Spacer(modifier = Modifier.height(22.dp))
-            //caja de nota con paleta calida, sombra difusa y borde adaptativo de 20dp
-            //el estado trae cuantos caracteres quedan y si esta cerca del limite (reglas del modelo)
-            val remainingChars = uiState.value.remainingNoteChars
-            val isNearLimit = uiState.value.isNoteNearLimit
-            val isAtLimit = uiState.value.isNoteAtLimit
-            //retroalimentacion visual progresiva: naranja primario cuando faltan 40 caracteres y rojo suave al agotarse
-            val counterColor = when {
-                isAtLimit -> Color(0xFFD32F2F)
-                isNearLimit -> PrimaryColor
-                else -> TextColor.copy(alpha = 0.50f)
-            }
-            //borde con acento de color dinamico para guiar visualmente al usuario antes de bloquear el tipeo
-            val noteBorderColor = when {
-                isAtLimit -> Color(0xFFD32F2F).copy(alpha = 0.7f)
-                isNearLimit -> PrimaryColor.copy(alpha = 0.6f)
-                else -> Color(0xFFEADBCE)
-            }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .shadow(2.dp, RoundedCornerShape(20.dp), ambientColor = Color(0x12000000))
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(Color.White.copy(alpha = 0.90f))
-                    .border(1.2.dp, noteBorderColor, RoundedCornerShape(20.dp))
-                    .padding(16.dp)
-            ) {
-                Column {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(76.dp)
-                    ) {
-                        if (uiState.value.note.isEmpty()) {
-                            Text(
-                                text = "Add a note about your day (optional)...",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = TextColor.copy(alpha = 0.45f)
-                            )
-                        }
-                        //el viewmodel recorta la nota al limite del modelo
-                        BasicTextField(
-                            value = uiState.value.note,
-                            onValueChange = { input -> viewModel.onNoteChange(input) },
-                            textStyle = TextStyle(
-                                color = TextColor,
-                                fontSize = 14.sp
-                            ),
-                            cursorBrush = SolidColor(PrimaryColor),
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(6.dp))
-                    //barra inferior con dictado por voz animado y contador regresivo reactivo
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        VoiceDictationComponent(
-                            currentText = uiState.value.note,
-                            onAppendText = { viewModel.onNoteChange(it) },
-                            maxLength = MoodCheckInModel.MAX_NOTE_LENGTH
-                        )
-                        Text(
-                            text = if (isAtLimit) "0 remaining (limit reached)" else "$remainingChars remaining",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = counterColor,
-                            fontWeight = if (isNearLimit) FontWeight.Bold else FontWeight.Normal,
-                            fontSize = 11.sp
-                        )
-                    }
-                }
-            }
+            //caja de entrada de texto moderna con limite de caracteres y dictado por voz integrado
+            ModernVoiceInputBox(
+                value = uiState.value.note,
+                onValueChange = { input -> viewModel.onNoteChange(input) },
+                maxLength = MoodCheckInModel.MAX_NOTE_LENGTH,
+                placeholder = "Add a note about your day (optional)..."
+            )
             Spacer(modifier = Modifier.height(12.dp))
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -297,7 +233,12 @@ fun MoodCheckInScreen(
                     .background(Color.White.copy(alpha = 0.35f))
                     .padding(horizontal = 12.dp, vertical = 5.dp)
             ) {
-                Text("📍", fontSize = 12.sp)
+                Icon(
+                    imageVector = Icons.Default.Place,
+                    contentDescription = "Location",
+                    tint = PrimaryColor.copy(alpha = 0.8f),
+                    modifier = Modifier.size(14.dp)
+                )
                 Spacer(modifier = Modifier.width(6.dp))
                 //"Location Disabled" sin permiso o con gps apagado; el check-in se guarda igual sin coordenadas
                 Text(
@@ -376,11 +317,11 @@ private fun MoodCheckInReviewContent(
                         .clickable(onClick = onClose),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = "✕",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextColor.copy(alpha = 0.75f)
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Close",
+                        tint = TextColor.copy(alpha = 0.75f),
+                        modifier = Modifier.size(16.dp)
                     )
                 }
             }
@@ -594,7 +535,12 @@ private fun MoodCheckInReviewContent(
                     .background(Color.White.copy(alpha = 0.35f))
                     .padding(horizontal = 12.dp, vertical = 5.dp)
             ) {
-                Text("📍", fontSize = 12.sp)
+                Icon(
+                    imageVector = Icons.Default.Place,
+                    contentDescription = "Location",
+                    tint = PrimaryColor.copy(alpha = 0.8f),
+                    modifier = Modifier.size(14.dp)
+                )
                 Spacer(modifier = Modifier.width(6.dp))
                 val locationText = if (checkIn?.latitude != null && checkIn.longitude != null) {
                     String.format(Locale.US, "%.4f, %.4f", checkIn.latitude, checkIn.longitude)

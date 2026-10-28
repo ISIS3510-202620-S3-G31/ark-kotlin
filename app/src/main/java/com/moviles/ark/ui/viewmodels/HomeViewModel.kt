@@ -14,10 +14,10 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import com.moviles.ark.domain.adapters.WeatherServiceAdapter
 import com.moviles.ark.domain.models.CachedRecommendation
-import com.moviles.ark.domain.models.CheckInModel
+import com.moviles.ark.domain.models.MoodCheckInModel
 import com.moviles.ark.domain.models.RecommendationContextResolver
 import com.moviles.ark.domain.models.RecommendationDecision
-import com.moviles.ark.domain.models.Tool
+import com.moviles.ark.domain.models.ToolModel
 import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.domain.models.ToolEntryPoint
 import com.moviles.ark.domain.models.ToolLatencyTracker
@@ -60,17 +60,17 @@ class HomeViewModel(
     //nombre guardado en el telefono para el saludo; null en previews
     private val userRepository: UserRepository? = null,
     private val now: () -> Long = { System.currentTimeMillis() },
-    initialTools: List<Tool> = Tool.DEFAULT_CATALOG,
+    initialTools: List<ToolModel> = ToolModel.DEFAULT_CATALOG,
     private val defaultDispatcher: CoroutineDispatcher = Dispatchers.Default
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
-        Tool.implemented(initialTools).let { tools ->
+        ToolModel.implemented(initialTools).let { tools ->
             HomeUiState(
                 isLoading = false,
                 tools = tools,
                 filteredTools = tools,
-                availableCategories = Tool.availableCategories(tools, null),
+                availableCategories = ToolModel.availableCategories(tools, null),
                 recommendedTool = tools.firstOrNull()
             )
         }
@@ -113,7 +113,7 @@ class HomeViewModel(
                 adapter.getCachedWeather()
             }
 
-            val currentTools = _uiState.value.tools.ifEmpty { Tool.DEFAULT_CATALOG }
+            val currentTools = _uiState.value.tools.ifEmpty { ToolModel.DEFAULT_CATALOG }
             val suggestion = weather?.let { WeatherSuggestionEngine(it).suggest(currentTools) }
 
             _uiState.update { it.copy(weatherSuggestion = suggestion) }
@@ -173,14 +173,14 @@ class HomeViewModel(
                 }
                 .collect { catalogTools ->
                     //solo se recomiendan y se muestran las herramientas que ya tienen pantalla
-                    val rawTools = Tool.implemented(catalogTools)
+                    val rawTools = ToolModel.implemented(catalogTools)
                     val recommendedTools = recommend(rawTools)
                     val selected = _uiState.value.selectedCategory
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         tools = recommendedTools,
-                        filteredTools = Tool.inCategory(recommendedTools, selected),
-                        availableCategories = Tool.availableCategories(recommendedTools, selected),
+                        filteredTools = ToolModel.inCategory(recommendedTools, selected),
+                        availableCategories = ToolModel.availableCategories(recommendedTools, selected),
                         //la estrategia deja primero la herramienta que recomienda
                         recommendedTool = recommendedTools.firstOrNull()
                     )
@@ -192,8 +192,8 @@ class HomeViewModel(
         val currentTools = _uiState.value.tools
         _uiState.value = _uiState.value.copy(
             selectedCategory = category,
-            filteredTools = Tool.inCategory(currentTools, category),
-            availableCategories = Tool.availableCategories(currentTools, category)
+            filteredTools = ToolModel.inCategory(currentTools, category),
+            availableCategories = ToolModel.availableCategories(currentTools, category)
         )
     }
 
@@ -202,9 +202,9 @@ class HomeViewModel(
     fun onSurpriseMe() {
         viewModelScope.launch(defaultDispatcher) {
             val localTools = toolRepository.getLocalTools().getOrNull()
-            val pick = localTools?.let { tools -> Tool.surprisePick(tools.ifEmpty { _uiState.value.tools }.ifEmpty { Tool.DEFAULT_CATALOG }) }
+            val pick = localTools?.let { tools -> ToolModel.surprisePick(tools.ifEmpty { _uiState.value.tools }.ifEmpty { ToolModel.DEFAULT_CATALOG }) }
             //abre la herramienta elegida de una vez, por el mismo camino que las demas entradas del home
-            onToolClick(pick?.id ?: Tool.FALLBACK_TOOL_ID, ToolEntryPoint.SURPRISE_ME)
+            onToolClick(pick?.id ?: ToolModel.FALLBACK_TOOL_ID, ToolEntryPoint.SURPRISE_ME)
         }
     }
 
@@ -241,7 +241,7 @@ class HomeViewModel(
 
     //online-first: con internet se decide con los datos frescos y el resultado se guarda en disco;
     //sin internet se usa lo guardado hoy y, si no hay, se decide en el telefono con lo que haya guardado
-    private suspend fun recommend(rawTools: List<Tool>): List<Tool> {
+    private suspend fun recommend(rawTools: List<ToolModel>): List<ToolModel> {
         val online = isOnline()
         if (!online) {
             val cached = recommendationRepository?.getLastRecommendation()

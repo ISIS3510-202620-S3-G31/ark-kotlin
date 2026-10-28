@@ -63,10 +63,12 @@ class FeedbackViewModel(
     }
 
     fun onCommentChange(comment: String) {
-        privateUiState.value = privateUiState.value.copy(
-            comment = comment,
-            errorMessage = null
-        )
+        if (comment.length <= FeedbackModel.MAX_COMMENT_LENGTH) {
+            privateUiState.value = privateUiState.value.copy(
+                comment = comment,
+                errorMessage = null
+            )
+        }
     }
 
     fun onEmotionToggle(emotion: Emotion) {

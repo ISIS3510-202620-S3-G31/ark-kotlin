@@ -24,6 +24,7 @@ data class FeedbackModel(
     companion object {
         const val MIN_RATING = 1
         const val MAX_RATING = 5
+        const val MAX_COMMENT_LENGTH = 280
 
         //la calificacion es de 1 a 5 estrellas; 0 significa que todavia no se eligio
         fun ratingError(rating: Int): String? =

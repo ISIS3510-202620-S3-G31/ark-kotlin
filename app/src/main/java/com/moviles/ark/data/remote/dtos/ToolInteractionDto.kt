@@ -5,7 +5,7 @@ import com.moviles.ark.domain.models.ToolInteractionModel
 import java.util.Date
 
 //dto del documento users/{uid}/tool_interactions/{id} en firestore
-//mismos campos que ToolInteraction del diagrama de clases; stats y la pregunta de negocio #4 los leen por nombre
+//mismos campos que ToolInteractionModel del diagrama de clases; stats y la pregunta de negocio #4 los leen por nombre
 data class ToolInteractionDto(
     val userId: String = "",
     val toolId: String = "",

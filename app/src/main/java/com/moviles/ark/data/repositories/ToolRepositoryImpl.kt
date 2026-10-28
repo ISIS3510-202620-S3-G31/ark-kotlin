@@ -104,7 +104,7 @@ class ToolRepositoryImpl(
     companion object {
         private const val TOOLS_COLLECTION = "tools"
 
-        //el catalogo por defecto es del dominio (Tool.DEFAULT_CATALOG); este nombre se deja para el codigo de datos que ya lo usa
+        //el catalogo por defecto es del dominio (ToolModel.DEFAULT_CATALOG); este nombre se deja para el codigo de datos que ya lo usa
         val sampleTools = ToolModel.DEFAULT_CATALOG
     }
 }

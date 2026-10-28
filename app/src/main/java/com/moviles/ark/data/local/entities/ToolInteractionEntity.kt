@@ -6,7 +6,7 @@ import com.moviles.ark.domain.models.ToolInteractionModel
 import java.util.Date
 
 //tabla de interacciones con herramientas: una fila cada vez que el usuario usa una herramienta
-//los atributos siguen la clase ToolInteraction del diagrama de clases
+//los atributos siguen la clase ToolInteractionModel del diagrama de clases
 //la usan las estadisticas, la recomendacion por frecuencia y la telemetria
 @Entity(tableName = "tool_interactions")
 data class ToolInteractionEntity(
@@ -14,7 +14,7 @@ data class ToolInteractionEntity(
     val id: Long = 0,
     //usuario que uso la herramienta (User.id; relacion userId del diagrama)
     val userId: String,
-    //herramienta usada (Tool.id; relacion idTool del diagrama), por ejemplo "custom_breathing"
+    //herramienta usada (ToolModel.id; relacion idTool del diagrama), por ejemplo "custom_breathing"
     val toolId: String,
     //cuanto duro, en segundos
     val duration: Int,

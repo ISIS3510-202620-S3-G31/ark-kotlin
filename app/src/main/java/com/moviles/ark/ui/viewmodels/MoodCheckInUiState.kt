@@ -27,7 +27,7 @@ data class MoodCheckInUiState(
     //check-in guardado del dia para desplegar en modo revision no editable
     val existingCheckIn: MoodCheckInModel? = null
 ) {
-    //contador de la nota: el limite y el aviso los define el modelo CheckInModel
+    //contador de la nota: el limite y el aviso los define el modelo MoodCheckInModel
     val remainingNoteChars: Int
         get() = MoodCheckInModel.remainingNoteChars(note)
     val isNoteNearLimit: Boolean

@@ -19,11 +19,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Keyboard
@@ -47,8 +49,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
@@ -60,6 +64,7 @@ import com.moviles.ark.data.local.sensors.SpeechRecognitionState
 import com.moviles.ark.data.local.sensors.SpeechToTextHelper
 import com.moviles.ark.ui.theme.AccentColor
 import com.moviles.ark.ui.theme.AppTheme
+import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.theme.FigtreeFontFamily
 import com.moviles.ark.ui.theme.PrimaryColor
 import com.moviles.ark.ui.theme.SecondaryColor
@@ -75,6 +80,123 @@ fun rememberSpeechToTextHelper(): SpeechToTextHelper {
     }
 }
 
+//caja de entrada de texto moderna y reutilizable con limite de caracteres y microfono integrado
+@Composable
+fun ModernVoiceInputBox(
+    value: String,
+    onValueChange: (String) -> Unit,
+    maxLength: Int,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+    minHeight: Dp = 80.dp,
+    enabled: Boolean = true,
+    speechToTextHelper: SpeechToTextHelper = rememberSpeechToTextHelper()
+) {
+    val remainingChars = (maxLength - value.length).coerceAtLeast(0)
+    val isNearLimit = remainingChars <= (maxLength * 0.20f).toInt().coerceAtLeast(10)
+    val isAtLimit = remainingChars == 0
+
+    val counterColor = when {
+        isAtLimit -> Color(0xFFD32F2F)
+        isNearLimit -> PrimaryColor
+        else -> TextColor.copy(alpha = 0.50f)
+    }
+
+    val borderColor = when {
+        isAtLimit -> Color(0xFFD32F2F).copy(alpha = 0.65f)
+        isNearLimit -> PrimaryColor.copy(alpha = 0.50f)
+        else -> SecondaryColor.copy(alpha = 0.25f)
+    }
+
+    var fallbackMessage by remember { mutableStateOf<String?>(null) }
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color.White)
+                .border(1.2.dp, borderColor, RoundedCornerShape(16.dp))
+                .padding(14.dp)
+        ) {
+            Column {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = minHeight)
+                ) {
+                    if (value.isEmpty()) {
+                        Text(
+                            text = placeholder,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontFamily = FigtreeFontFamily,
+                                fontSize = 14.sp
+                            ),
+                            color = TextColor.copy(alpha = 0.40f)
+                        )
+                    }
+                    BasicTextField(
+                        value = value,
+                        onValueChange = { input ->
+                            if (input.length <= maxLength) {
+                                onValueChange(input)
+                            }
+                        },
+                        enabled = enabled,
+                        textStyle = TextStyle(
+                            fontFamily = FigtreeFontFamily,
+                            color = TextColor,
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp
+                        ),
+                        cursorBrush = SolidColor(PrimaryColor),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                //barra inferior de control: microfono a la izquierda y contador de caracteres a la derecha
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    VoiceDictationComponent(
+                        currentText = value,
+                        onAppendText = { onValueChange(it.take(maxLength)) },
+                        maxLength = maxLength,
+                        speechToTextHelper = speechToTextHelper,
+                        buttonSize = 34.dp,
+                        enabled = enabled,
+                        showInlineNotice = false,
+                        onFallback = { notice -> fallbackMessage = notice }
+                    )
+
+                    Text(
+                        text = if (isAtLimit) "0 remaining" else "$remainingChars remaining",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FigtreeFontFamily),
+                        color = counterColor,
+                        fontWeight = if (isNearLimit) FontWeight.Bold else FontWeight.Normal,
+                        fontSize = 11.sp
+                    )
+                }
+
+                //aviso de fallback en una fila propia inferior para evitar colisiones con el contador
+                AnimatedVisibility(visible = fallbackMessage != null) {
+                    fallbackMessage?.let { notice ->
+                        Spacer(modifier = Modifier.height(8.dp))
+                        VoiceFallbackNotice(
+                            message = notice,
+                            onDismiss = { fallbackMessage = null }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 //sobrecarga de dictado que anexa texto en vivo sin sobreescribir lo que ya estaba escrito en la caja de texto
 @Composable
 fun VoiceDictationComponent(
@@ -85,6 +207,7 @@ fun VoiceDictationComponent(
     speechToTextHelper: SpeechToTextHelper = rememberSpeechToTextHelper(),
     buttonSize: Dp = 38.dp,
     enabled: Boolean = true,
+    showInlineNotice: Boolean = true,
     onFallback: (String) -> Unit = {}
 ) {
     var baseTextSnapshot by remember { mutableStateOf("") }
@@ -113,12 +236,12 @@ fun VoiceDictationComponent(
         speechToTextHelper = speechToTextHelper,
         buttonSize = buttonSize,
         enabled = enabled,
+        showInlineNotice = showInlineNotice,
         onFallback = onFallback
     )
 }
 
-//componente de dictado por voz para entradas de texto (ej. notas y pies de foto)
-//aplica tecnicas del curso: multithreading en ram y fallback graceful hacia teclado
+//componente de dictado por voz para entradas de texto
 @Composable
 fun VoiceDictationComponent(
     onTranscription: (String) -> Unit,
@@ -126,6 +249,7 @@ fun VoiceDictationComponent(
     speechToTextHelper: SpeechToTextHelper = rememberSpeechToTextHelper(),
     buttonSize: Dp = 38.dp,
     enabled: Boolean = true,
+    showInlineNotice: Boolean = true,
     onFallback: (String) -> Unit = {}
 ) {
     val state by speechToTextHelper.state.collectAsStateWithLifecycle()
@@ -220,14 +344,16 @@ fun VoiceDictationComponent(
             }
         }
 
-        //tarjeta de respaldo (fallback) corta y clara si no hay permiso o falta el modelo offline
-        AnimatedVisibility(visible = fallbackNotice != null) {
-            fallbackNotice?.let { notice ->
-                Spacer(modifier = Modifier.height(6.dp))
-                VoiceFallbackNotice(
-                    message = notice,
-                    onDismiss = { fallbackNotice = null }
-                )
+        if (showInlineNotice) {
+            //tarjeta de respaldo corta y clara si no hay permiso o falta el motor de voz
+            AnimatedVisibility(visible = fallbackNotice != null) {
+                fallbackNotice?.let { notice ->
+                    Spacer(modifier = Modifier.height(6.dp))
+                    VoiceFallbackNotice(
+                        message = notice,
+                        onDismiss = { fallbackNotice = null }
+                    )
+                }
             }
         }
     }
@@ -314,57 +440,55 @@ fun VoiceFallbackNotice(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .border(1.dp, PrimaryColor.copy(alpha = 0.35f), RoundedCornerShape(10.dp)),
-        color = Color.White.copy(alpha = 0.95f),
-        shadowElevation = 1.dp
+            .clip(RoundedCornerShape(8.dp))
+            .border(1.dp, PrimaryColor.copy(alpha = 0.25f), RoundedCornerShape(8.dp)),
+        color = BackgroundColor.copy(alpha = 0.5f),
+        shadowElevation = 0.dp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 6.dp),
+                .padding(horizontal = 10.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 imageVector = Icons.Default.Keyboard,
                 contentDescription = "Keyboard fallback",
                 tint = PrimaryColor,
-                modifier = Modifier.size(18.dp)
+                modifier = Modifier.size(16.dp)
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
                 text = message,
-                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FigtreeFontFamily, fontSize = 12.sp),
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontFamily = FigtreeFontFamily,
+                    fontSize = 11.sp
+                ),
                 color = TextColor.copy(alpha = 0.85f),
                 modifier = Modifier.weight(1f)
             )
             IconButton(
                 onClick = onDismiss,
-                modifier = Modifier.size(24.dp)
+                modifier = Modifier.size(20.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.Close,
                     contentDescription = "Dismiss notice",
                     tint = TextColor.copy(alpha = 0.5f),
-                    modifier = Modifier.size(14.dp)
+                    modifier = Modifier.size(12.dp)
                 )
             }
         }
     }
 }
 
-//verifica si el celular tiene motor local antes de activar el microfono
+//verifica si el celular tiene reconocimiento disponible antes de activar el microfono
 private fun startListeningWithCheck(
     helper: SpeechToTextHelper,
     onFallback: (String) -> Unit
 ) {
     if (!helper.isRecognitionAvailable()) {
-        onFallback("Voice recognition unavailable. Please use the keyboard.")
-        return
-    }
-
-    if (!helper.isOnDeviceRecognitionAvailable()) {
-        onFallback("Offline voice model missing. Please use the keyboard.")
+        onFallback("Voice recognition unavailable on this device. Please use the keyboard.")
         return
     }
 
