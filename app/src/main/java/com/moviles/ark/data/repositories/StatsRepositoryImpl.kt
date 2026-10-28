@@ -7,8 +7,11 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Source
 import com.moviles.ark.data.local.StatsDiskCache
 import com.moviles.ark.data.local.daos.EmotionCheckInDao
+import com.moviles.ark.data.local.daos.StatsDailyVisitDao
 import com.moviles.ark.data.local.daos.ToolRecordDao
+import com.moviles.ark.data.local.entities.StatsDailyVisitEntity
 import com.moviles.ark.data.local.entities.toDomain
+import com.moviles.ark.data.remote.CrashlyticsHelper
 import com.moviles.ark.data.remote.dtos.MoodCheckInDto
 import com.moviles.ark.data.remote.dtos.StatsSummaryDto
 import com.moviles.ark.data.remote.dtos.ToolInteractionDto
@@ -33,7 +36,10 @@ class StatsRepositoryImpl(
     private val toolRecordDao: ToolRecordDao,
     //cache en disco de las stats que llegaron de firestore
     private val statsDiskCache: StatsDiskCache? = null,
-    private val statsCalculator: StatsCalculator = StatsCalculator()
+    private val statsCalculator: StatsCalculator = StatsCalculator(),
+    private val statsDailyVisitDao: StatsDailyVisitDao? = null,
+    private val onVisitRecorded: () -> Unit = {},
+    private val now: () -> Long = { System.currentTimeMillis() }
 ) : StatsRepository {
 
     override suspend fun getCachedStats(): StatsModel? {
@@ -168,6 +174,76 @@ class StatsRepositoryImpl(
         } catch (e: Exception) {
             Log.e("StatsRepository", "Error saving stats summary to firestore", e)
         }
+    }
+
+    //registra la entrada del usuario a la pantalla de estadisticas e incrementa el contador del dia
+    override suspend fun recordStatsVisit(): Result<Int> = withContext(Dispatchers.IO) {
+        runCatching {
+            val currentUserId = auth.currentUser?.uid ?: "anonymous"
+            val timestamp = now()
+            val todayKey = todayDateKey(timestamp)
+            val dao = statsDailyVisitDao ?: return@runCatching 0
+
+            // 1. Obtener registro previo del dia o iniciar en 0
+            val existing = dao.getVisitForDate(currentUserId, todayKey)
+            val newCount = (existing?.count ?: 0) + 1
+
+            // 2. Guardar primero en Room SQLite (offline-first) con isSynced = false
+            val entity = StatsDailyVisitEntity(
+                userId = currentUserId,
+                dateKey = todayKey,
+                count = newCount,
+                lastUpdatedAt = timestamp,
+                isSynced = false
+            )
+            dao.insertOrUpdate(entity)
+
+            // 3. Intentar subir inmediatamente a Firestore si hay conexion
+            try {
+                firestore.collection("users")
+                    .document(currentUserId)
+                    .collection("stats_daily_visits")
+                    .document(todayKey)
+                    .set(
+                        mapOf(
+                            "userId" to currentUserId,
+                            "dateKey" to todayKey,
+                            "count" to newCount,
+                            "lastUpdatedAt" to timestamp
+                        )
+                    )
+                    .await()
+
+                dao.markAsSynced(currentUserId, todayKey)
+                Log.d("StatsRepository", "Stats daily visit for date=$todayKey (count=$newCount) synced to Firestore")
+            } catch (e: Exception) {
+                Log.w("StatsRepository", "Could not sync stats daily visit immediately (offline): ${e.message}")
+                onVisitRecorded()
+            }
+
+            newCount
+        }.onFailure { error ->
+            Log.e("StatsRepository", "Error recording daily stats visit", error)
+            CrashlyticsHelper.logNonFatal(
+                componentName = "StatsRepository",
+                action = "recordStatsVisit",
+                throwable = error
+            )
+        }
+    }
+
+    //obtiene cuantas veces ha entrado el usuario en el dia de hoy
+    override suspend fun getTodayStatsVisitsCount(): Result<Int> = withContext(Dispatchers.IO) {
+        runCatching {
+            val currentUserId = auth.currentUser?.uid ?: "anonymous"
+            val dao = statsDailyVisitDao ?: return@runCatching 0
+            val todayKey = todayDateKey(now())
+            dao.getCountForDate(currentUserId, todayKey) ?: 0
+        }
+    }
+
+    private fun todayDateKey(timestamp: Long): String {
+        return SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date(timestamp))
     }
 
     //arma el dto con los campos del documento

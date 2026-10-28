@@ -9,6 +9,7 @@ import com.moviles.ark.data.local.daos.BreathingSessionDao
 import com.moviles.ark.data.local.daos.EmotionCheckInDao
 import com.moviles.ark.data.local.daos.FeedbackDao
 import com.moviles.ark.data.local.daos.PhotoEntryDao
+import com.moviles.ark.data.local.daos.StatsDailyVisitDao
 import com.moviles.ark.data.local.daos.ToolDao
 import com.moviles.ark.data.local.daos.ToolRecordDao
 import com.moviles.ark.data.local.daos.UserDao
@@ -16,6 +17,7 @@ import com.moviles.ark.data.local.entities.BreathingSessionEntity
 import com.moviles.ark.data.local.entities.CheckInEntity
 import com.moviles.ark.data.local.entities.FeedbackEntity
 import com.moviles.ark.data.local.entities.PhotoEntryEntity
+import com.moviles.ark.data.local.entities.StatsDailyVisitEntity
 import com.moviles.ark.data.local.entities.ToolEntity
 import com.moviles.ark.data.local.entities.ToolInteractionEntity
 import com.moviles.ark.data.local.entities.UserEntity
@@ -24,6 +26,7 @@ import com.moviles.ark.data.local.entities.UserEntity
 //reemplaza a AppDatabase.kt, que se borra (nadie la usaba)
 //version 2: se agrego breathing_sessions; cada vez que se cambie una tabla se sube el numero
 //version 3: se agrego users, el perfil guardado en el telefono
+//version 7: se agrego stats_daily_visits, conteo de visitas diarias a estadisticas
 //(el AppContainer borra y crea de nuevo la base local cuando cambia la version)
 @Database(
     entities = [
@@ -34,8 +37,9 @@ import com.moviles.ark.data.local.entities.UserEntity
         PhotoEntryEntity::class,
         BreathingSessionEntity::class,
         UserEntity::class,
+        StatsDailyVisitEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -47,6 +51,7 @@ abstract class ArkDatabase : RoomDatabase() {
     abstract fun photoEntryDao(): PhotoEntryDao
     abstract fun breathingSessionDao(): BreathingSessionDao
     abstract fun userDao(): UserDao
+    abstract fun statsDailyVisitDao(): StatsDailyVisitDao
 
     companion object {
         @Volatile
