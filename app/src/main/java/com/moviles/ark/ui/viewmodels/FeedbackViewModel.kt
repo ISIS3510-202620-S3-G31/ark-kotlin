@@ -14,7 +14,6 @@ import com.moviles.ark.domain.composite.SingleEmotion
 import com.moviles.ark.domain.models.CheckInModel
 import com.moviles.ark.domain.models.FeedbackModel
 import com.moviles.ark.domain.models.ToolInteraction
-import com.moviles.ark.domain.repositories.AnalyticsRepository
 import com.moviles.ark.domain.repositories.FeedbackRepository
 import com.moviles.ark.domain.repositories.MoodRepository
 import com.moviles.ark.domain.repositories.ToolInteractionRepository
@@ -31,7 +30,6 @@ class FeedbackViewModel(
     private val feedbackRepository: FeedbackRepository? = null,
     private val toolInteractionRepository: ToolInteractionRepository? = null,
     private val moodRepository: MoodRepository? = null,
-    private val analyticsRepository: AnalyticsRepository? = null,
     private val toolRepository: ToolRepository? = null,
     savedStateHandle: SavedStateHandle? = null,
     initialToolId: String = "",
@@ -132,13 +130,6 @@ class FeedbackViewModel(
                 if (state.selectedEmotions.isNotEmpty() && moodRepository != null) {
                     moodRepository.saveCheckIn(CheckInModel.afterTool(state.selectedEmotions, state.intensity.toInt(), state.comment))
                 }
-
-                // 4. Registrar evento de finalizacion de herramienta en Firebase Analytics
-                analyticsRepository?.logToolEntryCompleted(
-                    toolId = state.toolId.ifBlank { "custom_breathing" },
-                    toolFormat = format
-                )
-
                 privateUiState.value = privateUiState.value.copy(
                     isLoading = false,
                     isSaved = true,
@@ -165,7 +156,6 @@ class FeedbackViewModel(
                     feedbackRepository = app.container.feedbackRepository,
                     toolInteractionRepository = app.container.toolInteractionRepository,
                     moodRepository = app.container.moodRepository,
-                    analyticsRepository = app.container.analyticsRepository,
                     toolRepository = app.container.toolRepository
                 )
             }
