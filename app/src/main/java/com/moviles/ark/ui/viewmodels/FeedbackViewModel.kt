@@ -23,6 +23,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -112,26 +113,35 @@ class FeedbackViewModel(
                 val format = toolRepository?.getToolById(state.toolId)?.format ?: ToolInteractionModel.DEFAULT_INTERACTION_TYPE
                 val durationSeconds = if (state.duration > 0) state.duration else ToolInteractionModel.DEFAULT_DURATION_SECONDS
 
-                // 1. Grabar la interaccion para obtener el interactionId generado
-                val interactionId = toolInteractionRepository
-                    ?.recordCompletion(state.toolId, durationSeconds, format, nowMillis)
-                    ?.getOrThrow()
+                // 1. Grabar la interaccion de forma bloqueante para obtener el interactionId generado
+                val interactionId = async(ioDispatcher) {
+                    toolInteractionRepository
+                        ?.recordCompletion(state.toolId, durationSeconds, format, nowMillis)
+                        ?.getOrThrow()
+                }.await()
 
-                // 2. Persistir la calificacion y el comentario vinculados a toolId e interactionId
-                feedbackRepository?.saveFeedback(
-                    FeedbackModel(
-                        toolId = state.toolId,
-                        rating = state.rating,
-                        comment = state.comment.trim(),
-                        createdAt = nowMillis,
-                        interactionId = interactionId
+                // 2. Persistir feedback y check-in en paralelo en hilos de IO con async/await para no degradar la experiencia de usuario
+                val saveFeedbackDeferred = async(ioDispatcher) {
+                    feedbackRepository?.saveFeedback(
+                        FeedbackModel(
+                            toolId = state.toolId,
+                            rating = state.rating,
+                            comment = state.comment.trim(),
+                            createdAt = nowMillis,
+                            interactionId = interactionId
+                        )
                     )
-                )
-
-                // 3. Guardar el check-in de emociones si se eligio alguna; el modelo arma el animo
-                if (state.selectedEmotions.isNotEmpty() && moodRepository != null) {
-                    moodRepository.saveCheckIn(MoodCheckInModel.afterTool(state.selectedEmotions, state.intensity.toInt(), state.comment))
                 }
+
+                val saveCheckInDeferred = async(ioDispatcher) {
+                    if (state.selectedEmotions.isNotEmpty() && moodRepository != null) {
+                        moodRepository.saveCheckIn(MoodCheckInModel.afterTool(state.selectedEmotions, state.intensity.toInt(), state.comment))
+                    }
+                }
+
+                // Esperar concurrentemente ambas operaciones antes de navegar
+                saveFeedbackDeferred.await()
+                saveCheckInDeferred.await()
                 privateUiState.value = privateUiState.value.copy(
                     isLoading = false,
                     isSaved = true,

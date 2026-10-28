@@ -328,19 +328,41 @@ fun VoiceDictationComponent(
             )
 
             if (state == SpeechRecognitionState.LISTENING) {
-                Text(
-                    text = "Listening...",
-                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FigtreeFontFamily),
-                    color = AccentColor,
-                    fontWeight = FontWeight.SemiBold
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    RealtimeAudioVisualizer(soundLevel = soundLevel)
+                    Text(
+                        text = "Listening...",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = FigtreeFontFamily,
+                            fontSize = 12.sp
+                        ),
+                        color = PrimaryColor,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             } else if (state == SpeechRecognitionState.PROCESSING) {
-                Text(
-                    text = "Processing...",
-                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FigtreeFontFamily),
-                    color = SecondaryColor,
-                    fontWeight = FontWeight.Medium
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(12.dp),
+                        color = SecondaryColor,
+                        strokeWidth = 1.5.dp
+                    )
+                    Text(
+                        text = "Processing...",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = FigtreeFontFamily,
+                            fontSize = 12.sp
+                        ),
+                        color = SecondaryColor,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
             }
         }
 
@@ -356,6 +378,43 @@ fun VoiceDictationComponent(
                 }
             }
         }
+    }
+}
+
+//visualizador de barras de audio en tiempo real reactivo al nivel de sonido (RMS)
+@Composable
+fun RealtimeAudioVisualizer(
+    soundLevel: Float,
+    modifier: Modifier = Modifier
+) {
+    val transition = rememberInfiniteTransition(label = "audioWave")
+    val waveAnim by transition.animateFloat(
+        initialValue = 0.25f,
+        targetValue = 0.85f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(350),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "waveHeight"
+    )
+
+    // Combina una animacion organica base con la reactividad real del microfono
+    val factor = (soundLevel * 0.70f + waveAnim * 0.30f).coerceIn(0.1f, 1f)
+
+    Row(
+        modifier = modifier.height(18.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.5.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        val h1 = (4.dp + (10.dp * factor * 0.7f)).coerceIn(3.dp, 14.dp)
+        val h2 = (6.dp + (14.dp * factor * 1.2f)).coerceIn(4.dp, 18.dp)
+        val h3 = (5.dp + (12.dp * factor * 0.9f)).coerceIn(4.dp, 16.dp)
+        val h4 = (4.dp + (8.dp * factor * 0.6f)).coerceIn(3.dp, 12.dp)
+
+        Box(modifier = Modifier.width(2.5.dp).height(h1).clip(RoundedCornerShape(1.5.dp)).background(PrimaryColor))
+        Box(modifier = Modifier.width(2.5.dp).height(h2).clip(RoundedCornerShape(1.5.dp)).background(PrimaryColor))
+        Box(modifier = Modifier.width(2.5.dp).height(h3).clip(RoundedCornerShape(1.5.dp)).background(PrimaryColor))
+        Box(modifier = Modifier.width(2.5.dp).height(h4).clip(RoundedCornerShape(1.5.dp)).background(PrimaryColor))
     }
 }
 
