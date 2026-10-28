@@ -8,9 +8,9 @@ class WeatherSuggestionEngine(
 ) {
 
     //null si el clima no dice nada especial (nublado y templado) o si la herramienta no esta en el catalogo
-    fun suggest(tools: List<Tool>): WeatherSuggestion? {
+    fun suggest(toolModels: List<ToolModel>): WeatherSuggestion? {
         val condition = condition() ?: return null
-        val tool = tools.firstOrNull { it.id == toolFor(condition) } ?: return null
+        val tool = toolModels.firstOrNull { it.id == toolFor(condition) } ?: return null
         return WeatherSuggestion(tool, condition, reason(condition))
     }
 

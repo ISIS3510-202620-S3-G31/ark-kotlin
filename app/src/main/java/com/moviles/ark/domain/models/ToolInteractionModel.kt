@@ -5,7 +5,7 @@ import java.util.Date
 //una vez que el usuario uso una herramienta (una interaccion con ella)
 //los atributos siguen la clase ToolInteraction del diagrama de clases
 //el repositorio la arma desde la tabla tool_interactions (ToolInteractionEntity)
-data class ToolInteraction(
+data class ToolInteractionModel(
     //usuario que uso la herramienta (User.id)
     val userId: String,
     //herramienta usada (Tool.id), por ejemplo "custom_breathing"
@@ -33,3 +33,7 @@ data class ToolInteraction(
         const val LEGACY_TOOL_ID = "breathing_pacer"
     }
 }
+
+
+//alias de retrocompatibilidad con codigo que use ToolInteraction
+typealias ToolInteraction = ToolInteractionModel

@@ -12,7 +12,7 @@ import com.moviles.ark.domain.models.LocationStatus
 import com.moviles.ark.domain.composite.Emotion
 import com.moviles.ark.domain.composite.MoodFactory
 import com.moviles.ark.domain.composite.SingleEmotion
-import com.moviles.ark.domain.models.CheckInModel
+import com.moviles.ark.domain.models.MoodCheckInModel
 import com.moviles.ark.domain.repositories.LocationRepository
 import com.moviles.ark.domain.repositories.MoodRepository
 import kotlinx.coroutines.Job
@@ -131,7 +131,7 @@ class MoodCheckInViewModel(
     //el modelo recorta la nota al limite, por ejemplo si se pega un texto largo
     fun onNoteChange(newNote: String) {
         privateUiState.value = privateUiState.value.copy(
-            note = CheckInModel.limitNote(newNote),
+            note = MoodCheckInModel.limitNote(newNote),
             errorMessage = null
         )
     }
@@ -149,7 +149,7 @@ class MoodCheckInViewModel(
         val state = privateUiState.value
         //si ya se registro hoy, se bloquea la creacion de un nuevo check-in
         if (state.isAlreadyCheckedInToday) {
-            privateUiState.value = state.copy(errorMessage = CheckInModel.ALREADY_CHECKED_IN_ERROR)
+            privateUiState.value = state.copy(errorMessage = MoodCheckInModel.ALREADY_CHECKED_IN_ERROR)
             return false
         }
         //evita envios multiples simultaneos
@@ -157,7 +157,7 @@ class MoodCheckInViewModel(
             return false
         }
         //el modelo arma el animo (una emocion o varias) y valida el check-in
-        val checkIn = CheckInModel(
+        val checkIn = MoodCheckInModel(
             mood = MoodFactory.fromEmotions(state.selectedEmotions, state.intensity.toInt()),
             note = state.note,
             latitude = state.latitude,

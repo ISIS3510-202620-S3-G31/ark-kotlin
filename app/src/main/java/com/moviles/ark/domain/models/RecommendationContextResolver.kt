@@ -35,7 +35,7 @@ class RecommendationContextResolver(
 ) {
 
     //arma el contexto con los datos del usuario y decide la estrategia
-    fun resolve(checkIns: List<CheckInModel>, interactions: List<ToolInteraction>): RecommendationDecision {
+    fun resolve(checkIns: List<MoodCheckInModel>, interactions: List<ToolInteractionModel>): RecommendationDecision {
         val today = dayOf(now())
 
         //el check-in mas reciente de hoy (hora local) si trae al menos una emocion

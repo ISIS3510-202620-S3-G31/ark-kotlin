@@ -116,3 +116,7 @@ interface ToolRecordDao {
         }
     }
 }
+
+
+//alias de retrocompatibilidad con codigo que use ToolInteractionDao
+typealias ToolInteractionDao = ToolRecordDao
