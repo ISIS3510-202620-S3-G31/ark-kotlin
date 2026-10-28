@@ -9,6 +9,7 @@ import com.google.firebase.storage.FirebaseStorage
 import com.moviles.ark.data.local.daos.EmotionCheckInDao
 import com.moviles.ark.data.local.daos.FeedbackDao
 import com.moviles.ark.data.local.daos.PhotoEntryDao
+import com.moviles.ark.data.local.daos.StatsDailyVisitDao
 import com.moviles.ark.data.local.daos.ToolRecordDao
 import com.moviles.ark.data.local.entities.PhotoEntryEntity
 import com.moviles.ark.data.remote.CrashlyticsHelper
@@ -30,7 +31,8 @@ class SyncRepositoryImpl(
     private val photoEntryDao: PhotoEntryDao,
     private val toolRecordDao: ToolRecordDao,
     private val emotionCheckInDao: EmotionCheckInDao,
-    private val feedbackDao: FeedbackDao
+    private val feedbackDao: FeedbackDao,
+    private val statsDailyVisitDao: StatsDailyVisitDao? = null
 ) : SyncRepository {
 
     //una sola subida a la vez: el check-in pide subida al guardarse y el SyncManager al volver la red
@@ -189,6 +191,44 @@ class SyncRepositoryImpl(
             CrashlyticsHelper.logNonFatal(
                 componentName = "SyncRepository",
                 action = "syncFeedback",
+                throwable = e,
+                extraKeys = mapOf("user_id" to currentUserId)
+            )
+        }
+
+        // 5. Sincronizar visitas diarias a estadisticas pendientes (isSynced = 0)
+        try {
+            val visitDao = statsDailyVisitDao
+            if (visitDao != null) {
+                val unsyncedVisits = visitDao.getUnsyncedVisits(currentUserId)
+                for (visit in unsyncedVisits) {
+                    try {
+                        firestore.collection("users")
+                            .document(currentUserId)
+                            .collection("stats_daily_visits")
+                            .document(visit.dateKey)
+                            .set(
+                                mapOf(
+                                    "userId" to currentUserId,
+                                    "dateKey" to visit.dateKey,
+                                    "count" to visit.count,
+                                    "lastUpdatedAt" to visit.lastUpdatedAt
+                                )
+                            )
+                            .await()
+
+                        visitDao.markAsSynced(currentUserId, visit.dateKey)
+                        syncedCount++
+                    } catch (e: Exception) {
+                        Log.e("SyncRepository", "Failed to sync daily stats visit dateKey=${visit.dateKey}", e)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("SyncRepository", "Error syncing daily stats visits collection", e)
+            CrashlyticsHelper.logNonFatal(
+                componentName = "SyncRepository",
+                action = "syncDailyStatsVisits",
                 throwable = e,
                 extraKeys = mapOf("user_id" to currentUserId)
             )

@@ -26,7 +26,9 @@ data class StatsUiState(
     //aviso corto de una sola vez, por ejemplo cuando no hay red al refrescar
     val noticeMessage: String? = null,
     //indica si el intento de conexion detecto falta de internet
-    val isOffline: Boolean = false
+    val isOffline: Boolean = false,
+    //cantidad de veces que el usuario ha visitado la pantalla de estadisticas hoy
+    val todayVisitsCount: Int = 0
 )
 
 class StatsViewModel(
@@ -46,9 +48,10 @@ class StatsViewModel(
     }
 
     //patron cache-then-network:
-    //1) lee y muestra inmediatamente el cache de disco en 0 ms si existe
-    //2) en paralelo, consulta a firestore en Dispatchers.IO el documento precomputado del backend
-    //3) al responder firestore, actualiza la interfaz y refresca el cache del disco
+    //1) registra la visita del usuario (incrementando el conteo diario en room y sincronizando a firestore)
+    //2) lee y muestra inmediatamente el cache de disco en 0 ms si existe
+    //3) en paralelo, consulta a firestore en Dispatchers.IO el documento precomputado del backend
+    //4) al responder firestore, actualiza la interfaz y refresca el cache del disco
     fun loadStats() {
         if (statsRepository == null) {
             privateUiState.value = StatsUiState(isLoading = false, stats = null)
@@ -57,6 +60,9 @@ class StatsViewModel(
 
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
+            // Registra la entrada del usuario a estadísticas e incrementa el contador del día
+            recordDailyVisit()
+
             // 1. CACHE: Muestra inmediatamente las ultimas stats guardadas en disco
             val cached = statsRepository.getCachedStats()
             if (cached != null) {
@@ -75,10 +81,21 @@ class StatsViewModel(
         }
     }
 
+    //registra la visita actual en Room/Firestore y actualiza el contador de hoy
+    private suspend fun recordDailyVisit() {
+        val repository = statsRepository ?: return
+        val count = repository.recordStatsVisit().getOrDefault(0)
+        privateUiState.value = privateUiState.value.copy(todayVisitsCount = count)
+    }
+
+    //permite consultar directamente cuántas veces ha entrado el usuario en el día
+    fun getTodayVisitsCount(): Int = privateUiState.value.todayVisitsCount
+
     //pull-to-refresh y boton de refrescar: fuerza traer firestore y actualiza el cache del disco
     fun refresh() {
         if (statsRepository == null || refreshJob?.isActive == true) return
         refreshJob = viewModelScope.launch {
+            recordDailyVisit()
             fetchFromFirestore(showNotice = true)
         }
     }

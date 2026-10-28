@@ -106,7 +106,17 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     }
     // interacciones con herramientas guardadas en room; las usa la recomendacion por frecuencia del home
     override val toolInteractionRepository: ToolInteractionRepository by lazy { ToolInteractionRepositoryImpl(database.toolRecordDao(), auth) }
-    override val statsRepository: StatsRepository by lazy { StatsRepositoryImpl(auth, firestore, database.emotionCheckInDao(), database.toolRecordDao(), com.moviles.ark.data.local.StatsDiskCache(context.cacheDir)) }
+    override val statsRepository: StatsRepository by lazy {
+        StatsRepositoryImpl(
+            auth = auth,
+            firestore = firestore,
+            emotionCheckInDao = database.emotionCheckInDao(),
+            toolRecordDao = database.toolRecordDao(),
+            statsDiskCache = com.moviles.ark.data.local.StatsDiskCache(context.cacheDir),
+            statsDailyVisitDao = database.statsDailyVisitDao(),
+            onVisitRecorded = { syncManager.requestSync() }
+        )
+    }
     // real photo repository with Room persistence and the public gallery (MediaStore) for the jpg files
     override val photoRepository: PhotoEntryRepository by lazy {
         //cada usuario solo ve sus fotos; sus archivos van en Pictures/Ark/User_<uid>
@@ -179,7 +189,8 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             photoEntryDao = database.photoEntryDao(),
             toolRecordDao = database.toolRecordDao(),
             emotionCheckInDao = database.emotionCheckInDao(),
-            feedbackDao = database.feedbackDao()
+            feedbackDao = database.feedbackDao(),
+            statsDailyVisitDao = database.statsDailyVisitDao()
         )
     }
     override val syncManager: SyncManager by lazy {
