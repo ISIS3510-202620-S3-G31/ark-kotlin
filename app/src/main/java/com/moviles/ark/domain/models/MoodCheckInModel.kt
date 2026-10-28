@@ -63,3 +63,7 @@ data class MoodCheckInModel(
         const val MAX_NOTE_LENGTH = 280
     }
 }
+
+
+//alias de retrocompatibilidad con codigo que use CheckInModel
+typealias CheckInModel = MoodCheckInModel

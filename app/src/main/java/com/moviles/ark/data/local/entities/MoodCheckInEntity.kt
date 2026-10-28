@@ -59,3 +59,7 @@ fun CheckInEntity.toDomain(): MoodCheckInModel {
         timestamp = timestamp,
     )
 }
+
+
+//alias de retrocompatibilidad con codigo que use MoodCheckInEntity
+typealias MoodCheckInEntity = CheckInEntity

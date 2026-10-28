@@ -76,6 +76,7 @@ import androidx.compose.foundation.border
 import com.moviles.ark.domain.models.MoodCheckInModel
 import com.moviles.ark.domain.models.ToolModel
 import com.moviles.ark.domain.models.ToolCategory
+import com.moviles.ark.domain.models.ToolEntryPoint
 import com.moviles.ark.domain.models.WeatherCondition
 import com.moviles.ark.domain.models.WeatherSuggestion
 import com.moviles.ark.ui.components.RecommendationCardComponent
@@ -129,7 +130,7 @@ fun HomeScreen(
     uiState: HomeUiState = HomeUiState(tools = ToolModel.DEFAULT_CATALOG, filteredTools = ToolModel.DEFAULT_CATALOG),
     onCategorySelect: (ToolCategory?) -> Unit = {},
     onSurpriseMe: () -> Unit = {},
-    onToolClick: (String) -> Unit = {},
+    onToolClick: (String, ToolEntryPoint) -> Unit = { _, _ -> },
     onCheckInSaved: () -> Unit = {},
     onCheckInPromptShown: () -> Unit = {},
     onNavigateToTool: (String) -> Unit = {}
@@ -317,7 +318,7 @@ fun HomeScreen(
                     RecommendationCardComponent(
                         tool = recommendedTool,
                         rationaleTag = "Suggested for today",
-                        onOpenTool = { toolId -> onToolClick(toolId) }
+                        onOpenTool = { toolId -> onToolClick(toolId, ToolEntryPoint.RECOMMENDATION) }
                     )
                 }
             }
@@ -335,7 +336,7 @@ fun HomeScreen(
                 item {
                     WeatherRecommendationCard(
                         suggestion = suggestion,
-                        onOpenTool = { toolId -> onToolClick(toolId) }
+                        onOpenTool = { toolId -> onToolClick(toolId, ToolEntryPoint.WEATHER) }
                     )
                 }
             }

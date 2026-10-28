@@ -55,6 +55,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.domain.composite.Emotion
 import com.moviles.ark.ui.components.MoodSelectorComponent
+import com.moviles.ark.ui.components.VoiceDictationComponent
 import com.moviles.ark.ui.theme.AppTheme
 import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.theme.FigtreeFontFamily
@@ -181,6 +182,13 @@ fun PostToolFeedbackScreen(
                     unfocusedLabelColor = TextColor.copy(alpha = 0.7f),
                     cursorColor = TextColor
                 )
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            //barra inferior con dictado por voz animado para reflexiones sin sobreescritura
+            VoiceDictationComponent(
+                currentText = uiState.comment,
+                onAppendText = onCommentChange,
+                buttonSize = 36.dp
             )
 
             if (uiState.errorMessage != null) {

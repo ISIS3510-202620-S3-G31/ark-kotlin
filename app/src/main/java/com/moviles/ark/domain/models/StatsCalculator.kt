@@ -6,16 +6,15 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-//clase de dominio que procesa los datos brutos y calcula las estadisticas e insights del usuario
-class StatsCalculator(
-    private val insightsEngine: UsefulInsightsEngine = UsefulInsightsEngine()
-) {
+//clase de dominio que procesa los datos brutos y calcula las estadisticas del usuario
+class StatsCalculator {
 
     //calcula el modelo completo de estadisticas a partir de check-ins e interacciones
     fun calculateStats(
-        checkIns: List<MoodCheckInModel>,
-        interactions: List<ToolInteractionModel>,
-        toolPercentages: Map<String, Float> = emptyMap()
+        checkIns: List<CheckInModel>,
+        interactions: List<ToolInteraction>,
+        toolPercentages: Map<String, Float> = emptyMap(),
+        lastUpdated: Long = System.currentTimeMillis()
     ): StatsModel {
         val dateFormat = SimpleDateFormat("yyyyMMdd", Locale.getDefault())
 
@@ -69,30 +68,14 @@ class StatsCalculator(
 
         val topEmotion = allEmotionsCount.maxByOrNull { it.value }?.key
 
-        //llamamos al motor de hallazgos utiles que creo el companero
-        //si el hallazgo no trae emocion propia se usa la mas frecuente para filtrar el catalogo
-        val allInsights = insightsEngine.generateInsights(
-            checkIns = checkIns,
-            interactions = interactions
-        ).map { if (it.emotion == null) it.copy(emotion = topEmotion) else it }
-
-        //seleccionamos el insight actual: si hay varios, rotamos dinamicamente para darle variedad al entrar
-        val currentInsight = if (allInsights.isNotEmpty()) {
-            val rotationIndex = ((System.currentTimeMillis() / (1000 * 60 * 5)) % allInsights.size).toInt()
-            allInsights[rotationIndex]
-        } else {
-            null
-        }
-
         return StatsModel(
             totalCheckIns = checkIns.size,
             topEmotion = topEmotion,
             weeklyIntensities = weeklyIntensities,
             weeklyEmotions = weeklyEmotions,
             toolUsagePercentages = toolPercentages,
-            currentInsight = currentInsight,
-            allInsights = allInsights,
-            emotionFrequencies = allEmotionsCount
+            emotionFrequencies = allEmotionsCount,
+            lastUpdated = lastUpdated
         )
     }
 

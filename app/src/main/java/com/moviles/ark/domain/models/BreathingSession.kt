@@ -3,7 +3,7 @@ package com.moviles.ark.domain.models
 import java.util.Date
 
 //una sesion de respiracion guiada que el usuario hizo en Custom breathing
-//se guarda en room (breathing_sessions) y tambien como ToolInteraction, que la usan estadisticas, insights y recomendaciones
+//se guarda en room (breathing_sessions) y tambien como ToolInteraction, que la usan estadisticas y recomendaciones
 data class BreathingSession(
     //ciclos completos (inhalar, sostener y exhalar)
     val completedCycles: Int,
@@ -26,7 +26,8 @@ data class BreathingSession(
             toolId = TOOL_ID,
             duration = durationSeconds,
             interactionType = INTERACTION_TYPE,
-            complete = true,
+            intensity = completedCycles.coerceIn(1, 5),
+            complete = isComplete(),
             value = completedCycles,
             timestamp = Date(timestamp),
             description = if (pattern.isBlank()) "" else "pattern $pattern"
@@ -38,7 +39,7 @@ data class BreathingSession(
         const val TOOL_ID = "custom_breathing"
 
         //la herramienta se usa tocando la pantalla
-        const val INTERACTION_TYPE = "touch"
+        const val INTERACTION_TYPE = "TOUCH"
 
         const val MIN_COMPLETED_CYCLES = 1
 

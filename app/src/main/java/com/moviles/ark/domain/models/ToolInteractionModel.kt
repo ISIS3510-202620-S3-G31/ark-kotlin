@@ -33,3 +33,7 @@ data class ToolInteractionModel(
         const val LEGACY_TOOL_ID = "breathing_pacer"
     }
 }
+
+
+//alias de retrocompatibilidad con codigo que use ToolInteraction
+typealias ToolInteraction = ToolInteractionModel

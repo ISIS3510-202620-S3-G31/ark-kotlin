@@ -6,8 +6,6 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
-import com.moviles.ark.data.local.AvatarPreferences
-import com.moviles.ark.data.local.ProfilePreferences
 import com.moviles.ark.domain.models.CheckInStreak
 import com.moviles.ark.domain.models.UserModel
 import com.moviles.ark.domain.models.UserProfile
@@ -15,7 +13,6 @@ import com.moviles.ark.domain.repositories.AuthRepository
 import com.moviles.ark.domain.repositories.AvatarRepository
 import com.moviles.ark.domain.repositories.MoodRepository
 import com.moviles.ark.domain.repositories.UserRepository
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,9 +25,9 @@ import java.util.Locale
 //now se puede cambiar en las pruebas para fijar "hoy"; en la app es la hora del telefono
 class ProfileViewModel(
     private val authRepository: AuthRepository,
-    //perfil guardado en room (#119): se muestra de una vez, aunque no haya internet
+    //perfil guardado en room: se muestra de una vez, aunque no haya internet
     private val userRepository: UserRepository,
-    //check-ins del usuario para la racha (#96)
+    //check-ins del usuario para la racha
     private val moodRepository: MoodRepository? = null,
     //avatar elegido; null en previews
     private val avatarRepository: AvatarRepository? = null,
@@ -50,26 +47,22 @@ class ProfileViewModel(
     //room se escucha apenas se crea el viewmodel; si la pantalla rota no se vuelve a pedir
     //el refresco con firestore lo pide la pantalla cada vez que se muestra (loadProfile)
     init {
-        loadCachedPreferences()
+        loadCachedProfile()
         observeProfile()
         observeAvatar()
     }
 
-    //carga inmediata de datos escalares guardados en sharedpreferences (offline-first)
-    private fun loadCachedPreferences() {
-        val cached = ProfilePreferences.getScalarProfile()
-        if (cached.name.isNotBlank() || cached.email.isNotBlank()) {
-            val name = cached.name.ifBlank { cached.email.substringBefore("@") }
-            _uiState.update {
-                it.copy(
-                    name = name,
-                    initials = initialsOf(name),
-                    email = cached.email,
-                    age = cached.age,
-                    selectedAvatarId = cached.avatarId,
-                    isLoading = false
-                )
-            }
+    //lo ultimo guardado en el telefono (sharedpreferences) se muestra de una vez mientras llegan room y firestore
+    private fun loadCachedProfile() {
+        val cached = userRepository.cachedProfile() ?: return
+        _uiState.update {
+            it.copy(
+                name = cached.displayName(),
+                initials = cached.initials(),
+                email = cached.email,
+                age = cached.getCalculatedAge(),
+                isLoading = false
+            )
         }
     }
 
@@ -83,27 +76,16 @@ class ProfileViewModel(
     }
 
     private fun observeAvatar() {
-        val repository = avatarRepository
-        if (repository != null) {
-            viewModelScope.launch {
-                repository.currentAvatarId.collect { avatarId ->
-                    _uiState.update { it.copy(selectedAvatarId = avatarId) }
-                }
-            }
-        } else {
-            viewModelScope.launch {
-                AvatarPreferences.currentAvatarId.collect { avatarId ->
-                    _uiState.update { it.copy(selectedAvatarId = avatarId) }
-                }
+        val repository = avatarRepository ?: return
+        viewModelScope.launch {
+            repository.currentAvatarId.collect { avatarId ->
+                _uiState.update { it.copy(selectedAvatarId = avatarId) }
             }
         }
     }
 
     fun onAvatarSelected(avatarId: String) {
         avatarRepository?.setAvatarId(avatarId)
-        viewModelScope.launch(Dispatchers.IO) {
-            ProfilePreferences.saveAvatarId(avatarId)
-        }
     }
 
     //trae lo ultimo de firestore (y sube un cambio que haya quedado pendiente sin internet)
@@ -120,14 +102,14 @@ class ProfileViewModel(
         }
     }
 
-    //la pantalla lo pide cada vez que se muestra, asi la racha se ve al dia despues de un check-in en el home (#96)
+    //la pantalla lo pide cada vez que se muestra, asi la racha se ve al dia despues de un check-in en el home
     fun loadStreak() {
         val repository = moodRepository ?: return
         viewModelScope.launch {
             val from = now() - CheckInStreak.LOOKBACK_DAYS * DAY_MILLIS
             //si no se puede leer (por ejemplo sin internet y sin copia local) se queda la racha guardada en room
             repository.getCheckInTimestampsSince(from).onSuccess { timestamps ->
-                //le preguntamos al modelo cuantos dias seguidos lleva y se guarda para verla sin internet (#119)
+                //le preguntamos al modelo cuantos dias seguidos lleva y se guarda para verla sin internet
                 val days = streak.daysInARow(timestamps)
                 freshStreak = days
                 userRepository.saveStreak(days, timestamps.maxOrNull())
@@ -179,17 +161,7 @@ class ProfileViewModel(
         viewModelScope.launch {
             //se guarda la fecha y la edad se calcula de ella, asi se mantiene al dia con los cumpleanos
             userRepository.updateProfile(edited.name, edited.birthDate)
-                .onSuccess {
-                    launch(Dispatchers.IO) {
-                        ProfilePreferences.saveProfile(
-                            name = edited.name,
-                            email = state.email,
-                            age = edited.getCalculatedAge(),
-                            avatarId = state.selectedAvatarId
-                        )
-                    }
-                    _uiState.update { it.copy(isSaving = false, isEditing = false, message = "Profile saved") }
-                }
+                .onSuccess { _uiState.update { it.copy(isSaving = false, isEditing = false, message = "Profile saved") } }
                 .onFailure { _uiState.update { it.copy(isSaving = false, editError = "Could not save your profile, try again") } }
         }
     }
@@ -209,9 +181,8 @@ class ProfileViewModel(
 
     fun onSignOutClick() {
         authRepository.logout()
-        viewModelScope.launch(Dispatchers.IO) {
-            ProfilePreferences.clear()
-        }
+        //lo guardado en el telefono es del usuario que sale
+        viewModelScope.launch { userRepository.clearCachedProfile() }
         _uiState.update { it.copy(isSignedOut = true) }
     }
 
@@ -233,28 +204,12 @@ class ProfileViewModel(
                 errorMessage = null
             )
         }
-        viewModelScope.launch(Dispatchers.IO) {
-            ProfilePreferences.saveProfile(
-                name = name,
-                email = profile.email,
-                age = profile.getCalculatedAge(),
-                avatarId = _uiState.value.selectedAvatarId
-            )
-        }
     }
 
     //milisegundos -> "October 2026"; 0 significa que no se conoce la fecha
     private fun formatMemberSince(millis: Long): String {
         if (millis <= 0L) return ""
         return SimpleDateFormat("MMMM yyyy", Locale.ENGLISH).format(Date(millis))
-    }
-
-    //primera letra de las dos primeras palabras: "David Forero" -> "DF", "lau3" -> "L"
-    private fun initialsOf(name: String): String {
-        return name.trim().split(Regex("\\s+"))
-            .filter { it.isNotEmpty() }
-            .take(2)
-            .joinToString("") { it.first().uppercase() }
     }
 
     //factory para que el viewmodel reciba los repositorios del AppContainer
@@ -274,3 +229,4 @@ class ProfileViewModel(
         }
     }
 }
+

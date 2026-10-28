@@ -21,3 +21,7 @@ data class PhotoEntryModel(
         const val MAX_CAPTION_LENGTH = 140
     }
 }
+
+
+//alias de retrocompatibilidad con codigo que use PhotoEntry
+typealias PhotoEntry = PhotoEntryModel

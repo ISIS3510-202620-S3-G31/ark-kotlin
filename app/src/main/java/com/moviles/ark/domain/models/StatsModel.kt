@@ -10,8 +10,6 @@ data class StatsModel(
     val weeklyIntensities: Map<String, Float>,
     val weeklyEmotions: Map<String, Emotion>,
     val toolUsagePercentages: Map<String, Float>,
-    val currentInsight: InsightModel? = null,
-    val allInsights: List<InsightModel> = emptyList(),
     val emotionFrequencies: Map<Emotion, Int> = emptyMap(),
     val lastUpdated: Long = 0L
 ) {

@@ -8,10 +8,13 @@ import android.media.ExifInterface
 import android.net.Uri
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 import com.moviles.ark.data.local.ProfilePreferences
 import com.moviles.ark.data.local.daos.UserDao
 import com.moviles.ark.data.local.entities.UserEntity
 import com.moviles.ark.data.local.entities.toDomain
+import com.moviles.ark.data.remote.dtos.UserDto
+import com.moviles.ark.data.remote.dtos.editableFields
 import com.moviles.ark.data.remote.CrashlyticsHelper
 import com.moviles.ark.domain.models.UserProfile
 import com.moviles.ark.domain.repositories.UserRepository
@@ -66,9 +69,11 @@ class UserRepositoryImpl(
                 )
             }.getOrNull()
 
-            val remoteName = document?.getString("name").orEmpty()
-            val remoteBirthDate = document?.getString("birthDate").orEmpty()
-            val remoteAge = document?.getLong("age")?.toInt() ?: 0
+            //firestore arma el dto con los campos del documento; si el documento no existe queda en null
+            val remote = document?.toObject(UserDto::class.java)
+            val remoteName = remote?.name.orEmpty()
+            val remoteBirthDate = remote?.birthDate.orEmpty()
+            val remoteAge = remote?.age ?: 0
             val resolvedName = remoteName.ifBlank { local?.name.orEmpty() }
             val resolvedAge = if (remoteAge > 0) remoteAge else local?.age ?: 0
             userDao.upsertUser(
@@ -110,7 +115,7 @@ class UserRepositoryImpl(
             ProfilePreferences.saveProfile(
                 name = name.trim(),
                 email = auth.currentUser?.email.orEmpty(),
-                age = 0
+                age = com.moviles.ark.domain.models.UserModel.ageOf(birthDate) ?: 0
             )
             pushProfile(uid, name.trim(), birthDate)
         }.onFailure { error ->
@@ -168,6 +173,19 @@ class UserRepositoryImpl(
         }
     }
 
+    //copia en sharedpreferences para mostrar el perfil y el saludo al instante
+    override fun cachedProfile(): UserProfile? {
+        val cached = ProfilePreferences.getScalarProfile()
+        if (cached.name.isBlank() && cached.email.isBlank()) return null
+        return UserProfile(name = cached.name, email = cached.email, memberSince = 0L, age = cached.age)
+    }
+
+    override fun observeCachedName(): Flow<String> = ProfilePreferences.userProfile.map { it.name }
+
+    override suspend fun clearCachedProfile() {
+        ProfilePreferences.clear()
+    }
+
     override suspend fun saveStreak(streakDays: Int, lastCheckInAt: Long?): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val uid = auth.currentUser?.uid ?: error("No user is logged in")
@@ -179,25 +197,19 @@ class UserRepositoryImpl(
     private suspend fun pushProfile(uid: String, name: String, birthDate: String) {
         //la edad la calcula el modelo a partir de la fecha
         val calculatedAge = com.moviles.ark.domain.models.UserModel.ageOf(birthDate) ?: 0
-        val updates = if (calculatedAge > 0) {
-            mapOf("name" to name, "birthDate" to birthDate, "age" to calculatedAge)
-        } else {
-            mapOf("name" to name, "birthDate" to birthDate)
-        }
-        val written = withTimeoutOrNull(PUSH_TIMEOUT_MILLIS) {
-            firestore.collection("users").document(uid)
-                .update(updates)
-                .await()
-            true
-        } ?: false
-        if (written) userDao.markAsSynced(uid)
+        writeProfileFields(uid, UserDto(name = name, birthDate = birthDate, age = calculatedAge))
     }
 
     //para retrocompatibilidad en caso de perfiles guardados anteriormente con edad
     private suspend fun pushProfileWithAge(uid: String, name: String, age: Int) {
+        writeProfileFields(uid, UserDto(name = name, age = age))
+    }
+
+    //escribe solo los campos que el usuario edita (UserDto.editableFields); el correo y lo demas del documento no se tocan
+    private suspend fun writeProfileFields(uid: String, profile: UserDto) {
         val written = withTimeoutOrNull(PUSH_TIMEOUT_MILLIS) {
             firestore.collection("users").document(uid)
-                .update("name", name, "age", age)
+                .set(profile, SetOptions.mergeFields(profile.editableFields()))
                 .await()
             true
         } ?: false

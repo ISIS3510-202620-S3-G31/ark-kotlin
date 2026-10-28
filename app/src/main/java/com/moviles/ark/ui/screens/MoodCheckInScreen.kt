@@ -53,6 +53,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.domain.composite.SingleEmotion
 import com.moviles.ark.domain.models.MoodCheckInModel
 import com.moviles.ark.ui.components.MoodSelectorComponent
+import com.moviles.ark.ui.components.VoiceDictationComponent
 import com.moviles.ark.ui.components.getEmotionColor
 import com.moviles.ark.ui.components.getEmotionEmoji
 import com.moviles.ark.ui.theme.AppTheme
@@ -265,13 +266,18 @@ fun MoodCheckInScreen(
                             modifier = Modifier.fillMaxSize()
                         )
                     }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    //contador regresivo reactivo que indica al usuario con precision su margen disponible
+                    Spacer(modifier = Modifier.height(6.dp))
+                    //barra inferior con dictado por voz animado y contador regresivo reactivo
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        VoiceDictationComponent(
+                            currentText = uiState.value.note,
+                            onAppendText = { viewModel.onNoteChange(it) },
+                            maxLength = MoodCheckInModel.MAX_NOTE_LENGTH
+                        )
                         Text(
                             text = if (isAtLimit) "0 remaining (limit reached)" else "$remainingChars remaining",
                             style = MaterialTheme.typography.labelSmall,

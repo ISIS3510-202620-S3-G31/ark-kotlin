@@ -2,7 +2,6 @@ package com.moviles.ark.data.local
 
 import android.util.Log
 import com.moviles.ark.domain.composite.Emotion
-import com.moviles.ark.domain.models.InsightModel
 import com.moviles.ark.domain.models.StatsModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -63,8 +62,6 @@ class StatsDiskCache(cacheDir: File) {
             for ((tool, percentage) in stats.toolUsagePercentages) {
                 toolUsage.put(JSONObject().put("tool", tool).put("percentage", percentage.toDouble()))
             }
-            val allInsights = JSONArray()
-            stats.allInsights.forEach { allInsights.put(insightToJson(it)) }
             val emotionFrequencies = JSONArray()
             for ((emotion, count) in stats.emotionFrequencies) {
                 emotionFrequencies.put(JSONObject().put("emotion", emotion.name).put("count", count))
@@ -76,9 +73,8 @@ class StatsDiskCache(cacheDir: File) {
                 .put("weeklyIntensities", weeklyIntensities)
                 .put("weeklyEmotions", weeklyEmotions)
                 .put("toolUsagePercentages", toolUsage)
-                .put("currentInsight", stats.currentInsight?.let { insightToJson(it) } ?: JSONObject.NULL)
-                .put("allInsights", allInsights)
                 .put("emotionFrequencies", emotionFrequencies)
+                .put("lastUpdated", stats.lastUpdated)
         }
 
         //lanza excepcion si faltan campos obligatorios; read() la convierte en null
@@ -102,11 +98,6 @@ class StatsDiskCache(cacheDir: File) {
                 val item = tools.getJSONObject(i)
                 toolUsage[item.getString("tool")] = item.getDouble("percentage").toFloat()
             }
-            val allInsights = mutableListOf<InsightModel>()
-            val insights = json.optJSONArray("allInsights") ?: JSONArray()
-            for (i in 0 until insights.length()) {
-                allInsights.add(insightFromJson(insights.getJSONObject(i)))
-            }
             val emotionFrequencies = LinkedHashMap<Emotion, Int>()
             val freqs = json.optJSONArray("emotionFrequencies") ?: JSONArray()
             for (i in 0 until freqs.length()) {
@@ -123,29 +114,8 @@ class StatsDiskCache(cacheDir: File) {
                 weeklyIntensities = weeklyIntensities,
                 weeklyEmotions = weeklyEmotions,
                 toolUsagePercentages = toolUsage,
-                currentInsight = json.optJSONObject("currentInsight")?.let { insightFromJson(it) },
-                allInsights = allInsights,
                 emotionFrequencies = emotionFrequencies,
                 lastUpdated = lastUpdated
-            )
-        }
-
-        private fun insightToJson(insight: InsightModel): JSONObject {
-            return JSONObject()
-                .put("title", insight.title)
-                .put("message", insight.message)
-                .put("advice", insight.advice)
-                .put("actionLabel", insight.actionLabel)
-                .put("emotion", insight.emotion?.name ?: JSONObject.NULL)
-        }
-
-        private fun insightFromJson(json: JSONObject): InsightModel {
-            return InsightModel(
-                title = json.optString("title"),
-                message = json.optString("message"),
-                advice = json.optString("advice"),
-                actionLabel = json.optString("actionLabel"),
-                emotion = parseEmotion(json.optString("emotion"))
             )
         }
 

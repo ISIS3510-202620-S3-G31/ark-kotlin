@@ -51,7 +51,7 @@ interface ToolRecordDao {
         }
     }
 
-    //interacciones desde una fecha en milisegundos (estadisticas e insights)
+    //interacciones desde una fecha en milisegundos para analitica y estadisticas
     @Query("SELECT * FROM tool_interactions WHERE timestamp >= :fromMillis ORDER BY timestamp ASC")
     fun getInteractionsSinceRaw(fromMillis: Long): Flow<List<ToolInteractionEntity>>
 
@@ -116,3 +116,7 @@ interface ToolRecordDao {
         }
     }
 }
+
+
+//alias de retrocompatibilidad con codigo que use ToolInteractionDao
+typealias ToolInteractionDao = ToolRecordDao

@@ -7,7 +7,7 @@ import java.util.Date
 
 //tabla de interacciones con herramientas: una fila cada vez que el usuario usa una herramienta
 //los atributos siguen la clase ToolInteraction del diagrama de clases
-//la usan las estadisticas, la recomendacion por frecuencia, los insights y la pregunta de negocio #4
+//la usan las estadisticas, la recomendacion por frecuencia y la telemetria
 @Entity(tableName = "tool_interactions")
 data class ToolInteractionEntity(
     @PrimaryKey(autoGenerate = true)
@@ -30,7 +30,7 @@ data class ToolInteractionEntity(
     val timestamp: Date,
     //detalle opcional
     val description: String = "",
-    //false mientras no se haya subido a firestore
+    //false mientras no se haya subido a firestore (#33)
     val isSynced: Boolean = false,
 )
 

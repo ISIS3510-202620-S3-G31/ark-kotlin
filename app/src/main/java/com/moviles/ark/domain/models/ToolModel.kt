@@ -93,3 +93,7 @@ open class ToolModel(
         fun surprisePick(toolModels: List<ToolModel>): ToolModel? = implemented(toolModels).randomOrNull()
     }
 }
+
+
+//alias de retrocompatibilidad con codigo que use Tool
+typealias Tool = ToolModel

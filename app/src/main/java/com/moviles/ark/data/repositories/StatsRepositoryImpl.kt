@@ -2,20 +2,20 @@ package com.moviles.ark.data.repositories
 
 import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Source
 import com.moviles.ark.data.local.StatsDiskCache
 import com.moviles.ark.data.local.daos.EmotionCheckInDao
 import com.moviles.ark.data.local.daos.ToolRecordDao
 import com.moviles.ark.data.local.entities.toDomain
-import com.moviles.ark.domain.composite.Emotion
-import com.moviles.ark.domain.composite.MoodFactory
-import com.moviles.ark.domain.composite.SingleEmotion
-import com.moviles.ark.domain.models.InsightModel
-import com.moviles.ark.domain.models.MoodCheckInModel
+import com.moviles.ark.data.remote.dtos.MoodCheckInDto
+import com.moviles.ark.data.remote.dtos.StatsSummaryDto
+import com.moviles.ark.data.remote.dtos.ToolInteractionDto
+import com.moviles.ark.data.remote.dtos.toDomain
+import com.moviles.ark.data.remote.dtos.toDto
 import com.moviles.ark.domain.models.StatsCalculator
 import com.moviles.ark.domain.models.StatsModel
-import com.moviles.ark.domain.models.ToolInteractionModel
 import com.moviles.ark.domain.repositories.StatsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -58,85 +58,32 @@ class StatsRepositoryImpl(
     //pide a firestore en IO (Source.SERVER: sin red falla en vez de devolver datos viejos) y actualiza el cache
     override suspend fun getUserStats(): Result<StatsModel> = withContext(Dispatchers.IO) { fetchAndCacheStats() }
 
-    @Suppress("UNCHECKED_CAST")
     private suspend fun fetchAndCacheStats(): Result<StatsModel> = runCatching {
         val currentUserId = auth.currentUser?.uid ?: "anonymous"
         val todayKey = SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date())
 
         //consulta primero el resumen precomputado directamente del backend en firestore
-        val summaryDoc = try {
+        val summary = try {
             firestore.collection("users")
                 .document(currentUserId)
                 .collection("stats_summary")
                 .document("latest")
                 .get(Source.SERVER)
                 .await()
+                .takeIf { it.exists() }
+                ?.toDtoOrNull<StatsSummaryDto>()
         } catch (e: Exception) {
             Log.w("StatsRepository", "Could not fetch precomputed stats summary directly from server", e)
             null
         }
 
-        //un resumen guardado antes de existir emotionFrequencies no sirve para la tarjeta de distribucion:
-        //si hay check-ins y le falta el campo se recalcula abajo y se vuelve a guardar ya completo
-        val summaryIsComplete = summaryDoc != null && summaryDoc.exists() &&
-            ((summaryDoc.getLong("totalCheckIns") ?: 0L) == 0L || summaryDoc.contains("emotionFrequencies"))
-
-        if (summaryDoc != null && summaryIsComplete) {
-            val totalCheckIns = (summaryDoc.getLong("totalCheckIns") ?: 0L).toInt()
-            val topEmotion = summaryDoc.getString("topEmotion")?.let { MoodFactory.emotionOrDefault(it) }
-            val lastUpdated = summaryDoc.getLong("lastUpdated") ?: System.currentTimeMillis()
-
-            val rawIntensities = summaryDoc.get("weeklyIntensities") as? Map<String, Any> ?: emptyMap()
-            val weeklyIntensities = LinkedHashMap<String, Float>()
-            for ((day, value) in rawIntensities) {
-                weeklyIntensities[day] = (value as? Number)?.toFloat() ?: 0f
-            }
-
-            val rawEmotions = summaryDoc.get("weeklyEmotions") as? Map<String, Any> ?: emptyMap()
-            val weeklyEmotions = LinkedHashMap<String, Emotion>()
-            for ((day, emName) in rawEmotions) {
-                weeklyEmotions[day] = MoodFactory.emotionOrDefault(emName.toString())
-            }
-
-            val rawPercentages = summaryDoc.get("toolUsagePercentages") as? Map<String, Any> ?: emptyMap()
-            val toolPercentages = LinkedHashMap<String, Float>()
-            for ((tool, pct) in rawPercentages) {
-                toolPercentages[tool] = (pct as? Number)?.toFloat() ?: 0f
-            }
-
-            val rawFrequencies = summaryDoc.get("emotionFrequencies") as? Map<String, Any> ?: emptyMap()
-            val emotionFrequencies = LinkedHashMap<Emotion, Int>()
-            for ((emName, count) in rawFrequencies) {
-                val emotion = MoodFactory.emotionOrDefault(emName)
-                emotionFrequencies[emotion] = emotionFrequencies.getOrDefault(emotion, 0) + ((count as? Number)?.toInt() ?: 0)
-            }
-
-            val rawInsight = summaryDoc.get("currentInsight") as? Map<String, Any>
-            val currentInsight = rawInsight?.let {
-                InsightModel(
-                    title = it["title"] as? String ?: "",
-                    message = it["message"] as? String ?: "",
-                    advice = it["advice"] as? String ?: "",
-                    actionLabel = it["actionLabel"] as? String ?: "Explore Tools",
-                    emotion = topEmotion
-                )
-            }
-
-            val precomputedStats = StatsModel(
-                totalCheckIns = totalCheckIns,
-                topEmotion = topEmotion,
-                weeklyIntensities = weeklyIntensities,
-                weeklyEmotions = weeklyEmotions,
-                toolUsagePercentages = toolPercentages,
-                currentInsight = currentInsight,
-                allInsights = if (currentInsight != null) listOf(currentInsight) else emptyList(),
-                emotionFrequencies = emotionFrequencies,
-                lastUpdated = lastUpdated
-            )
+        //un resumen incompleto se recalcula abajo y se vuelve a guardar ya completo
+        if (summary != null && summary.isComplete()) {
+            val precomputedStats = summary.toDomain()
 
             //guarda de inmediato en el disco del telefono para cache-then-network
             statsDiskCache?.write(currentUserId, precomputedStats)
-            Log.d("StatsRepository", "Loaded precomputed stats directly from backend: totalCheckIns=$totalCheckIns")
+            Log.d("StatsRepository", "Loaded precomputed stats directly from backend: totalCheckIns=${summary.totalCheckIns}")
             return@runCatching precomputedStats
         }
 
@@ -166,75 +113,22 @@ class StatsRepositoryImpl(
                 weeklyIntensities = emptyMap(),
                 weeklyEmotions = emptyMap(),
                 toolUsagePercentages = emptyMap(),
-                currentInsight = null,
-                allInsights = emptyList(),
                 lastUpdated = System.currentTimeMillis()
             )
             statsDiskCache?.write(currentUserId, emptyStats)
             return@runCatching emptyStats
         }
 
-        //transforma los documentos crudos de firestore a modelos de dominio
-        val checkInModels = mutableListOf<MoodCheckInModel>()
-        for (doc in checkInDocs) {
-            val timestamp = doc.getLong("timestamp") ?: continue
-            val emotionsRaw = doc.get("emotions") as? List<Map<String, Any>> ?: emptyList()
-            val note = doc.getString("note") ?: ""
-            val lat = doc.getDouble("latitude")
-            val lon = doc.getDouble("longitude")
+        //cada documento se lee con su dto, el mismo que usa el sync para subirlo
+        val checkInModels = checkInDocs
+            .mapNotNull { it.toDtoOrNull<MoodCheckInDto>() }
+            .filter { it.timestamp > 0L }
+            .map { it.toDomain() }
+        val interactionDtos = toolDocs.mapNotNull { it.toDtoOrNull<ToolInteractionDto>() }
+        val toolInteractions = interactionDtos.map { it.toDomain() }
+        val toolPercentages = StatsCalculator.toolUsagePercentages(interactionDtos.map { it.toolId }.filter { it.isNotBlank() })
 
-            val parsedEmotions = mutableListOf<SingleEmotion>()
-            for (em in emotionsRaw) {
-                val rawName = em["name"] as? String ?: continue
-                val emotionEnum = MoodFactory.emotionOrDefault(rawName)
-                val intensity = (em["intensity"] as? Number)?.toInt() ?: SingleEmotion.DEFAULT_INTENSITY
-                parsedEmotions.add(SingleEmotion(emotion = emotionEnum, intensity = intensity))
-            }
-
-            val moodComponent = if (parsedEmotions.isEmpty()) MoodFactory.default() else MoodFactory.fromParts(parsedEmotions)
-
-            checkInModels.add(
-                MoodCheckInModel(
-                    mood = moodComponent,
-                    note = note,
-                    latitude = lat,
-                    longitude = lon,
-                    timestamp = timestamp
-                )
-            )
-        }
-
-        val toolInteractions = mutableListOf<ToolInteractionModel>()
-        for (doc in toolDocs) {
-            val toolId = doc.getString("toolId") ?: ToolInteractionModel.LEGACY_TOOL_ID
-            val timestampDate = doc.getDate("timestamp")
-                ?: doc.getLong("timestamp")?.let { Date(it) }
-                ?: Date()
-            val duration = doc.getLong("duration")?.toInt() ?: ToolInteractionModel.DEFAULT_DURATION_SECONDS
-            val interactionType = doc.getString("interactionType") ?: ToolInteractionModel.DEFAULT_INTERACTION_TYPE
-            val intensity = (doc.getLong("intensity") ?: 0L).toInt()
-            val complete = doc.getBoolean("complete") ?: true
-            val value = (doc.getLong("value") ?: 0L).toInt()
-            val description = doc.getString("description") ?: ""
-
-            toolInteractions.add(
-                ToolInteractionModel(
-                    userId = currentUserId,
-                    toolId = toolId,
-                    duration = duration,
-                    interactionType = interactionType,
-                    intensity = intensity,
-                    complete = complete,
-                    value = value,
-                    timestamp = timestampDate,
-                    description = description
-                )
-            )
-        }
-
-        val toolPercentages = StatsCalculator.toolUsagePercentages(toolDocs.mapNotNull { it.getString("toolName") ?: it.getString("toolId") })
-
-        //la logica de calculo de estadisticas e insights vive en StatsCalculator (dominio)
+        //la logica de calculo de estadisticas vive en StatsCalculator (dominio)
         val calculated = statsCalculator.calculateStats(
             checkIns = checkInModels,
             interactions = toolInteractions,
@@ -245,10 +139,10 @@ class StatsRepositoryImpl(
         //guarda el resumen en el disco del telefono para pintarlo al instante la proxima vez
         statsDiskCache?.write(currentUserId, computedStats)
 
-        //guarda el resumen precomputado e insights en firestore para futuras lecturas directas del backend
+        //guarda el resumen precomputado en firestore para futuras lecturas directas del backend
         saveUserStatsInternal(currentUserId, computedStats, totalToolEntries, todayKey)
 
-        Log.d("StatsRepository", "Calculated and persisted stats with ${computedStats.allInsights.size} insights: total=$totalCheckIns")
+        Log.d("StatsRepository", "Calculated and persisted stats total=$totalCheckIns")
         return@runCatching computedStats
     }
 
@@ -264,53 +158,22 @@ class StatsRepositoryImpl(
     }
 
     private suspend fun saveUserStatsInternal(userId: String, stats: StatsModel, totalTools: Int, dayKey: String) {
-        val currentInsightMap = stats.currentInsight?.let {
-            hashMapOf(
-                "title" to it.title,
-                "message" to it.message,
-                "advice" to it.advice,
-                "actionLabel" to it.actionLabel
-            )
-        }
-
-        val data = hashMapOf(
-            "totalCheckIns" to stats.totalCheckIns,
-            "totalToolEntries" to totalTools,
-            "topEmotion" to stats.topEmotion?.name,
-            "weeklyIntensities" to stats.weeklyIntensities,
-            "weeklyEmotions" to stats.weeklyEmotions.mapValues { it.value.name },
-            "toolUsagePercentages" to stats.toolUsagePercentages,
-            "emotionFrequencies" to stats.emotionFrequencies.mapKeys { it.key.name },
-            "currentInsight" to currentInsightMap,
-            "lastDayKey" to dayKey,
-            "lastUpdated" to if (stats.lastUpdated > 0L) stats.lastUpdated else System.currentTimeMillis()
-        )
         try {
             firestore.collection("users")
                 .document(userId)
                 .collection("stats_summary")
                 .document("latest")
-                .set(data)
+                .set(stats.toDto(totalTools, dayKey))
                 .await()
-
-            //persiste los hallazgos calculados en la subcoleccion de insights historicos
-            for (insight in stats.allInsights) {
-                val insightDoc = hashMapOf(
-                    "title" to insight.title,
-                    "message" to insight.message,
-                    "advice" to insight.advice,
-                    "actionLabel" to insight.actionLabel,
-                    "savedAt" to System.currentTimeMillis()
-                )
-                firestore.collection("users")
-                    .document(userId)
-                    .collection("useful_insights")
-                    .document(insight.title.lowercase().replace(" ", "_"))
-                    .set(insightDoc)
-                    .await()
-            }
         } catch (e: Exception) {
-            Log.e("StatsRepository", "Error saving stats summary and insights to firestore", e)
+            Log.e("StatsRepository", "Error saving stats summary to firestore", e)
         }
     }
+
+    //arma el dto con los campos del documento
+    //un documento con otra forma (por ejemplo uno de prueba escrito a mano) se salta en vez de tumbar toda la pantalla
+    private inline fun <reified T : Any> DocumentSnapshot.toDtoOrNull(): T? =
+        runCatching { toObject(T::class.java) }
+            .onFailure { Log.w("StatsRepository", "Skipping document $id with an unexpected shape", it) }
+            .getOrNull()
 }
