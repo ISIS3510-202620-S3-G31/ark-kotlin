@@ -1,5 +1,6 @@
 package com.moviles.ark
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -16,5 +17,10 @@ class MainActivity : ComponentActivity() {
                 AppNavigation()
             })
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
     }
 }
