@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- microfono del boton central; los anillos del boton los dibuja la pantalla segun el volumen (figma Scream Tank) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="116dp"
+    android:height="116dp"
+    android:viewportWidth="116"
+    android:viewportHeight="116">
+    <path
+        android:fillColor="#221100"
+        android:pathData="M58 44.5417C54.8833 44.5417 52.3333 47.0917 52.3333 50.2083V57.2917C52.3333 60.4083 54.8833 62.9583 58 62.9583C61.1167 62.9583 63.6667 60.4083 63.6667 57.2917V50.2083C63.6667 47.0917 61.1167 44.5417 58 44.5417Z" />
+    <path
+        android:strokeColor="#221100"
+        android:strokeWidth="3.11667"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M48.0833 56.5833C48.0833 62.1083 52.475 66.5 58 66.5M58 66.5C63.525 66.5 67.9167 62.1083 67.9167 56.5833M58 66.5V71.4583M58 71.4583H53.0417M58 71.4583H62.9583" />
+</vector>

@@ -2,7 +2,7 @@ package com.moviles.ark.domain.models
 
 import java.util.Date
 
-//una sesion del scream tank (#157): solo se guardan numeros, nunca el audio
+//una sesion del scream tank: solo se guardan numeros, nunca el audio
 data class ScreamSession(
     //el grito mas fuerte de la sesion, de 0 a 100 (DecibelMeter)
     val peakLevel: Int,
@@ -24,7 +24,8 @@ data class ScreamSession(
             duration = durationSeconds,
             interactionType = INTERACTION_TYPE,
             intensity = peakLevel.coerceIn(0, DecibelMeter.MAX_LEVEL),
-            complete = true,
+            complete = isComplete(),
+            value = peakLevel,
             timestamp = Date(timestamp)
         )
     }
@@ -34,7 +35,7 @@ data class ScreamSession(
         const val TOOL_ID = "scream_tank"
 
         //la herramienta se usa con la voz
-        const val INTERACTION_TYPE = "voice"
+        const val INTERACTION_TYPE = "VOICE"
 
         const val MIN_DURATION_SECONDS = 1
     }

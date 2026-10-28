@@ -10,7 +10,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Locale
 
-//adapta el api gratis de open-meteo (sin llave) a WeatherServiceAdapter (#134, #153)
+//adapta el api gratis de open-meteo (sin llave) a WeatherServiceAdapter
 //desacopla el consumo de open-meteo en Dispatchers.IO y cachea en context.cacheDir/weather_cache/weather.json con TTL de 1 hora
 class OpenMeteoAdapterImpl(
     private val cacheDir: File? = null,
@@ -21,7 +21,7 @@ class OpenMeteoAdapterImpl(
     private val cacheFile: File?
         get() = cacheDir?.let { File(File(it, CACHE_DIR_NAME), FILE_NAME) }
 
-    //obtiene el clima en Dispatchers.IO: si la cache en disco tiene menos de 1 hora se sirve sin acceso a red (#153)
+    //obtiene el clima en Dispatchers.IO: si la cache en disco tiene menos de 1 hora se sirve sin acceso a red
     override suspend fun getCurrentWeather(latitude: Double, longitude: Double): Result<WeatherModel> = withContext(Dispatchers.IO) {
         runCatching {
             // 1. Validar cache de disco con TTL = 1 hora
@@ -70,7 +70,9 @@ class OpenMeteoAdapterImpl(
         }
     }
 
-    //sirve el clima de la cache si aun es valido (TTL < 1 hora), sin requerir red ni coordenadas (#153)
+    //sirve el clima de la cache si aun es valido (TTL < 1 hora), sin requerir red ni coordenadas
+    override fun getCachedWeather(): WeatherModel? = getCachedWeatherIfValid()
+
     fun getCachedWeatherIfValid(): WeatherModel? {
         val file = cacheFile ?: return null
         if (!file.exists()) return null

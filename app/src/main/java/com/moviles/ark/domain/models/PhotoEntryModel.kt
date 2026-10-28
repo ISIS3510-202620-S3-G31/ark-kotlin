@@ -1,6 +1,6 @@
 package com.moviles.ark.domain.models
 
-//modelo de datos de una foto del dia guardada en el telefono (#25, #26, #31)
+//modelo de datos de una foto del dia guardada en el telefono
 data class PhotoEntryModel(
     val id: Long = 0,
     //ruta del archivo dentro del almacenamiento privado de la app
@@ -8,7 +8,9 @@ data class PhotoEntryModel(
     //nota opcional que el usuario escribe sobre la foto
     val caption: String = "",
     //cuando se tomo, en milisegundos
-    val takenAt: Long
+    val takenAt: Long,
+    //url de descarga de la copia en firebase storage; null si aun no se ha subido
+    val remoteUrl: String? = null
 ) {
     //reglas de negocio
     fun isValidCaption(): Boolean {

@@ -3,8 +3,8 @@ package com.moviles.ark.data.remote.dtos
 import com.moviles.ark.data.local.entities.FeedbackEntity
 import com.moviles.ark.domain.models.FeedbackModel
 
-//dto del documento users/{uid}/tool_feedback/{id} en firestore (#163)
-//la calificacion que deja el usuario al terminar una herramienta (#21)
+//dto del documento users/{uid}/tool_feedback/{id} en firestore
+//la calificacion que deja el usuario al terminar una herramienta
 data class FeedbackDto(
     val userId: String = "",
     val toolId: String = "",
@@ -41,7 +41,7 @@ fun FeedbackDto.toEntity(): FeedbackEntity {
     )
 }
 
-//de modelo de dominio a dto para Firestore (#166)
+//de modelo de dominio a dto para Firestore
 fun FeedbackModel.toDto(userId: String): FeedbackDto {
     return FeedbackDto(
         userId = userId,
@@ -53,19 +53,15 @@ fun FeedbackModel.toDto(userId: String): FeedbackDto {
     )
 }
 
-//de dto de Firestore a modelo de dominio aplicando reglas de negocio (#166)
+//de dto de Firestore a modelo de dominio
 fun FeedbackDto.toDomain(id: Long = 0L, isSynced: Boolean = true): FeedbackModel {
-    val safeRating = if (FeedbackModel.isValidRating(rating)) rating else FeedbackModel.MIN_RATING
-    val safeToolId = toolId.ifBlank { "unknown_tool" }
-    val safeCreatedAt = if (createdAt > 0L) createdAt else System.currentTimeMillis()
-    val safeInteractionId = if (interactionId != null && interactionId > 0L) interactionId else null
     return FeedbackModel(
         id = id,
-        interactionId = safeInteractionId,
-        toolId = safeToolId,
-        rating = safeRating,
+        interactionId = interactionId,
+        toolId = toolId,
+        rating = rating,
         comment = comment,
-        createdAt = safeCreatedAt,
+        createdAt = createdAt,
         isSynced = isSynced
     )
 }

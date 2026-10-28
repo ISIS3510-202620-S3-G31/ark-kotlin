@@ -26,7 +26,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import java.util.Calendar
 
-//escucha el sensor de luz del telefono (Sensor.TYPE_LIGHT) y lo junta con la hora del dia (#165)
+//escucha el sensor de luz del telefono (Sensor.TYPE_LIGHT) y lo junta con la hora del dia
 //expone el entorno en un StateFlow para que el motor de recomendaciones reaccione solo, sin que el usuario toque nada
 class EnvironmentalSensorManager(
     context: Context,

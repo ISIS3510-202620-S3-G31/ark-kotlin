@@ -9,7 +9,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-//catalogo de herramientas guardado como archivo json en el almacenamiento interno de la app (#145)
+//catalogo de herramientas guardado como archivo json en el almacenamiento interno de la app
 //filesDir/tools.json es la copia permanente para usar la app sin internet;
 //si falta o esta danado se usa el respaldo que viene dentro del apk (assets/tools.json) y se restaura la copia interna
 class ToolCatalogFileStore(private val context: Context) {

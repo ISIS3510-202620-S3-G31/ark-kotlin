@@ -9,7 +9,7 @@ import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
 
-//cliente http para consumir el api rest de jamendo music (#7)
+//cliente http para consumir el api rest de jamendo music
 class JamendoApiClient(
     private val clientId: String = CLIENT_ID
 ) {

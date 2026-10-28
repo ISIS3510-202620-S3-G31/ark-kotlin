@@ -17,18 +17,18 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Calendar
 
-//el check-in se guarda primero en room y el SyncManager lo sube a firestore cuando hay internet (#143)
+//el check-in se guarda primero en room y el SyncManager lo sube a firestore cuando hay internet
 class MoodRepositoryImpl(
     private val auth: FirebaseAuth,
     private val firestore: FirebaseFirestore,
     private val emotionCheckInDao: EmotionCheckInDao,
-    //avisa que hay un check-in pendiente para que se suba ya si hay red; no se espera (#143)
+    //avisa que hay un check-in pendiente para que se suba ya si hay red; no se espera
     private val onCheckInSaved: () -> Unit = {}
 ) : MoodRepository {
     override suspend fun saveCheckIn(checkIn: CheckInModel): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val currentUserId = auth.currentUser?.uid ?: "anonymous"
-            //queda con isSynced = false; guardar no depende de la red, asi el check-in es instantaneo (#143)
+            //queda con isSynced = false; guardar no depende de la red, asi el check-in es instantaneo
             emotionCheckInDao.insertCheckIn(checkIn.toEntity(currentUserId))
             Log.d("MoodCheckIn", "Check-in saved in Room for $currentUserId, pending sync")
             onCheckInSaved()
@@ -51,15 +51,10 @@ class MoodRepositoryImpl(
     override suspend fun hasCheckedInToday(): Result<Boolean> = withContext(Dispatchers.IO) {
         runCatching {
             val currentUserId = auth.currentUser?.uid ?: return@runCatching false
-            val calendar = Calendar.getInstance().apply {
-                set(Calendar.HOUR_OF_DAY, 0)
-                set(Calendar.MINUTE, 0)
-                set(Calendar.SECOND, 0)
-                set(Calendar.MILLISECOND, 0)
-            }
-            val todayStartMillis = calendar.timeInMillis
+            //el modelo define desde cuando cuenta "hoy"
+            val todayStartMillis = CheckInModel.startOfToday()
 
-            //primero room: incluye los check-ins que todavia no se han subido (#143)
+            //primero room: incluye los check-ins que todavia no se han subido
             if (emotionCheckInDao.countCheckInsSince(currentUserId, todayStartMillis) > 0) return@runCatching true
             //room tiene check-ins pero ninguno de hoy: no hace falta preguntarle a firestore
             if (emotionCheckInDao.countCheckInsSince(currentUserId, 0L) > 0) return@runCatching false
@@ -86,7 +81,7 @@ class MoodRepositoryImpl(
             .whereGreaterThanOrEqualTo("timestamp", fromMillis)
             .get()
             .await()
-        snapshot.documents.mapNotNull { it.getLong("timestamp") }
+        snapshot.documents.mapNotNull { it.toObject(MoodCheckInDto::class.java)?.timestamp }
     }.onFailure { error ->
         CrashlyticsHelper.logNonFatal(
             componentName = "MoodRepository",
@@ -99,7 +94,7 @@ class MoodRepositoryImpl(
     override suspend fun getLatestCheckIn(): Result<CheckInModel?> = withContext(Dispatchers.IO) {
         runCatching {
             val currentUserId = auth.currentUser?.uid ?: return@runCatching null
-            //primero room, asi la recomendacion del home funciona sin internet (#143)
+            //primero room, asi la recomendacion del home funciona sin internet
             emotionCheckInDao.getLatestCheckIn(currentUserId)?.let { return@runCatching it.toDomain() }
 
             //room vacio: respaldo en firestore con tiempo maximo
@@ -113,13 +108,13 @@ class MoodRepositoryImpl(
                     .await()
             }
             if (snapshot == null || snapshot.isEmpty) return@runCatching null
-            //firestore arma el dto con los campos del documento y el mapper lo pasa al modelo (#163)
+            //firestore arma el dto con los campos del documento y el mapper lo pasa al modelo
             snapshot.documents.first().toObject(MoodCheckInDto::class.java)?.toDomain()
         }.recover { null }
     }
 
     companion object {
-        //tiempo maximo para el respaldo en firestore; sin red el home no se queda esperando (#143)
+        //tiempo maximo para el respaldo en firestore; sin red el home no se queda esperando
         private const val REMOTE_TIMEOUT_MILLIS = 3_000L
     }
 }

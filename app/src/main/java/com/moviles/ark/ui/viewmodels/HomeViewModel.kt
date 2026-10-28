@@ -7,12 +7,11 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
-import com.moviles.ark.data.remote.CrashlyticsHelper
+import com.moviles.ark.domain.repositories.AvatarRepository
+import com.moviles.ark.domain.repositories.UserRepository
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
-import com.moviles.ark.data.local.AvatarPreferences
-import com.moviles.ark.data.repositories.ToolRepositoryImpl
 import com.moviles.ark.domain.adapters.WeatherServiceAdapter
 import com.moviles.ark.domain.models.CachedRecommendation
 import com.moviles.ark.domain.models.CheckInModel
@@ -20,6 +19,7 @@ import com.moviles.ark.domain.models.RecommendationContextResolver
 import com.moviles.ark.domain.models.RecommendationDecision
 import com.moviles.ark.domain.models.Tool
 import com.moviles.ark.domain.models.ToolCategory
+import com.moviles.ark.domain.models.ToolEntryPoint
 import com.moviles.ark.domain.models.ToolLatencyTracker
 import com.moviles.ark.domain.models.WeatherSuggestionEngine
 import com.moviles.ark.domain.repositories.LocationRepository
@@ -34,6 +34,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.cancellation.CancellationException
@@ -47,24 +48,32 @@ class HomeViewModel(
     private val toolLatencyTracker: ToolLatencyTracker? = null,
     //herramientas que el usuario ya termino para tener la info parecomendar por frecuencia
     private val toolInteractionRepository: ToolInteractionRepository? = null,
-    //ultima recomendacion guardada en disco para cuando no hay internet (#159)
+    //ultima recomendacion guardada en disco para cuando no hay internet
     private val recommendationRepository: RecommendationRepository? = null,
     //true si hay internet en este momento
     private val isOnline: () -> Boolean = { true },
-    //clima de afuera para la tarjeta de clima (#134); necesita la ubicacion del telefono
+    //clima de afuera para la tarjeta de clima; necesita la ubicacion del telefono
     private val weatherServiceAdapter: WeatherServiceAdapter? = null,
     private val locationRepository: LocationRepository? = null,
+    //avatar elegido; null en previews
+    private val avatarRepository: AvatarRepository? = null,
+    //nombre guardado en el telefono para el saludo; null en previews
+    private val userRepository: UserRepository? = null,
     private val now: () -> Long = { System.currentTimeMillis() },
-    initialTools: List<Tool> = ToolRepositoryImpl.sampleTools,
+    initialTools: List<Tool> = Tool.DEFAULT_CATALOG,
     private val defaultDispatcher: CoroutineDispatcher = Dispatchers.Default
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
-        HomeUiState(
-            isLoading = false,
-            tools = initialTools,
-            filteredTools = initialTools
-        )
+        Tool.implemented(initialTools).let { tools ->
+            HomeUiState(
+                isLoading = false,
+                tools = tools,
+                filteredTools = tools,
+                availableCategories = Tool.availableCategories(tools, null),
+                recommendedTool = tools.firstOrNull()
+            )
+        }
     )
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
@@ -74,7 +83,10 @@ class HomeViewModel(
     //true mientras el usuario esta en una herramienta; al volver se recalculan las recomendaciones
     private var isAwayInTool = false
 
-    //unica estrategia de recomendacion del home (#164); el resolver crea solo la que pide el contexto y se guarda aqui
+    //el check-in se ofrece solo una vez por apertura del home
+    private var hasPromptedCheckIn = false
+
+    //unica estrategia de recomendacion del home; el resolver crea solo la que pide el contexto y se guarda aqui
     //arranca con el orden por defecto mientras llegan el check-in y el historial
     private var activeStrategy: RecommendationStrategy = DefaultRecommendationStrategy()
 
@@ -83,9 +95,11 @@ class HomeViewModel(
         loadTools()
         loadWeatherSuggestion()
         observeAvatar()
+        observeUserName()
     }
 
-    //el clima valida cache en disco (TTL=1 hora) y sirve offline; si expiro o no hay cache muestra tarjeta neutral (#134, #153)
+    //el clima va aparte del resolver de estrategias: no cambia el orden del catalogo, solo llena su propia tarjeta
+    //se valida la cache en disco (TTL de 1 hora) para tener clima sin red; si no hay clima o no tiene sugerencia la tarjeta no sale
     fun loadWeatherSuggestion() {
         val adapter = weatherServiceAdapter ?: return
         viewModelScope.launch(Dispatchers.IO) {
@@ -96,25 +110,28 @@ class HomeViewModel(
             val weather = if (latitude != null && longitude != null) {
                 adapter.getCurrentWeather(latitude, longitude).getOrNull()
             } else {
-                (adapter as? com.moviles.ark.data.remote.apis.OpenMeteoAdapterImpl)?.getCachedWeatherIfValid()
+                adapter.getCachedWeather()
             }
 
-            val currentTools = _uiState.value.tools.ifEmpty { ToolRepositoryImpl.sampleTools }
-            val suggestion = if (weather != null) {
-                WeatherSuggestionEngine(weather).suggest(currentTools)
-                    ?: WeatherSuggestionEngine.defaultNeutralSuggestion(currentTools)
-            } else {
-                // Si expiro o esta offline sin cache, mostrar tarjeta neutral por defecto (#153)
-                WeatherSuggestionEngine.defaultNeutralSuggestion(currentTools)
-            }
+            val currentTools = _uiState.value.tools.ifEmpty { Tool.DEFAULT_CATALOG }
+            val suggestion = weather?.let { WeatherSuggestionEngine(it).suggest(currentTools) }
 
             _uiState.update { it.copy(weatherSuggestion = suggestion) }
         }
     }
 
-    private fun observeAvatar() {
+    //nombre del perfil guardado en el telefono: el saludo sale al instante y sin red
+    private fun observeUserName() {
+        val repository = userRepository ?: return
         viewModelScope.launch {
-            AvatarPreferences.currentAvatarId.collect { id ->
+            repository.observeCachedName().collect { name -> _uiState.update { it.copy(userName = name) } }
+        }
+    }
+
+    private fun observeAvatar() {
+        val repository = avatarRepository ?: return
+        viewModelScope.launch {
+            repository.currentAvatarId.collect { id ->
                 _uiState.value = _uiState.value.copy(avatarId = id)
             }
         }
@@ -129,8 +146,19 @@ class HomeViewModel(
                     isCheckInCompleted = hasCheckedIn,
                     todayCheckIn = checkIn
                 )
+                //sin check-in hoy se ofrece una sola vez, con una pausa para que el home alcance a dibujarse
+                if (!hasCheckedIn && !hasPromptedCheckIn) {
+                    hasPromptedCheckIn = true
+                    delay(CHECK_IN_PROMPT_DELAY_MILLIS)
+                    _uiState.update { it.copy(showCheckInPrompt = true) }
+                }
             }
         }
+    }
+
+    //la pantalla ya abrio el check-in que se ofrecio
+    fun onCheckInPromptShown() {
+        _uiState.update { it.copy(showCheckInPrompt = false) }
     }
 
     fun loadTools() {
@@ -143,13 +171,18 @@ class HomeViewModel(
                         errorMessage = error.message ?: "Could not load tools"
                     )
                 }
-                .collect { rawTools ->
+                .collect { catalogTools ->
+                    //solo se recomiendan y se muestran las herramientas que ya tienen pantalla
+                    val rawTools = Tool.implemented(catalogTools)
                     val recommendedTools = recommend(rawTools)
-                    val filtered = applyCategoryFilter(recommendedTools, _uiState.value.selectedCategory)
+                    val selected = _uiState.value.selectedCategory
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         tools = recommendedTools,
-                        filteredTools = filtered
+                        filteredTools = Tool.inCategory(recommendedTools, selected),
+                        availableCategories = Tool.availableCategories(recommendedTools, selected),
+                        //la estrategia deja primero la herramienta que recomienda
+                        recommendedTool = recommendedTools.firstOrNull()
                     )
                 }
         }
@@ -157,64 +190,28 @@ class HomeViewModel(
 
     fun onCategorySelect(category: ToolCategory?) {
         val currentTools = _uiState.value.tools
-        val filtered = applyCategoryFilter(currentTools, category)
         _uiState.value = _uiState.value.copy(
             selectedCategory = category,
-            filteredTools = filtered
+            filteredTools = Tool.inCategory(currentTools, category),
+            availableCategories = Tool.availableCategories(currentTools, category)
         )
     }
 
-    // Seleccion aleatoria de una herramienta activa directamente del catalogo local en Dispatchers.Default (#149)
-    // Always Offline: no requiere conexion a internet. Si ocurre un error al leer la lista, se activa el fallback a Custom Breathing
+    //elige una herramienta al azar del catalogo guardado en el telefono, en Dispatchers.Default y sin red
+    //el modelo decide entre cuales; si no se pudo leer el catalogo se abre la de respaldo
     fun onSurpriseMe() {
         viewModelScope.launch(defaultDispatcher) {
-            try {
-                // Consultar herramientas activas del catalogo local (offline)
-                val localTools = toolRepository.getTools().first()
-                val available = localTools.ifEmpty { _uiState.value.tools }.ifEmpty { ToolRepositoryImpl.sampleTools }
-
-                if (available.isNotEmpty()) {
-                    val randomTool = available.random()
-                    _uiState.update { it.copy(surpriseTool = randomTool) }
-                } else {
-                    launchBreathingFallback()
-                }
-            } catch (e: Throwable) {
-                if (e is CancellationException) throw e
-                CrashlyticsHelper.logNonFatal(
-                    componentName = "HomeViewModel",
-                    action = "onSurpriseMe",
-                    throwable = e
-                )
-                launchBreathingFallback()
-            }
+            val localTools = toolRepository.getLocalTools().getOrNull()
+            val pick = localTools?.let { tools -> Tool.surprisePick(tools.ifEmpty { _uiState.value.tools }.ifEmpty { Tool.DEFAULT_CATALOG }) }
+            //abre la herramienta elegida de una vez, por el mismo camino que las demas entradas del home
+            onToolClick(pick?.id ?: Tool.FALLBACK_TOOL_ID, ToolEntryPoint.SURPRISE_ME)
         }
     }
 
-    private fun launchBreathingFallback() {
-        val fallbackTool = ToolRepositoryImpl.sampleTools.firstOrNull { it.id == "custom_breathing" }
-            ?: Tool(
-                id = "custom_breathing",
-                name = "Custom breathing",
-                description = "Build the rhythm that fits you.",
-                categoryString = "calm_down",
-                format = "touch",
-                iconName = "ic_tool_custom_breathing"
-            )
-
-        toolLatencyTracker?.start("custom_breathing")
-        _uiState.update {
-            it.copy(
-                surpriseTool = fallbackTool,
-                navigateToToolId = "custom_breathing"
-            )
-        }
-    }
-
-    //las tres entradas del home (catalogo, recomendacion y surprise me) llegan aqui
-    fun onToolClick(toolId: String) {
+    //todas las entradas a una herramienta (catalogo, recomendacion, clima y surprise me) llegan aqui
+    fun onToolClick(toolId: String, entryPoint: ToolEntryPoint = ToolEntryPoint.CATALOG) {
         //el toque es el inicio de la medicion; la pantalla de la herramienta la cierra al dibujarse
-        toolLatencyTracker?.start(toolId)
+        toolLatencyTracker?.start(toolId, entryPoint)
         _uiState.value = _uiState.value.copy(navigateToToolId = toolId)
     }
 
@@ -242,7 +239,7 @@ class HomeViewModel(
         loadTools()
     }
 
-    //online-first (#159): con internet se decide con los datos frescos y el resultado se guarda en disco;
+    //online-first: con internet se decide con los datos frescos y el resultado se guarda en disco;
     //sin internet se usa lo guardado hoy y, si no hay, se decide en el telefono con lo que haya guardado
     private suspend fun recommend(rawTools: List<Tool>): List<Tool> {
         val online = isOnline()
@@ -263,8 +260,8 @@ class HomeViewModel(
         return recommendedTools
     }
 
-    //decide la estrategia con el ultimo check-in del usuario  y las herramientas que termino
-    //si algo falla al leer los datos se usa el orden por defecto (#159)
+    //decide la estrategia con el ultimo check-in del usuario y las herramientas que termino
+    //si algo falla al leer los datos se usa el orden por defecto
     private suspend fun resolveDecision(): RecommendationDecision = runCatching {
         val latestCheckIn = moodRepository?.getLatestCheckIn()?.getOrNull()
         val from = now() - RecommendationContextResolver.USAGE_WINDOW_DAYS * DAY_MILLIS
@@ -277,16 +274,9 @@ class HomeViewModel(
         contextResolver.fallback()
     }
 
-    private fun applyCategoryFilter(tools: List<Tool>, category: ToolCategory?): List<Tool> {
-        return if (category == null) {
-            tools
-        } else {
-            tools.filter { it.category == category }
-        }
-    }
-
     companion object {
         private const val DAY_MILLIS = 24 * 60 * 60 * 1000L
+        private const val CHECK_IN_PROMPT_DELAY_MILLIS = 1500L
 
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
@@ -299,7 +289,9 @@ class HomeViewModel(
                     recommendationRepository = app.container.recommendationRepository,
                     isOnline = app.container.networkConnectivityObserver::isConnected,
                     weatherServiceAdapter = app.container.weatherServiceAdapter,
-                    locationRepository = app.container.locationRepository
+                    locationRepository = app.container.locationRepository,
+                    avatarRepository = app.container.avatarRepository,
+                    userRepository = app.container.userRepository
                 )
             }
         }

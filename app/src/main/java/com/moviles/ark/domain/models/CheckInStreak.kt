@@ -2,10 +2,10 @@ package com.moviles.ark.domain.models
 
 import java.util.TimeZone
 
-//racha del perfil (#96): cuantos dias seguidos tiene el usuario con al menos un check-in
+//racha del perfil: cuantos dias seguidos tiene el usuario con al menos un check-in
 //1. se pasa cada check-in a su dia en la hora local
 //2. se cuenta hacia atras desde hoy; si hoy todavia no hay check-in, se cuenta desde ayer
-//   (la racha sigue viva hasta que termina el dia sin check-in)
+// (la racha sigue viva hasta que termina el dia sin check-in)
 class CheckInStreak(
     private val zone: TimeZone = TimeZone.getDefault(),
     //se puede cambiar para fijar "ahora"
@@ -23,7 +23,7 @@ class CheckInStreak(
         return streak
     }
 
-    //racha guardada en el telefono (#119): solo sigue valiendo si el ultimo check-in fue hoy o ayer
+    //racha guardada en el telefono: solo sigue valiendo si el ultimo check-in fue hoy o ayer
     //si no, el usuario ya perdio un dia completo y la racha es 0 aunque room diga otra cosa
     fun stillAlive(savedStreak: Int, lastCheckInAt: Long?): Int {
         if (lastCheckInAt == null || savedStreak <= 0) return 0

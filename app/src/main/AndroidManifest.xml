@@ -13,6 +13,12 @@
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.sensor.light" android:required="false" />
 
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
+
     <application
         android:name=".ArkApplication"
         android:allowBackup="true"
@@ -27,6 +33,7 @@
         android:theme="@style/Theme.Ark">
         <activity
             android:name=".MainActivity"
+            android:launchMode="singleTop"
             android:exported="true"
             android:label="@string/app_name"
             android:theme="@style/Theme.Ark"
@@ -48,7 +55,7 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
-        <!-- recibe los mensajes de datos de fcm que avisan cambios en el catalogo de herramientas (#156) -->
+        <!-- recibe los mensajes de datos de fcm que avisan cambios en el catalogo de herramientas -->
         <service
             android:name=".data.remote.ToolsCatalogMessagingService"
             android:exported="false">
