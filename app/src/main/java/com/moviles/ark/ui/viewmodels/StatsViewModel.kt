@@ -107,6 +107,10 @@ class StatsViewModel(
     private suspend fun fetchFromFirestore(showNotice: Boolean) {
         val repository = statsRepository ?: return
         if (!isOnline()) {
+            //si no habia cache en disco calculamos fallback local desde room
+            if (privateUiState.value.stats == null) {
+                repository.getLocalStats().getOrNull()?.let { showIfNotPoorer(it) }
+            }
             privateUiState.value = privateUiState.value.copy(
                 isLoading = false,
                 isRefreshing = false,
@@ -128,6 +132,10 @@ class StatsViewModel(
             Log.e("StatsViewModel", "Error loading stats: $errorMsg")
             //firestore tambien avisa "client is offline" aunque el telefono crea tener red
             val isNetError = !isOnline() || errorMsg.contains("offline", ignoreCase = true)
+            //si fallo la red y no habia cache previa usamos fallback de room
+            if (privateUiState.value.stats == null) {
+                repository.getLocalStats().getOrNull()?.let { showIfNotPoorer(it) }
+            }
             privateUiState.value = privateUiState.value.copy(
                 isLoading = false,
                 isRefreshing = false,

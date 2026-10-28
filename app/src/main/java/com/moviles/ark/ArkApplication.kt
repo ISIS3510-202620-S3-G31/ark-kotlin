@@ -15,6 +15,7 @@ import com.moviles.ark.data.DefaultAppContainer
 import com.moviles.ark.data.local.AvatarPreferences
 import com.moviles.ark.data.local.ProfilePreferences
 import com.moviles.ark.data.remote.ToolsCatalogMessagingService
+import com.moviles.ark.data.workers.SyncWorker
 import com.moviles.ark.domain.models.ScreenTimeTracker
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -36,6 +37,9 @@ class ArkApplication : Application() {
         ProfilePreferences.init(this)
         //iniciar el observador de sincronizacion automatica offline
         container.syncManager.startMonitoring()
+        //programar sincronizacion en segundo plano con workmanager sujeta a conectividad de red
+        SyncWorker.enqueue(this)
+        SyncWorker.schedulePeriodic(this)
         //precargar y verificar el soporte del modelo de reconocimiento de voz offline
         container.speechToTextHelper.preloadOfflineModel()
         //escuchar los avisos push de cambios en el catalogo de herramientas

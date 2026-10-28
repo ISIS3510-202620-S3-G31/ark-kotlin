@@ -1,6 +1,8 @@
 package com.moviles.ark.data.local
 
+import android.content.Context
 import androidx.room.Database
+import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import com.moviles.ark.data.local.daos.BreathingSessionDao
@@ -50,4 +52,23 @@ abstract class ArkDatabase : RoomDatabase() {
     abstract fun breathingSessionDao(): BreathingSessionDao
     abstract fun userDao(): UserDao
     abstract fun statsDailyVisitDao(): StatsDailyVisitDao
+
+    companion object {
+        @Volatile
+        private var INSTANCE: ArkDatabase? = null
+
+        //singleton con doble comprobacion para que toda la app comparta un unico pool de conexiones
+        fun getInstance(context: Context): ArkDatabase {
+            return INSTANCE ?: synchronized(this) {
+                INSTANCE ?: Room.databaseBuilder(
+                    context.applicationContext,
+                    ArkDatabase::class.java,
+                    "ark.db"
+                )
+                .fallbackToDestructiveMigration(dropAllTables = true)
+                .build()
+                .also { INSTANCE = it }
+            }
+        }
+    }
 }

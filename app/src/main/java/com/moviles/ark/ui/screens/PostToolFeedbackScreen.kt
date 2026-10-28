@@ -55,7 +55,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.domain.composite.Emotion
 import com.moviles.ark.ui.components.MoodSelectorComponent
-import com.moviles.ark.ui.components.VoiceDictationComponent
+import com.moviles.ark.domain.models.FeedbackModel
+import com.moviles.ark.ui.components.ModernVoiceInputBox
 import com.moviles.ark.ui.theme.AppTheme
 import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.theme.FigtreeFontFamily
@@ -165,30 +166,14 @@ fun PostToolFeedbackScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Optional Reflection / Comment Text Field
-            OutlinedTextField(
+            //caja de comentarios moderna con limite de caracteres y dictado por voz integrado
+            ModernVoiceInputBox(
                 value = uiState.comment,
                 onValueChange = onCommentChange,
+                maxLength = FeedbackModel.MAX_COMMENT_LENGTH,
+                placeholder = "Write any thoughts or insights from this session (optional)...",
                 enabled = !uiState.isLoading,
-                modifier = Modifier.fillMaxWidth(),
-                maxLines = 4,
-                textStyle = MaterialTheme.typography.bodyLarge.copy(color = TextColor),
-                label = { Text("Reflection / Comments (optional)", style = LocalTextStyle.current.copy(fontFamily = FigtreeFontFamily)) },
-                placeholder = { Text("Write any thoughts or insights from this session...", style = LocalTextStyle.current.copy(fontFamily = FigtreeFontFamily)) },
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = SecondaryColor,
-                    unfocusedBorderColor = TextColor.copy(alpha = 0.3f),
-                    focusedLabelColor = TextColor,
-                    unfocusedLabelColor = TextColor.copy(alpha = 0.7f),
-                    cursorColor = TextColor
-                )
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            //barra inferior con dictado por voz animado para reflexiones sin sobreescritura
-            VoiceDictationComponent(
-                currentText = uiState.comment,
-                onAppendText = onCommentChange,
-                buttonSize = 36.dp
+                minHeight = 84.dp
             )
 
             if (uiState.errorMessage != null) {

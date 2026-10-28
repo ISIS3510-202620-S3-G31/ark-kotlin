@@ -12,6 +12,6 @@ interface ScreamTankRepository {
     //volumen del microfono en tiempo real; escucha mientras alguien recolecta el flow y no guarda audio
     fun microphoneLevels(): Flow<DecibelReading>
 
-    //guarda en el telefono la sesion como ToolInteraction; funciona sin internet
+    //guarda en el telefono la sesion como ToolInteractionModel; funciona sin internet
     suspend fun saveSession(session: ScreamSession): Result<Unit>
 }
