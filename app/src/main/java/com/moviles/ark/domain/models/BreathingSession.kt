@@ -3,7 +3,7 @@ package com.moviles.ark.domain.models
 import java.util.Date
 
 //una sesion de respiracion guiada que el usuario hizo en Custom breathing
-//se guarda en room (breathing_sessions) y tambien como ToolInteraction, que la usan estadisticas y recomendaciones
+//se guarda en room (breathing_sessions) y tambien como ToolInteractionModel, que la usan estadisticas y recomendaciones
 data class BreathingSession(
     //ciclos completos (inhalar, sostener y exhalar)
     val completedCycles: Int,
@@ -35,7 +35,7 @@ data class BreathingSession(
     }
 
     companion object {
-        //id de la herramienta en el catalogo (Tool.id)
+        //id de la herramienta en el catalogo (ToolModel.id)
         const val TOOL_ID = "custom_breathing"
 
         //la herramienta se usa tocando la pantalla

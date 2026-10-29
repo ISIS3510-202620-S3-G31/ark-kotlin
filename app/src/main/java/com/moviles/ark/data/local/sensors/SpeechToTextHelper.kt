@@ -87,11 +87,15 @@ class SpeechToTextHelper(
                 val onDeviceAvailable = isOnDeviceRecognitionAvailable()
                 _isOfflineSupported.value = onDeviceAvailable
 
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && onDeviceAvailable) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     val recognizerIntent = createRecognizerIntent(Locale.getDefault())
                     mainHandler.post {
                         try {
-                            val tempRecognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
+                            val tempRecognizer = if (onDeviceAvailable) {
+                                SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
+                            } else {
+                                SpeechRecognizer.createSpeechRecognizer(context)
+                            }
                             tempRecognizer.checkRecognitionSupport(
                                 recognizerIntent,
                                 ContextCompat.getMainExecutor(context),

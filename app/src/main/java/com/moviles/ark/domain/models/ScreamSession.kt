@@ -31,7 +31,7 @@ data class ScreamSession(
     }
 
     companion object {
-        //id de la herramienta en el catalogo (Tool.id)
+        //id de la herramienta en el catalogo (ToolModel.id)
         const val TOOL_ID = "scream_tank"
 
         //la herramienta se usa con la voz

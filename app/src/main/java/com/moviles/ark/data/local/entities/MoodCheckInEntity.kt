@@ -26,7 +26,7 @@ data class CheckInEntity(
     val note: String = "",
     val latitude: Double? = null,
     val longitude: Double? = null,
-    //fecha y hora en milisegundos, igual que CheckInModel.timestamp
+    //fecha y hora en milisegundos, igual que MoodCheckInModel.timestamp
     val timestamp: Long,
     //false mientras no se haya subido a firestore
     val isSynced: Boolean = false,

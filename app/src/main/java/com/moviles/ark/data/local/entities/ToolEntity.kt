@@ -16,7 +16,7 @@ data class ToolEntity(
     val iconName: String,
 )
 
-// Extension functions to map between ToolEntity and Tool domain model
+// Extension functions to map between ToolEntity and ToolModel domain model
 fun ToolEntity.toDomain(): ToolModel {
     return ToolModel(
         id = id,

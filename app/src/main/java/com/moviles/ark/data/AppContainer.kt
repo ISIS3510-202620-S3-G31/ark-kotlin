@@ -78,13 +78,8 @@ interface AppContainer {
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
     //base de datos room del telefono; private para que los viewmodels siempre pasen por un repositorio
-    //lazy: no se crea hasta que un repositorio la use
-    private val database: ArkDatabase by lazy {
-        Room.databaseBuilder(context, ArkDatabase::class.java, "ark.db")
-            //mientras desarrollamos: si cambia una tabla se borra la base y se crea otra (se pierden los datos locales)
-            .fallbackToDestructiveMigration(dropAllTables = true)
-            .build()
-    }
+    //lazy: obtiene la instancia unica del singleton con pool de conexiones
+    private val database: ArkDatabase by lazy { ArkDatabase.getInstance(context) }
 
     override val auth: FirebaseAuth by lazy { Firebase.auth }
     //adapter de firebase auth para que el repositorio de login no dependa de firebase
@@ -194,7 +189,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         )
     }
     override val syncManager: SyncManager by lazy {
-        SyncManager(networkConnectivityObserver, syncRepository)
+        SyncManager(context, networkConnectivityObserver, syncRepository)
     }
     // sensor de luz + hora del dia para recomendaciones segun el entorno; uno para toda la app
     override val environmentalSensorManager: EnvironmentalSensorManager by lazy { EnvironmentalSensorManager(context) }

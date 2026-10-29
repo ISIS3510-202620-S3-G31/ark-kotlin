@@ -1,7 +1,7 @@
 package com.moviles.ark.domain.models
 
 /**
- * Strongly typed categories for tools in the Ark Toolbox / Tool Hub.
+ * Strongly typed categories for tools in the Ark Toolbox / ToolModel Hub.
  */
 enum class ToolCategory(val id: String, val displayName: String) {
     SOMATIC_RELEASE("somatic_release", "Somatic Release"),
