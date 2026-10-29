@@ -93,6 +93,35 @@ class FeedbackViewModel(
         )
     }
 
+    // Registra la interaccion de la herramienta en Room aunque el usuario omita el feedback
+    fun skipFeedback(onDismissCallback: () -> Unit = {}) {
+        val state = privateUiState.value
+        viewModelScope.launch(ioDispatcher) {
+            try {
+                val nowMillis = System.currentTimeMillis()
+                val format = toolRepository?.getToolById(state.toolId)?.format ?: ToolInteractionModel.DEFAULT_INTERACTION_TYPE
+                val durationSeconds = if (state.duration > 0) state.duration else ToolInteractionModel.DEFAULT_DURATION_SECONDS
+
+                // Registrar que la herramienta fue completada aunque se omita la calificacion
+                // Si la herramienta no tiene guardado propio previo (como custom_breathing o scream_tank)
+                if (state.toolId !in listOf("custom_breathing", "scream_tank") && state.toolId.isNotBlank()) {
+                    toolInteractionRepository?.recordCompletion(
+                        toolId = state.toolId,
+                        durationSeconds = durationSeconds,
+                        interactionType = format,
+                        timestamp = nowMillis
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e("FeedbackViewModel", "Error recording tool completion on skip", e)
+            } finally {
+                withContext(Dispatchers.Main) {
+                    onDismissCallback()
+                }
+            }
+        }
+    }
+
     // Persiste en Room SQLite y sincroniza a Firestore desacoplado via FeedbackRepository
     // Vincula la calificacion tanto a toolId como a interactionId
     fun saveFeedback(onSavedCallback: () -> Unit = {}) {

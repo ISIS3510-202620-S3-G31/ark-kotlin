@@ -36,23 +36,10 @@ class FeedbackRepositoryImpl(
             val insertedId = feedbackDao.insertFeedback(entityToInsert)
             val localSavedModel = feedback.copy(id = insertedId, isSynced = false)
 
-            // 2. Intentar sincronizar inmediatamente a Firestore si hay conexion
-            try {
-                val dto = localSavedModel.toDto(currentUserId)
-                firestore.collection("users")
-                    .document(currentUserId)
-                    .collection("tool_feedback")
-                    .add(dto)
-                    .await()
-
-                feedbackDao.markAsSynced(listOf(insertedId))
-                Log.d("FeedbackRepository", "Feedback id=$insertedId synced successfully to Firestore")
-                localSavedModel.copy(isSynced = true)
-            } catch (e: Exception) {
-                Log.w("FeedbackRepository", "Could not sync feedback to Firestore immediately (offline or network error): ${e.message}")
-                onFeedbackSaved()
-                localSavedModel
-            }
+            // 2. Notificar a SyncManager para sincronizar en segundo plano cuando haya red
+            onFeedbackSaved()
+            Log.d("FeedbackRepository", "Feedback id=$insertedId guardado en Room, pendiente de sincronizacion")
+            localSavedModel
         }.onFailure { error ->
             Log.e("FeedbackRepository", "Error saving feedback", error)
             CrashlyticsHelper.logNonFatal(
