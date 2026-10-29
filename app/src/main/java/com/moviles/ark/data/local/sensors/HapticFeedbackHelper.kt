@@ -1,7 +1,9 @@
 package com.moviles.ark.data.local.sensors
 
 import android.content.Context
+import android.media.AudioAttributes
 import android.os.Build
+import android.os.VibrationAttributes
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -37,8 +39,20 @@ class HapticFeedbackHelper(private val context: Context) : HapticFeedbackAdapter
         if (!targetVibrator.hasVibrator()) return
 
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                targetVibrator.vibrate(VibrationEffect.createWaveform(timings, amplitudes, -1))
+            val effect = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) VibrationEffect.createWaveform(timings, amplitudes, -1) else null
+            //sin decir el uso, android toma la pulsacion corta como vibracion al tocar y la ignora si el usuario
+            //apago esa opcion (pasaba en el miro); como media respeta solo el ajuste de vibracion de multimedia
+            if (effect != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                targetVibrator.vibrate(effect, VibrationAttributes.createForUsage(VibrationAttributes.USAGE_MEDIA))
+            } else if (effect != null) {
+                @Suppress("DEPRECATION")
+                targetVibrator.vibrate(
+                    effect,
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                )
             } else {
                 @Suppress("DEPRECATION")
                 targetVibrator.vibrate(fallbackMs)
