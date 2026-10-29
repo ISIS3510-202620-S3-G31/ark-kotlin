@@ -31,8 +31,8 @@ data class UserProfile(
     }
 
     //el error al guardar la edicion del perfil, o null si se puede guardar
-    fun editError(): String? = when {
-        !isValidName() -> "Your name needs $MIN_NAME_LENGTH to $MAX_NAME_LENGTH letters"
+    //el del nombre es el mismo del registro: dice si es muy corto, muy largo o si trae numeros o simbolos
+    fun editError(): String? = UserModel.nameError(name) ?: when {
         !isValidBirthDate() -> "Enter a valid birth date (YYYY-MM-DD); you need to be $MIN_AGE to $MAX_AGE years old"
         else -> null
     }

@@ -19,7 +19,9 @@ class BreathingRepositoryImpl(
     private val auth: FirebaseAuth,
     //direccion android.resource:// de la pista que viene dentro de la app (res/raw)
     bundledAudioUri: String,
-    private val musicServiceAdapter: MusicServiceAdapter
+    private val musicServiceAdapter: MusicServiceAdapter,
+    //avisa al SyncManager que hay una interaccion por subir; no se espera
+    private val onInteractionSaved: () -> Unit = {}
 ) : BreathingRepository {
 
     //pista guardada dentro de la app: suena aunque no haya internet
@@ -105,9 +107,11 @@ class BreathingRepositoryImpl(
 
     override suspend fun saveSession(session: BreathingSession): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            breathingSessionDao.insertSession(session.toEntity())
+            //breathing_sessions solo guarda las terminadas; la interaccion se guarda siempre, con complete = true / false
+            if (session.isComplete()) breathingSessionDao.insertSession(session.toEntity())
             val userId = auth.currentUser?.uid ?: "anonymous"
             toolRecordDao.insertInteraction(session.toInteraction(userId).toEntity())
+            onInteractionSaved()
             Unit
         }
     }

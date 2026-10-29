@@ -52,6 +52,7 @@ por colección, cambiando solo la colección y la tabla. Hoy hay 6:
 | `firestore-bigquery-export-ctci` | `users` | `users` |
 | `firestore-bq-tool-load-latency` | `users/{uid}/tool_load_latency` | `tool_load_latency` |
 | `firestore-bigquery-export-h3lz` | `users/{uid}/screen_time` | `screen_time` |
+| `firestore-bq-stats-daily-visits` | `users/{uid}/stats_daily_visits` | `stats_daily_visits` |
 
 Las dos últimas necesitan que `firestore.rules` permita `tool_load_latency` y `screen_time`
 (ya publicadas).
@@ -174,7 +175,35 @@ de eso `entry_point` sale como `unknown`.
 - `tool_load_latency` se escribe al dibujarse la herramienta y `screen_time` cada minuto con la
   app abierta y al salir (sin esperar la respuesta; Firestore usa caché en memoria, así que lo
   escrito sin red se pierde si la app se cierra antes de reconectar).
-- `tool_interactions`, `tool_feedback` y `photos` se guardan primero en Room y suben con
-  `SyncManager`, que solo sincroniza cuando el teléfono pasa a tener conexión (incluido al abrir
-  la app). Un uso hecho con internet llega a BigQuery en la siguiente apertura o reconexión, no al
-  instante.
+- `tool_interactions`, `tool_feedback`, `photos` y `stats_daily_visits` se guardan primero en
+  Room y, al guardarse, le piden a `SyncManager` que suba: con internet llegan a BigQuery en
+  segundos; sin internet, apenas el teléfono vuelve a tener conexión. Al subirse,
+  `tool_interactions` y `tool_feedback` se borran del teléfono (Firestore queda con la copia).
+
+## BQ de Stats: visitas por semana a estadísticas
+
+Pregunta: ¿cuántas veces en promedio entran los usuarios a Stats por semana?
+
+La app cuenta una visita cada vez que el usuario abre la pestaña Stats (no al refrescar ni al
+rotar dentro de la misma entrada) y guarda un documento por usuario y día en
+`users/{uid}/stats_daily_visits/{yyyyMMdd}` con el total del día. El mismo dato se ve en vivo en
+la app: la tarjeta *Your stats visits* de Stats sube con cada entrada (esta semana y promedio
+semanal del usuario, desde Room, también sin internet).
+
+Para el dashboard:
+
+1. `firestore.rules` permite `stats_daily_visits`: publicarlo en la consola (y en el repo
+   `backend`), si no, la subida falla con `PERMISSION_DENIED`.
+2. Instalar la instancia `firestore-bq-stats-daily-visits` de la tabla de la sección 2.
+3. Traer lo que ya exista (sección 3) con la colección `stats_daily_visits`.
+4. Correr `views_stats_visits.sql`. Crea `stats_daily_visits`, `stats_weekly_visits` (usuario ×
+   semana) y `stats_weekly_visits_summary` (una fila por semana).
+5. Página en Data Studio con frescura de 1 minuto:
+   - Scorecard `avg_visits_per_active_user` de la semana actual: la respuesta.
+   - Serie `week_start` × `avg_visits_per_active_user` y `avg_visits_per_stats_user`.
+   - Histograma de `stats_weekly_visits.visits` (cuántos usuarios entran 1, 2, 3… veces), con
+     desglose `device_type` y filtro `is_synthetic = false`.
+
+Para verlo en tiempo real: con el dashboard abierto, entrar a Stats en un celular con internet;
+la visita llega a Firestore en segundos y el dashboard la muestra en la siguiente relectura
+(máximo 1 minuto).

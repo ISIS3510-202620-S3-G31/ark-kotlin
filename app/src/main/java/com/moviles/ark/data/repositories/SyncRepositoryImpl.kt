@@ -2,7 +2,9 @@ package com.moviles.ark.data.repositories
 
 import android.content.Context
 import android.net.Uri
+import android.os.Build
 import android.util.Log
+import com.google.android.gms.tasks.Task
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
@@ -13,11 +15,13 @@ import com.moviles.ark.data.local.daos.StatsDailyVisitDao
 import com.moviles.ark.data.local.daos.ToolRecordDao
 import com.moviles.ark.data.local.entities.PhotoEntryEntity
 import com.moviles.ark.data.remote.CrashlyticsHelper
+import com.moviles.ark.data.remote.dtos.documentId
 import com.moviles.ark.data.remote.dtos.toDto
 import com.moviles.ark.domain.repositories.SyncRepository
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withTimeout
 import java.io.File
 import java.io.InputStream
 
@@ -45,9 +49,13 @@ class SyncRepositoryImpl(
     private suspend fun uploadPhotoFile(photo: PhotoEntryEntity): String? {
         val input = openPhoto(photo.localFilePath) ?: return null
         val reference = storage.reference.child(PhotoEntryRepositoryImpl.storagePath(photo.userId, photo.takenAt))
-        input.use { reference.putStream(it).await() }
-        return reference.downloadUrl.await().toString()
+        input.use { reference.putStream(it).awaitWithTimeout(PHOTO_UPLOAD_TIMEOUT_MS) }
+        return reference.downloadUrl.awaitWithTimeout().toString()
     }
+
+    //sin respuesta del servidor (red caida a mitad de la subida) se deja la fila pendiente para el proximo intento
+    //en vez de esperar para siempre con el mutex tomado; firestore igual conserva la escritura en su cola
+    private suspend fun <T> Task<T>.awaitWithTimeout(timeoutMs: Long = REMOTE_TIMEOUT_MS): T = withTimeout(timeoutMs) { await() }
 
     private fun openPhoto(path: String): InputStream? = runCatching {
         when {
@@ -61,28 +69,35 @@ class SyncRepositoryImpl(
         val currentUserId = auth.currentUser?.uid ?: "anonymous"
         var syncedCount = 0
 
-        // 1. Sincronizar interacciones de herramientas pendientes (isSynced = 0)
+        // 1. Subir las interacciones pendientes y borrarlas del telefono; firestore queda con la copia
+        //solo las del usuario con sesion (o las guardadas sin sesion): las de otra cuenta esperan a que esa cuenta entre
         try {
-            val unsyncedInteractions = toolRecordDao.getUnsyncedInteractions()
-            if (unsyncedInteractions.isNotEmpty()) {
-                val successfulInteractionIds = mutableListOf<Long>()
-                for (interaction in unsyncedInteractions) {
-                    try {
-                        firestore.collection("users")
-                            .document(currentUserId)
-                            .collection("tool_interactions")
-                            .add(interaction.toDto(currentUserId))
-                            .await()
+            toolRecordDao.deleteAlreadySynced()
+            val sessionUserId = auth.currentUser?.uid
+            val unsyncedInteractions = if (sessionUserId != null) {
+                toolRecordDao.getUnsyncedInteractions().filter { it.userId == sessionUserId || it.userId == ANONYMOUS_USER_ID }
+            } else {
+                emptyList()
+            }
+            val uploadedInteractionIds = mutableListOf<Long>()
+            for (interaction in unsyncedInteractions) {
+                try {
+                    //documento con id fijo: si la subida se corta y se repite queda uno solo
+                    firestore.collection("users")
+                        .document(currentUserId)
+                        .collection("tool_interactions")
+                        .document(interaction.documentId())
+                        .set(interaction.toDto(currentUserId))
+                        .awaitWithTimeout()
 
-                        successfulInteractionIds.add(interaction.id)
-                        syncedCount++
-                    } catch (e: Exception) {
-                        Log.e("SyncRepository", "Failed to sync single tool interaction id=${interaction.id}", e)
-                    }
+                    uploadedInteractionIds.add(interaction.id)
+                    syncedCount++
+                } catch (e: Exception) {
+                    Log.e("SyncRepository", "Failed to sync single tool interaction id=${interaction.id}", e)
                 }
-                if (successfulInteractionIds.isNotEmpty()) {
-                    toolRecordDao.markAsSynced(successfulInteractionIds)
-                }
+            }
+            if (uploadedInteractionIds.isNotEmpty()) {
+                toolRecordDao.deleteByIds(uploadedInteractionIds)
             }
         } catch (e: Exception) {
             Log.e("SyncRepository", "Error syncing tool interactions collection", e)
@@ -110,7 +125,7 @@ class SyncRepositoryImpl(
                         .collection("photos")
                         .document(photo.takenAt.toString())
                         .set(photo.toDto().copy(remoteUrl = downloadUrl.orEmpty()))
-                        .await()
+                        .awaitWithTimeout()
 
                     photoEntryDao.markAsSynced(photo.id, remoteUrl = downloadUrl.orEmpty())
                     syncedCount++
@@ -141,7 +156,7 @@ class SyncRepositoryImpl(
                             .collection("mood_checkins")
                             .document(checkIn.remoteId)
                             .set(checkIn.toDto(currentUserId))
-                            .await()
+                            .awaitWithTimeout()
 
                         successfulCheckInIds.add(checkIn.id)
                         syncedCount++
@@ -163,28 +178,28 @@ class SyncRepositoryImpl(
             )
         }
 
-        // 4. Sincronizar feedback de herramientas pendientes (isSynced = 0)
+        // 4. Subir el feedback pendiente y borrarlo del telefono; firestore queda con la copia
         try {
-            val unsyncedFeedback = feedbackDao.getUnsyncedFeedback()
-            if (unsyncedFeedback.isNotEmpty()) {
-                val successfulFeedbackIds = mutableListOf<Long>()
-                for (feedback in unsyncedFeedback) {
-                    try {
-                        firestore.collection("users")
-                            .document(currentUserId)
-                            .collection("tool_feedback")
-                            .add(feedback.toDto(currentUserId))
-                            .await()
+            feedbackDao.deleteAlreadySynced()
+            val unsyncedFeedback = if (auth.currentUser != null) feedbackDao.getUnsyncedFeedback() else emptyList()
+            val uploadedFeedbackIds = mutableListOf<Long>()
+            for (feedback in unsyncedFeedback) {
+                try {
+                    firestore.collection("users")
+                        .document(currentUserId)
+                        .collection("tool_feedback")
+                        .document(feedback.documentId())
+                        .set(feedback.toDto(currentUserId))
+                        .awaitWithTimeout()
 
-                        successfulFeedbackIds.add(feedback.id)
-                        syncedCount++
-                    } catch (e: Exception) {
-                        Log.e("SyncRepository", "Failed to sync single tool feedback id=${feedback.id}", e)
-                    }
+                    uploadedFeedbackIds.add(feedback.id)
+                    syncedCount++
+                } catch (e: Exception) {
+                    Log.e("SyncRepository", "Failed to sync single tool feedback id=${feedback.id}", e)
                 }
-                if (successfulFeedbackIds.isNotEmpty()) {
-                    feedbackDao.markAsSynced(successfulFeedbackIds)
-                }
+            }
+            if (uploadedFeedbackIds.isNotEmpty()) {
+                feedbackDao.deleteByIds(uploadedFeedbackIds)
             }
         } catch (e: Exception) {
             Log.e("SyncRepository", "Error syncing feedback collection", e)
@@ -212,12 +227,15 @@ class SyncRepositoryImpl(
                                     "userId" to currentUserId,
                                     "dateKey" to visit.dateKey,
                                     "count" to visit.count,
-                                    "lastUpdatedAt" to visit.lastUpdatedAt
+                                    "lastUpdatedAt" to visit.lastUpdatedAt,
+                                    //en bigquery el emulador se separa de los celulares reales por el modelo
+                                    "deviceModel" to Build.MODEL
                                 )
                             )
-                            .await()
+                            .awaitWithTimeout()
 
-                        visitDao.markAsSynced(currentUserId, visit.dateKey)
+                        //con el userId de la fila: una visita guardada sin sesion ("anonymous") tambien queda marcada
+                        visitDao.markAsSynced(visit.userId, visit.dateKey)
                         syncedCount++
                     } catch (e: Exception) {
                         Log.e("SyncRepository", "Failed to sync daily stats visit dateKey=${visit.dateKey}", e)
@@ -236,5 +254,12 @@ class SyncRepositoryImpl(
 
         Log.d("SyncRepository", "Successfully synced $syncedCount pending items to Firebase")
         syncedCount
+    }
+
+    companion object {
+        private const val ANONYMOUS_USER_ID = "anonymous"
+        private const val REMOTE_TIMEOUT_MS = 20_000L
+        //el jpg pesa mas que un documento y tarda mas en subir
+        private const val PHOTO_UPLOAD_TIMEOUT_MS = 90_000L
     }
 }

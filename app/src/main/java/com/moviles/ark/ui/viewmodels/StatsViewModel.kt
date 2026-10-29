@@ -9,6 +9,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
 import com.moviles.ark.domain.models.StatsModel
+import com.moviles.ark.domain.models.StatsVisitSummary
 import com.moviles.ark.domain.repositories.StatsRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,7 +29,9 @@ data class StatsUiState(
     //indica si el intento de conexion detecto falta de internet
     val isOffline: Boolean = false,
     //cantidad de veces que el usuario ha visitado la pantalla de estadisticas hoy
-    val todayVisitsCount: Int = 0
+    val todayVisitsCount: Int = 0,
+    //visitas de esta semana y promedio semanal; cambia en vivo con cada visita
+    val visitSummary: StatsVisitSummary = StatsVisitSummary()
 )
 
 class StatsViewModel(
@@ -43,8 +46,37 @@ class StatsViewModel(
     private var loadJob: Job? = null
     private var refreshJob: Job? = null
 
+    //las estadisticas se cargan al abrir la pantalla (onScreenOpened); aqui solo se escucha el resumen de visitas
     init {
+        observeVisitSummary()
+    }
+
+    private fun observeVisitSummary() {
+        val repository = statsRepository ?: return
+        viewModelScope.launch {
+            repository.observeVisitSummary().collect { summary ->
+                privateUiState.value = privateUiState.value.copy(visitSummary = summary)
+            }
+        }
+    }
+
+    //true si la pantalla se cerro solo porque el telefono giro: al volver a dibujarse no es una visita nueva
+    private var reopeningAfterRotation = false
+
+    //cada vez que el usuario entra a la pantalla cuenta una visita (pregunta de negocio de stats) y carga los datos
+    //antes la visita se contaba en loadStats, que corria dos veces al entrar (init y pantalla), y tambien al refrescar
+    fun onScreenOpened() {
+        if (reopeningAfterRotation) {
+            reopeningAfterRotation = false
+        } else {
+            viewModelScope.launch { recordDailyVisit() }
+        }
         loadStats()
+    }
+
+    //la pantalla sale de la composicion; changingConfiguration = la actividad se recrea por un giro
+    fun onScreenClosed(changingConfiguration: Boolean) {
+        reopeningAfterRotation = changingConfiguration
     }
 
     //patron cache-then-network:
@@ -60,9 +92,6 @@ class StatsViewModel(
 
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
-            // Registra la entrada del usuario a estadísticas e incrementa el contador del día
-            recordDailyVisit()
-
             // 1. CACHE: Muestra inmediatamente las ultimas stats guardadas en disco
             val cached = statsRepository.getCachedStats()
             if (cached != null) {
@@ -95,7 +124,6 @@ class StatsViewModel(
     fun refresh() {
         if (statsRepository == null || refreshJob?.isActive == true) return
         refreshJob = viewModelScope.launch {
-            recordDailyVisit()
             fetchFromFirestore(showNotice = true)
         }
     }
@@ -107,10 +135,8 @@ class StatsViewModel(
     private suspend fun fetchFromFirestore(showNotice: Boolean) {
         val repository = statsRepository ?: return
         if (!isOnline()) {
-            //si no habia cache en disco calculamos fallback local desde room
-            if (privateUiState.value.stats == null) {
-                repository.getLocalStats().getOrNull()?.let { showIfNotPoorer(it) }
-            }
+            //sin red se recalcula siempre en el telefono: el cache del disco no trae lo que se hizo offline
+            repository.getLocalStats().getOrNull()?.let { showIfNotPoorer(it) }
             privateUiState.value = privateUiState.value.copy(
                 isLoading = false,
                 isRefreshing = false,

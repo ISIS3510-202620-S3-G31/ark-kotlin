@@ -21,15 +21,22 @@ class NetworkConnectivityObserver(
 
     //emite un flujo con true cuando hay conexion a internet y false cuando se pierde
     fun observe(): Flow<Boolean> = callbackFlow {
+        //cada aviso se responde con el estado real: perder una red (por ejemplo el wifi) no deja sin internet
+        //si queda otra activa (los datos), y una red recien conectada aun no esta validada
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 super.onAvailable(network)
-                trySend(true)
+                trySend(isConnected())
+            }
+
+            override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
+                super.onCapabilitiesChanged(network, networkCapabilities)
+                trySend(isConnected())
             }
 
             override fun onLost(network: Network) {
                 super.onLost(network)
-                trySend(false)
+                trySend(isConnected())
             }
 
             override fun onUnavailable() {

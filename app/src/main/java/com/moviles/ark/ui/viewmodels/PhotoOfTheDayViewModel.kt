@@ -10,6 +10,7 @@ import com.moviles.ark.domain.models.PhotoEntryModel
 import com.moviles.ark.domain.models.PhotoWeek
 import com.moviles.ark.domain.models.ToolLatencyTracker
 import com.moviles.ark.domain.repositories.PhotoEntryRepository
+import com.moviles.ark.domain.repositories.ToolInteractionRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -27,7 +28,9 @@ class PhotoOfTheDayViewModel(
     private val zone: TimeZone = TimeZone.getDefault(),
     private val now: () -> Long = { System.currentTimeMillis() },
     //mide cuanto tardo en abrirse la herramienta; null en previews
-    private val toolLatencyTracker: ToolLatencyTracker? = null
+    private val toolLatencyTracker: ToolLatencyTracker? = null,
+    //cada foto guardada cuenta como un uso de la herramienta; null en previews
+    private val toolInteractionRepository: ToolInteractionRepository? = null
 ) : ViewModel() {
     //privado: solo el viewmodel lo modifica
     private val _uiState = MutableStateFlow(PhotoOfTheDayUiState())
@@ -97,6 +100,7 @@ class PhotoOfTheDayViewModel(
             if (previousTodayPhoto != null) photoRepository.deletePhoto(previousTodayPhoto.id)
             val result = photoRepository.savePhoto(uri, "", now())
             result.onSuccess {
+                recordInteraction()
                 //la foto nueva llega sola por observeWeek; aqui solo se limpia lo pendiente y avisa que se guardo
                 _uiState.update { it.copy(isSaving = false, pendingPhotoUri = null, caption = "", isPhotoSaved = true) }
             }
@@ -129,6 +133,7 @@ class PhotoOfTheDayViewModel(
             state.todayPhoto?.let { photoRepository.deletePhoto(it.id) }
             val result = photoRepository.savePhoto(uri, "", now())
             result.onSuccess {
+                recordInteraction()
                 //la foto nueva llega sola por observeWeek; aqui solo se limpia lo pendiente y avisa que se guardo
                 _uiState.update { it.copy(isSaving = false, pendingPhotoUri = null, caption = "", isPhotoSaved = true) }
             }
@@ -154,6 +159,11 @@ class PhotoOfTheDayViewModel(
         }
     }
 
+    //guarda el uso de la herramienta en room aunque el usuario despues salte el feedback
+    private suspend fun recordInteraction() {
+        toolInteractionRepository?.recordCompletion(TOOL_ID, getSessionDurationSeconds(), INTERACTION_TYPE, now())
+    }
+
     fun onNavigatedToFeedback() {
         _uiState.update { it.copy(isPhotoSaved = false) }
     }
@@ -174,13 +184,16 @@ class PhotoOfTheDayViewModel(
     companion object {
         //id de la herramienta en el catalogo
         const val TOOL_ID = "photo_of_the_day"
+        //formato de la herramienta en el catalogo
+        private const val INTERACTION_TYPE = "photo"
 
         val Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as ArkApplication
                 PhotoOfTheDayViewModel(
                     photoRepository = app.container.photoRepository,
-                    toolLatencyTracker = app.container.toolLatencyTracker
+                    toolLatencyTracker = app.container.toolLatencyTracker,
+                    toolInteractionRepository = app.container.toolInteractionRepository
                 )
             }
         }

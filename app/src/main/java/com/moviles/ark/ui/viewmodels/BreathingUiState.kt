@@ -2,6 +2,7 @@ package com.moviles.ark.ui.viewmodels
 
 import com.moviles.ark.domain.models.AmbientTrackModel
 import com.moviles.ark.domain.models.BreathingPattern
+import com.moviles.ark.domain.models.BreathingSession
 import com.moviles.ark.domain.models.BreathingPhase
 import com.moviles.ark.domain.models.BreathingPreset
 
@@ -42,4 +43,8 @@ data class BreathingUiState(
     //la regla de cuando se puede reiniciar vive en el modelo
     val canReset: Boolean
         get() = BreathingPattern.canReset(phase, completedCycles)
+
+    //la regla de cuando se puede terminar tambien
+    val canFinish: Boolean
+        get() = BreathingSession.canFinish(completedCycles)
 }
