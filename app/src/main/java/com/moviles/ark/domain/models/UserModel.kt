@@ -52,12 +52,13 @@ data class UserModel(
         const val INVALID_EMAIL_ERROR = "Please enter a valid email address"
 
         //el nombre debe tener entre 2 y 100 caracteres y solo letras y espacios
+        //los caracteres se revisan primero: con "5" el problema es el numero, no que sea corto
         fun nameError(name: String): String? {
             val trimmed = name.trim()
             return when {
+                trimmed.isNotEmpty() && !trimmed.matches(NAME_REGEX) -> "Name can only contain letters and spaces, no numbers or symbols"
                 trimmed.length < MIN_NAME_LENGTH -> "Name must be at least $MIN_NAME_LENGTH characters"
                 trimmed.length > MAX_NAME_LENGTH -> "Name cannot exceed $MAX_NAME_LENGTH characters"
-                !trimmed.matches(NAME_REGEX) -> "Name can only contain letters and spaces"
                 else -> null
             }
         }

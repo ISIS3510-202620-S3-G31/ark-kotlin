@@ -7,6 +7,7 @@ import com.moviles.ark.data.local.daos.FeedbackDao
 import com.moviles.ark.data.local.entities.toDomain
 import com.moviles.ark.data.local.entities.toEntity
 import com.moviles.ark.data.remote.CrashlyticsHelper
+import com.moviles.ark.data.remote.dtos.documentId
 import com.moviles.ark.data.remote.dtos.toDto
 import com.moviles.ark.domain.models.FeedbackModel
 import com.moviles.ark.domain.repositories.FeedbackRepository
@@ -18,7 +19,7 @@ import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 
 // Implementacion del repositorio de feedback usando Room (FeedbackDao) y Firestore (FeedbackDto)
-// Garantiza funcionamiento 100% offline y sincronizacion bidireccional con Firestore
+// Room guarda el feedback mientras no hay internet; al subirlo a Firestore se borra del telefono
 class FeedbackRepositoryImpl(
     private val feedbackDao: FeedbackDao,
     private val firestore: FirebaseFirestore,
@@ -27,6 +28,8 @@ class FeedbackRepositoryImpl(
     private val onFeedbackSaved: () -> Unit = {}
 ) : FeedbackRepository {
 
+    //guarda solo en room (isSynced = false) y avisa al SyncManager; no espera a firestore
+    //sin internet esa espera no terminaba nunca y la pantalla de feedback se quedaba cargando
     override suspend fun saveFeedback(feedback: FeedbackModel): Result<FeedbackModel> = withContext(ioDispatcher) {
         runCatching {
             val currentUserId = auth.currentUser?.uid ?: "anonymous"
@@ -40,6 +43,9 @@ class FeedbackRepositoryImpl(
             onFeedbackSaved()
             Log.d("FeedbackRepository", "Feedback id=$insertedId guardado en Room, pendiente de sincronizacion")
             localSavedModel
+            val insertedId = feedbackDao.insertFeedback(feedback.toEntity().copy(isSynced = false))
+            onFeedbackSaved()
+            feedback.copy(id = insertedId, isSynced = false)
         }.onFailure { error ->
             Log.e("FeedbackRepository", "Error saving feedback", error)
             CrashlyticsHelper.logNonFatal(
@@ -64,34 +70,28 @@ class FeedbackRepositoryImpl(
         return feedbackDao.getAverageRating(toolId)
     }
 
+    //sube el feedback pendiente con el mismo id de documento que el sync y lo borra del telefono
     override suspend fun syncPendingFeedback(): Result<Int> = withContext(ioDispatcher) {
         runCatching {
-            val currentUserId = auth.currentUser?.uid ?: "anonymous"
-            val unsyncedFeedback = feedbackDao.getUnsyncedFeedback()
-            var syncedCount = 0
-
-            if (unsyncedFeedback.isNotEmpty()) {
-                val successfulIds = mutableListOf<Long>()
-                for (feedback in unsyncedFeedback) {
-                    try {
-                        val dto = feedback.toDto(currentUserId)
-                        firestore.collection("users")
-                            .document(currentUserId)
-                            .collection("tool_feedback")
-                            .add(dto)
-                            .await()
-
-                        successfulIds.add(feedback.id)
-                        syncedCount++
-                    } catch (e: Exception) {
-                        Log.e("FeedbackRepository", "Failed to sync feedback id=${feedback.id}", e)
-                    }
-                }
-                if (successfulIds.isNotEmpty()) {
-                    feedbackDao.markAsSynced(successfulIds)
+            val currentUserId = auth.currentUser?.uid ?: return@runCatching 0
+            val uploadedIds = mutableListOf<Long>()
+            for (feedback in feedbackDao.getUnsyncedFeedback()) {
+                try {
+                    firestore.collection("users")
+                        .document(currentUserId)
+                        .collection("tool_feedback")
+                        .document(feedback.documentId())
+                        .set(feedback.toDto(currentUserId))
+                        .await()
+                    uploadedIds.add(feedback.id)
+                } catch (e: Exception) {
+                    Log.e("FeedbackRepository", "Failed to sync feedback id=${feedback.id}", e)
                 }
             }
-            syncedCount
+            if (uploadedIds.isNotEmpty()) {
+                feedbackDao.deleteByIds(uploadedIds)
+            }
+            uploadedIds.size
         }.onFailure { error ->
             CrashlyticsHelper.logNonFatal(
                 componentName = "FeedbackRepository",

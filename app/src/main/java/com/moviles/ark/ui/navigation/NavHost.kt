@@ -182,7 +182,7 @@ fun AppNavigation(
                     }
                 )
             }
-            //herramienta de respiracion guiada; si completo al menos 1 ciclo navega a feedback
+            //herramienta de respiracion guiada; Finish navega a feedback y atras (abandonar) vuelve sin feedback
             composable("custom_breathing_screen") {
                 CustomBreathingRoute(onBack = { wasCompleted, duration ->
                     if (wasCompleted) {

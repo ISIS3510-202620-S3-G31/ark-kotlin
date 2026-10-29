@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import com.moviles.ark.data.local.entities.StatsDailyVisitEntity
 import com.moviles.ark.data.remote.CrashlyticsHelper
+import kotlinx.coroutines.flow.Flow
 
 //consultas para conteo diario de visitas a stats y sincronizacion offline
 @Dao
@@ -39,6 +40,10 @@ interface StatsDailyVisitDao {
     //visitas diarias que aun no se han sincronizado con Firestore
     @Query("SELECT * FROM stats_daily_visits WHERE isSynced = 0 AND (userId = :userId OR userId = 'anonymous')")
     suspend fun getUnsyncedVisits(userId: String): List<StatsDailyVisitEntity>
+
+    //todas las visitas del usuario; room avisa con cada visita nueva y la tarjeta de stats se actualiza sola
+    @Query("SELECT * FROM stats_daily_visits WHERE userId = :userId OR userId = 'anonymous'")
+    fun observeVisits(userId: String): Flow<List<StatsDailyVisitEntity>>
 
     //marca un dia como sincronizado
     @Query("UPDATE stats_daily_visits SET isSynced = 1 WHERE userId = :userId AND dateKey = :dateKey")
