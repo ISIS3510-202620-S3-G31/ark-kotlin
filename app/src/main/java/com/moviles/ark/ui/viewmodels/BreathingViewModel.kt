@@ -57,7 +57,7 @@ class BreathingViewModel(
 
     //carga las canciones relajantes desde el repositorio de respiracion (jamendo)
     fun loadAmbientTracks() {
-        if (breathingRepository == null) return
+        if (breathingRepository == null || _uiState.value.isLoadingMusic) return
 
         _uiState.update { it.copy(isLoadingMusic = true) }
         viewModelScope.launch {
@@ -144,8 +144,11 @@ class BreathingViewModel(
     }
 
     //muestra u oculta la hoja inferior con las canciones
+    //al abrir la hoja se vuelve a pedir la lista: si la pantalla se abrio sin internet solo tenia la pista de la app
     fun toggleTrackSelector() {
-        _uiState.update { it.copy(showTrackSelector = !it.showTrackSelector) }
+        val opening = !_uiState.value.showTrackSelector
+        _uiState.update { it.copy(showTrackSelector = opening) }
+        if (opening) loadAmbientTracks()
     }
 
     //toque sobre una pista de la hoja: si es la que esta sonando se pausa; si no, se cambia y se reproduce
@@ -199,9 +202,9 @@ class BreathingViewModel(
         _uiState.value = _uiState.value.copy(isRunning = false)
     }
 
+    //reiniciar vuelve el circulo al inicio dentro de la misma sesion: no la termina ni la abandona
     fun reset() {
-        //reiniciar cierra la sesion actual: si termino algun ciclo, se guarda antes de borrar el contador
-        finishSession()
+        pause()
         phaseElapsedMs = 0L
         _uiState.value = _uiState.value.copy(
             phase = BreathingPhase.READY,
@@ -330,8 +333,11 @@ class BreathingViewModel(
 
         //el modelo dice que fase sigue y si se completo un ciclo
         val (nextPhase, isCycleCompleted) = _uiState.value.pattern.next(currentPhase)
+        //cada cambio de fase vibra para seguir el ejercicio con los ojos cerrados
         if (BreathingPattern.cuesExhale(currentPhase, nextPhase)) {
             hapticFeedback?.vibrateExhaleCue()
+        } else {
+            hapticFeedback?.vibratePhaseCue()
         }
 
         val updatedCycles = if (isCycleCompleted) {
@@ -355,13 +361,14 @@ class BreathingViewModel(
         toolLatencyTracker?.onToolRendered(BreathingSession.TOOL_ID)
     }
 
-    //el usuario sale de la herramienta o reinicia: si termino al menos un ciclo, se guarda la sesion en el telefono
-    fun finishSession(): Boolean {
-        val (completed, _) = finishSessionWithDuration()
-        return completed
-    }
+    //boton Finish: la sesion queda terminada; devuelve si cuenta como terminada y cuantos segundos duro
+    fun finishSession(): Pair<Boolean, Int> = endSession(finishedByUser = true)
 
-    fun finishSessionWithDuration(): Pair<Boolean, Int> {
+    //atras (boton o gesto): el usuario abandona la herramienta; devuelve cuantos segundos alcanzo a respirar
+    fun abandonSession(): Int = endSession(finishedByUser = false).second
+
+    //guarda la sesion en el telefono como terminada o abandonada; la interaccion lleva complete = true / false
+    private fun endSession(finishedByUser: Boolean): Pair<Boolean, Int> {
         pause()
         val state = _uiState.value
         val durationSeconds = (sessionRunningMs / 1000L).toInt()
@@ -369,21 +376,22 @@ class BreathingViewModel(
             completedCycles = state.completedCycles,
             durationSeconds = durationSeconds,
             timestamp = System.currentTimeMillis(),
-            pattern = BreathingSession.patternOf(state.inhaleDuration, state.holdDuration, state.exhaleDuration, state.holdPostExhaleDuration)
+            pattern = BreathingSession.patternOf(state.inhaleDuration, state.holdDuration, state.exhaleDuration, state.holdPostExhaleDuration),
+            finishedByUser = finishedByUser
         )
         //se reinicia el tiempo para que la misma sesion no se guarde dos veces
         sessionRunningMs = 0L
-        //le preguntamos al modelo si la sesion cuenta antes de guardarla
-        val isComplete = session.isComplete()
-        if (!isComplete) return Pair(false, durationSeconds)
-        val repository = breathingRepository ?: return Pair(true, durationSeconds)
-        viewModelScope.launch {
-            //NonCancellable: al salir de la pantalla el viewmodel se limpia enseguida y no debe cortar el guardado
-            withContext(NonCancellable) {
-                repository.saveSession(session)
+        //si el temporizador nunca corrio no hubo sesion: abrir y cerrar la pantalla no cuenta como abandono
+        val repository = breathingRepository
+        if (durationSeconds > 0 && repository != null) {
+            viewModelScope.launch {
+                //NonCancellable: al salir de la pantalla el viewmodel se limpia enseguida y no debe cortar el guardado
+                withContext(NonCancellable) {
+                    repository.saveSession(session)
+                }
             }
         }
-        return Pair(true, durationSeconds)
+        return Pair(session.isComplete(), durationSeconds)
     }
 
     private fun getPhaseDuration(phase: BreathingPhase): Int = _uiState.value.pattern.durationOf(phase)

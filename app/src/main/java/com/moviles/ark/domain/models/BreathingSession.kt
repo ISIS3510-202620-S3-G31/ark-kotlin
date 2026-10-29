@@ -12,11 +12,13 @@ data class BreathingSession(
     //cuando termino la sesion, en milisegundos
     val timestamp: Long,
     //patron usado en segundos, por ejemplo "4-7-8"
-    val pattern: String = ""
+    val pattern: String = "",
+    //true si el usuario toco Finish; false si salio de la herramienta (la abandono)
+    val finishedByUser: Boolean = true
 ) {
-    //reglas de negocio: solo cuenta como sesion si termino al menos un ciclo y el temporizador corrio
+    //reglas de negocio: cuenta como terminada si el usuario toco Finish despues de al menos un ciclo
     fun isComplete(): Boolean {
-        return completedCycles >= MIN_COMPLETED_CYCLES && durationSeconds > 0
+        return finishedByUser && canFinish(completedCycles) && durationSeconds > 0
     }
 
     //la misma sesion como interaccion con la herramienta; value = ciclos completos
@@ -42,6 +44,9 @@ data class BreathingSession(
         const val INTERACTION_TYPE = "TOUCH"
 
         const val MIN_COMPLETED_CYCLES = 1
+
+        //el boton Finish se habilita desde el primer ciclo completo
+        fun canFinish(completedCycles: Int): Boolean = completedCycles >= MIN_COMPLETED_CYCLES
 
         //patron legible a partir de las tres duraciones
         fun patternOf(

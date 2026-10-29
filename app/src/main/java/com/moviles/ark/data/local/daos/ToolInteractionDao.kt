@@ -36,8 +36,9 @@ interface ToolRecordDao {
         }
     }
 
-    //todas las interacciones, de la mas nueva a la mas vieja
-    @Query("SELECT * FROM tool_interactions ORDER BY timestamp DESC")
+    //las que siguen en el telefono esperando subida, de la mas nueva a la mas vieja
+    //las ya subidas se leen de firestore; leerlas aqui tambien las contaria dos veces
+    @Query("SELECT * FROM tool_interactions WHERE isSynced = 0 ORDER BY timestamp DESC")
     fun getInteractionsRaw(): Flow<List<ToolInteractionEntity>>
 
     fun getInteractions(): Flow<List<ToolInteractionEntity>> {
@@ -51,8 +52,8 @@ interface ToolRecordDao {
         }
     }
 
-    //interacciones desde una fecha en milisegundos para analitica y estadisticas
-    @Query("SELECT * FROM tool_interactions WHERE timestamp >= :fromMillis ORDER BY timestamp ASC")
+    //interacciones pendientes de subir desde una fecha en milisegundos
+    @Query("SELECT * FROM tool_interactions WHERE isSynced = 0 AND timestamp >= :fromMillis ORDER BY timestamp ASC")
     fun getInteractionsSinceRaw(fromMillis: Long): Flow<List<ToolInteractionEntity>>
 
     fun getInteractionsSince(fromMillis: Long): Flow<List<ToolInteractionEntity>> {
@@ -99,22 +100,27 @@ interface ToolRecordDao {
         }
     }
 
-    @Query("UPDATE tool_interactions SET isSynced = 1 WHERE id IN (:ids)")
-    suspend fun markAsSyncedRaw(ids: List<Long>)
+    //las ya subidas a firestore se borran del telefono: alla queda la copia
+    @Query("DELETE FROM tool_interactions WHERE id IN (:ids)")
+    suspend fun deleteByIdsRaw(ids: List<Long>)
 
-    suspend fun markAsSynced(ids: List<Long>) {
+    suspend fun deleteByIds(ids: List<Long>) {
         try {
-            markAsSyncedRaw(ids)
+            deleteByIdsRaw(ids)
         } catch (e: Exception) {
             CrashlyticsHelper.logNonFatal(
                 componentName = "ToolRecordDao",
-                action = "markAsSynced",
+                action = "deleteByIds",
                 throwable = e,
                 extraKeys = mapOf("ids_count" to ids.size)
             )
             throw e
         }
     }
+
+    //filas que versiones anteriores marcaban como subidas en vez de borrarlas
+    @Query("DELETE FROM tool_interactions WHERE isSynced = 1")
+    suspend fun deleteAlreadySynced()
 }
 
 

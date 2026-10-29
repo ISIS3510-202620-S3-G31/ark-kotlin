@@ -15,7 +15,9 @@ import kotlinx.coroutines.withContext
 class ScreamTankRepositoryImpl(
     private val microphoneLevelMeter: MicrophoneLevelMeter,
     private val toolRecordDao: ToolRecordDao,
-    private val auth: FirebaseAuth
+    private val auth: FirebaseAuth,
+    //avisa al SyncManager que hay una interaccion por subir; no se espera
+    private val onInteractionSaved: () -> Unit = {}
 ) : ScreamTankRepository {
 
     override fun hasMicrophonePermission(): Boolean = microphoneLevelMeter.hasPermission()
@@ -27,6 +29,7 @@ class ScreamTankRepositoryImpl(
             //queda con isSynced = false y el SyncManager la sube a firestore cuando vuelva el internet
             val userId = auth.currentUser?.uid ?: "anonymous"
             toolRecordDao.insertInteraction(session.toInteraction(userId).toEntity())
+            onInteractionSaved()
             Unit
         }
     }

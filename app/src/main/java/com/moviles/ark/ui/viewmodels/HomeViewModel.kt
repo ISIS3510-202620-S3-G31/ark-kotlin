@@ -107,8 +107,9 @@ class HomeViewModel(
             val latitude = location?.latitude
             val longitude = location?.longitude
 
+            //sin internet la consulta falla: se usa el ultimo clima guardado si aun vale
             val weather = if (latitude != null && longitude != null) {
-                adapter.getCurrentWeather(latitude, longitude).getOrNull()
+                adapter.getCurrentWeather(latitude, longitude).getOrNull() ?: adapter.getCachedWeather()
             } else {
                 adapter.getCachedWeather()
             }

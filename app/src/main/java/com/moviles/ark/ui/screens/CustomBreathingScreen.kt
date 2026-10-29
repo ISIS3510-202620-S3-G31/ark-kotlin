@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.MusicNote
@@ -53,6 +54,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -92,9 +94,11 @@ fun CustomBreathingRoute(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     //la vibracion al pasar de hold a exhale la dispara el viewmodel
 
-    //guarda la sesion localmente antes de retroceder al home o al catalogo
-    val leave = {
-        val (wasCompleted, durationSeconds) = viewModel.finishSessionWithDuration()
+    //atras (boton o gesto) = abandonar: se guarda como no terminada y se vuelve sin feedback
+    val leave = { onBack(false, viewModel.abandonSession()) }
+    //Finish = terminar: se guarda como terminada y la navegacion abre el feedback
+    val finish = {
+        val (wasCompleted, durationSeconds) = viewModel.finishSession()
         onBack(wasCompleted, durationSeconds)
     }
     BackHandler(onBack = leave)
@@ -109,6 +113,7 @@ fun CustomBreathingRoute(
         onBack = leave,
         onTogglePlayPause = viewModel::togglePlayPause,
         onReset = viewModel::reset,
+        onFinish = finish,
         onSelectPreset = viewModel::selectPreset,
         onSelectCustom = viewModel::selectCustom,
         onEditCustom = viewModel::openCustomRhythmSheet,
@@ -125,6 +130,7 @@ fun CustomBreathingScreen(
     onBack: () -> Unit,
     onTogglePlayPause: () -> Unit,
     onReset: () -> Unit,
+    onFinish: () -> Unit = {},
     onSelectPreset: (BreathingPreset) -> Unit = {},
     onSelectCustom: () -> Unit = {},
     onEditCustom: () -> Unit = {},
@@ -146,7 +152,46 @@ fun CustomBreathingScreen(
         ) {
             BreathingTopBar(onBack = onBack)
 
-            //el circulo queda centrado en todo el espacio libre
+            //arriba: el patron (antes de empezar) o los ciclos (mientras corre), junto a la musica
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .padding(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (!uiState.isRunning && uiState.phase == BreathingPhase.READY) {
+                        PatternSelector(
+                            uiState = uiState,
+                            onSelectPreset = onSelectPreset,
+                            onSelectCustom = onSelectCustom,
+                            onEditCustom = onEditCustom,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    } else if (uiState.completedCycles > 0) {
+                        Text(
+                            text = if (uiState.completedCycles == 1) "1 cycle" else "${uiState.completedCycles} cycles",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = TextColor
+                        )
+                    }
+                }
+
+                //borde = musica en pausa; relleno con ondas = sonando. Tocarlo abre la hoja con las pistas
+                RoundIconButton(
+                    icon = if (uiState.isMusicPlaying) Icons.Filled.GraphicEq else Icons.Filled.MusicNote,
+                    contentDescription = if (uiState.isMusicPlaying) "Ambient music playing, choose track" else "Ambient music",
+                    filled = uiState.isMusicPlaying,
+                    onClick = onToggleTrackSelector
+                )
+            }
+
+            //el circulo queda centrado en todo el espacio libre del medio
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -156,36 +201,12 @@ fun CustomBreathingScreen(
                 BreathingCircle(uiState = uiState)
             }
 
-            //mismo espacio para el selector (antes de empezar) o para los ciclos (mientras corre): nada salta de lugar
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                if (!uiState.isRunning && uiState.phase == BreathingPhase.READY) {
-                    PatternSelector(
-                        uiState = uiState,
-                        onSelectPreset = onSelectPreset,
-                        onSelectCustom = onSelectCustom,
-                        onEditCustom = onEditCustom
-                    )
-                } else if (uiState.completedCycles > 0) {
-                    Text(
-                        text = if (uiState.completedCycles == 1) "1 cycle" else "${uiState.completedCycles} cycles",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = TextColor
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(40.dp))
-
+            //abajo del todo: reiniciar, iniciar/pausar y terminar
             BreathingControls(
                 uiState = uiState,
                 onReset = onReset,
                 onTogglePlayPause = onTogglePlayPause,
-                onOpenMusic = onToggleTrackSelector
+                onFinish = onFinish
             )
 
             Spacer(modifier = Modifier.height(32.dp))
@@ -321,11 +342,11 @@ private fun PatternSelector(
     uiState: BreathingUiState,
     onSelectPreset: (BreathingPreset) -> Unit,
     onSelectCustom: () -> Unit,
-    onEditCustom: () -> Unit
+    onEditCustom: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Row(
-        modifier = Modifier
-            .width(344.dp)
+        modifier = modifier
             .height(48.dp)
             .border(1.dp, SecondaryColor, CircleShape)
             .padding(4.dp),
@@ -380,28 +401,25 @@ private fun PatternOption(
     }
 }
 
-//reiniciar · play/pausa · musica, abajo y centrados; reiniciar solo aparece cuando hay algo que reiniciar
+//reiniciar · play/pausa · terminar, abajo y centrados
+//reiniciar solo aparece cuando hay algo que reiniciar; terminar se habilita desde el primer ciclo completo
 @Composable
 private fun BreathingControls(
     uiState: BreathingUiState,
     onReset: () -> Unit,
     onTogglePlayPause: () -> Unit,
-    onOpenMusic: () -> Unit
+    onFinish: () -> Unit
 ) {
-    val canReset = uiState.canReset
     Row(
-        horizontalArrangement = Arrangement.spacedBy(48.dp),
+        horizontalArrangement = Arrangement.spacedBy(40.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(modifier = Modifier.size(48.dp)) {
-            if (canReset) {
-                RoundIconButton(
-                    icon = Icons.Filled.Refresh,
-                    contentDescription = "Reset",
-                    onClick = onReset
-                )
-            }
-        }
+        LabeledRoundButton(
+            icon = Icons.Filled.Refresh,
+            label = "Reset",
+            onClick = onReset,
+            visible = uiState.canReset
+        )
 
         Box(
             modifier = Modifier
@@ -423,12 +441,44 @@ private fun BreathingControls(
             )
         }
 
-        //borde = musica en pausa; relleno con ondas = sonando. Tocarlo abre la hoja con las pistas
+        LabeledRoundButton(
+            icon = Icons.Filled.Check,
+            label = "Finish",
+            onClick = onFinish,
+            enabled = uiState.canFinish,
+            contentDescription = if (uiState.canFinish) "Finish session" else "Finish session, complete one cycle first"
+        )
+    }
+}
+
+//boton redondo con su nombre debajo; invisible ocupa el mismo espacio para que el play no se mueva
+@Composable
+private fun LabeledRoundButton(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    visible: Boolean = true,
+    enabled: Boolean = true,
+    contentDescription: String = label
+) {
+    Column(
+        modifier = Modifier
+            .width(64.dp)
+            .alpha(if (visible) 1f else 0f),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
         RoundIconButton(
-            icon = if (uiState.isMusicPlaying) Icons.Filled.GraphicEq else Icons.Filled.MusicNote,
-            contentDescription = if (uiState.isMusicPlaying) "Ambient music playing, choose track" else "Ambient music",
-            filled = uiState.isMusicPlaying,
-            onClick = onOpenMusic
+            icon = icon,
+            contentDescription = contentDescription,
+            onClick = onClick,
+            enabled = visible && enabled
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = TextColor,
+            modifier = Modifier.alpha(if (enabled) 1f else DISABLED_ALPHA)
         )
     }
 }
@@ -440,15 +490,17 @@ private fun RoundIconButton(
     contentDescription: String,
     onClick: () -> Unit,
     filled: Boolean = false,
-    size: Dp = 48.dp
+    size: Dp = 48.dp,
+    enabled: Boolean = true
 ) {
     Box(
         modifier = Modifier
             .size(size)
+            .alpha(if (enabled) 1f else DISABLED_ALPHA)
             .clip(CircleShape)
             .background(if (filled) SecondaryColor else BackgroundColor)
             .border(1.dp, SecondaryColor, CircleShape)
-            .clickable(role = Role.Button, onClick = onClick),
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Icon(imageVector = icon, contentDescription = contentDescription, tint = TextColor, modifier = Modifier.size(22.dp))
@@ -646,6 +698,9 @@ private val SELECTOR_PRESETS = listOf(
 private val CIRCLE_SIZE = 260.dp
 //en reposo el circulo ocupa la mitad del anillo
 private const val MIN_CIRCLE_SCALE = 0.5f
+
+//botones que todavia no se pueden usar (Finish antes del primer ciclo)
+private const val DISABLED_ALPHA = 0.4f
 
 @Preview(showBackground = true, name = "Ready")
 @Composable

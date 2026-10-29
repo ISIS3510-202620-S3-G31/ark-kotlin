@@ -1,5 +1,6 @@
 package com.moviles.ark.ui.screens
 
+import android.app.Activity
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -47,6 +48,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -73,6 +75,7 @@ import com.moviles.ark.domain.composite.Emotion
 import com.moviles.ark.domain.models.StatsCalculator
 import com.moviles.ark.domain.models.EmotionShare
 import com.moviles.ark.domain.models.StatsModel
+import com.moviles.ark.domain.models.StatsVisitSummary
 import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.ui.components.getEmotionColor
 import com.moviles.ark.ui.components.getEmotionEmoji
@@ -102,9 +105,12 @@ fun StatsScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
 
-    //recarga automaticamente al entrar a la pantalla para mostrar check-ins recientes con cache-then-network
+    //cada entrada a la pantalla cuenta una visita y recarga con cache-then-network; girar el telefono no cuenta
     LaunchedEffect(Unit) {
-        viewModel.loadStats()
+        viewModel.onScreenOpened()
+    }
+    DisposableEffect(Unit) {
+        onDispose { viewModel.onScreenClosed((context as? Activity)?.isChangingConfigurations == true) }
     }
 
     //aviso corto cuando el refresco no pudo traer datos nuevos
@@ -121,6 +127,7 @@ fun StatsScreen(
         errorMessage = uiState.errorMessage,
         isRefreshing = uiState.isRefreshing,
         isOffline = uiState.isOffline,
+        visitSummary = uiState.visitSummary,
         onRefresh = { viewModel.refresh() },
         onNavigateToToolsCatalog = onNavigateToToolsCatalog
     )
@@ -135,6 +142,7 @@ fun StatsScreenContent(
     errorMessage: String? = null,
     isRefreshing: Boolean = false,
     isOffline: Boolean = false,
+    visitSummary: StatsVisitSummary = StatsVisitSummary(),
     onRefresh: () -> Unit = {},
     onNavigateToToolsCatalog: (ToolCategory?) -> Unit = {}
 ) {
@@ -238,7 +246,7 @@ fun StatsScreenContent(
                         )
                     }
                 } else {
-                    StatsMainView(stats = stats, onNavigateToToolsCatalog = onNavigateToToolsCatalog)
+                    StatsMainView(stats = stats, visitSummary = visitSummary, onNavigateToToolsCatalog = onNavigateToToolsCatalog)
                 }
             }
         }
@@ -533,6 +541,7 @@ data class TooltipInfo(val title: String, val message: String)
 @Composable
 private fun StatsMainView(
     stats: StatsModel,
+    visitSummary: StatsVisitSummary = StatsVisitSummary(),
     onNavigateToToolsCatalog: (ToolCategory?) -> Unit = {}
 ) {
     var activeTooltip by remember { mutableStateOf<TooltipInfo?>(null) }
@@ -708,6 +717,16 @@ private fun StatsMainView(
             }
         }
 
+        //cuantas veces entro a sus estadisticas esta semana y su promedio; sube en vivo con cada entrada
+        if (visitSummary.hasVisits()) {
+            item {
+                StatsVisitsCard(
+                    summary = visitSummary,
+                    onShowTooltip = { activeTooltip = it }
+                )
+            }
+        }
+
         //grafico de barras: journey semanal de emociones con relieve y escala 1 a 5
         item {
             WeeklyEmotionJourneyCard(
@@ -759,6 +778,96 @@ private fun StatsMainView(
             },
             containerColor = Color(0xFFFFF9EE),
             shape = RoundedCornerShape(20.dp)
+        )
+    }
+}
+
+//tarjeta de visitas a estadisticas: esta semana a la izquierda y el promedio semanal a la derecha
+@Composable
+private fun StatsVisitsCard(
+    summary: StatsVisitSummary,
+    onShowTooltip: (TooltipInfo) -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(5.dp, RoundedCornerShape(20.dp), ambientColor = Color(0x30351B08), spotColor = Color(0x30351B08)),
+        shape = RoundedCornerShape(20.dp),
+        color = CardSurfaceColor,
+        border = BorderStroke(1.dp, CardBorderColor)
+    ) {
+        Column(
+            modifier = Modifier
+                .background(Brush.verticalGradient(colors = listOf(Color(0xFFF7ECDC), Color(0xFFEADBCE))))
+                .padding(horizontal = 18.dp, vertical = 14.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "Your stats visits",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontFamily = FigtreeFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    color = TextColor,
+                    fontSize = 15.sp
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Box(
+                    modifier = Modifier
+                        .size(18.dp)
+                        .clip(CircleShape)
+                        .background(PrimaryColor.copy(alpha = 0.15f))
+                        .clickable {
+                            onShowTooltip(
+                                TooltipInfo(
+                                    "Your stats visits",
+                                    "How many times you opened your stats this week (Monday to today) and your weekly average since your first visit. It updates every time you come back."
+                                )
+                            )
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = "Info",
+                        tint = PrimaryColor,
+                        modifier = Modifier.size(12.dp)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(modifier = Modifier.fillMaxWidth()) {
+                VisitsNumber(
+                    value = "${summary.thisWeek}",
+                    label = "this week",
+                    modifier = Modifier.weight(1f)
+                )
+                VisitsNumber(
+                    value = String.format(Locale.US, "%.1f", summary.weeklyAverage),
+                    label = if (summary.weeksTracked == 1) "per week (1 week)" else "per week (${summary.weeksTracked} weeks)",
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun VisitsNumber(value: String, label: String, modifier: Modifier = Modifier) {
+    Column(modifier = modifier) {
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleMedium,
+            fontFamily = FigtreeFontFamily,
+            fontWeight = FontWeight.Bold,
+            color = PrimaryColor,
+            fontSize = 24.sp
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            fontFamily = FigtreeFontFamily,
+            color = TextColor.copy(alpha = 0.65f),
+            fontSize = 12.sp
         )
     }
 }

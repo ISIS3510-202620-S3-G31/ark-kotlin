@@ -79,21 +79,26 @@ interface FeedbackDao {
         }
     }
 
-    @Query("UPDATE tool_feedback SET isSynced = 1 WHERE id IN (:ids)")
-    suspend fun markAsSyncedRaw(ids: List<Long>)
+    //las ya subidas a firestore se borran del telefono: alla queda la copia
+    @Query("DELETE FROM tool_feedback WHERE id IN (:ids)")
+    suspend fun deleteByIdsRaw(ids: List<Long>)
 
-    suspend fun markAsSynced(ids: List<Long>) {
+    suspend fun deleteByIds(ids: List<Long>) {
         try {
-            markAsSyncedRaw(ids)
+            deleteByIdsRaw(ids)
         } catch (e: Exception) {
             CrashlyticsHelper.logNonFatal(
                 componentName = "FeedbackDao",
-                action = "markAsSynced",
+                action = "deleteByIds",
                 throwable = e,
                 extraKeys = mapOf("ids_count" to ids.size)
             )
             throw e
         }
     }
+
+    //filas que versiones anteriores marcaban como subidas en vez de borrarlas
+    @Query("DELETE FROM tool_feedback WHERE isSynced = 1")
+    suspend fun deleteAlreadySynced()
 }
 

@@ -59,7 +59,7 @@ data class BreathingPattern(
             exhale = exhale.coerceIn(CUSTOM_BREATH_RANGE)
         )
 
-        //la unica vibracion del ejercicio es al pasar de hold a exhale: avisa que ya se puede soltar el aire
+        //todas las fases vibran al empezar; la de hold a exhale tiene su propia vibracion: avisa que ya se puede soltar el aire
         fun cuesExhale(previous: BreathingPhase, current: BreathingPhase): Boolean =
             previous == BreathingPhase.HOLD && current == BreathingPhase.EXHALE
 

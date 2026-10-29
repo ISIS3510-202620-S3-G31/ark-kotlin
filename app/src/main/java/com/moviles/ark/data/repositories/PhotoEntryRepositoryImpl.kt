@@ -17,11 +17,14 @@ import com.moviles.ark.data.remote.dtos.PhotoEntryDto
 import com.moviles.ark.domain.models.PhotoEntryModel
 import com.moviles.ark.domain.repositories.PhotoEntryRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -36,7 +39,9 @@ class PhotoEntryRepositoryImpl(
     private val auth: FirebaseAuth,
     private val photoEntryDao: PhotoEntryDao,
     private val firestore: FirebaseFirestore? = null,
-    private val storage: FirebaseStorage? = null
+    private val storage: FirebaseStorage? = null,
+    //avisa al SyncManager que hay una foto por subir; no se espera
+    private val onPhotoSaved: () -> Unit = {}
 ) : PhotoEntryRepository {
 
     override fun getPhotosBetween(fromMillis: Long, toMillis: Long): Flow<List<PhotoEntryModel>> {
@@ -115,6 +120,7 @@ class PhotoEntryRepositoryImpl(
             )
 
             val insertedId = photoEntryDao.insertPhoto(entity)
+            onPhotoSaved()
 
             PhotoEntryModel(
                 id = insertedId,
@@ -144,11 +150,26 @@ class PhotoEntryRepositoryImpl(
                 photoEntryDao.deletePhoto(photoId, userId)
                 //y la copia en la nube si ya se habia subido; sin red queda alla, pero solo se borra la de hoy
                 //y la descarga solo trae dias pasados, asi que no vuelve a aparecer
+                //sin internet esas esperas no terminaban y el borrado (o el retake) se quedaba cargando:
+                //firestore deja el borrado en su cola hasta que vuelva la red; storage se intenta un rato y se deja
+                //las dos esperas van a la vez para que el usuario espere solo una
                 if (entity.isSynced) {
-                    runCatching { storage?.reference?.child(storagePath(userId, entity.takenAt))?.delete()?.await() }
-                    runCatching {
-                        firestore?.collection("users")?.document(userId)?.collection("photos")
-                            ?.document(entity.takenAt.toString())?.delete()?.await()
+                    coroutineScope {
+                        launch {
+                            runCatching {
+                                withTimeoutOrNull(REMOTE_DELETE_TIMEOUT_MS) {
+                                    storage?.reference?.child(storagePath(userId, entity.takenAt))?.delete()?.await()
+                                }
+                            }
+                        }
+                        launch {
+                            runCatching {
+                                withTimeoutOrNull(REMOTE_DELETE_TIMEOUT_MS) {
+                                    firestore?.collection("users")?.document(userId)?.collection("photos")
+                                        ?.document(entity.takenAt.toString())?.delete()?.await()
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -220,6 +241,9 @@ class PhotoEntryRepositoryImpl(
 
         //carpeta raiz de las fotos dentro de filesDir; file_paths.xml ya la expone con sus subcarpetas
         const val PHOTOS_DIR = "photos"
+
+        //cuanto se espera a la nube al borrar una foto antes de seguir
+        private const val REMOTE_DELETE_TIMEOUT_MS = 4_000L
 
         //carpeta privada de un usuario: filesDir/photos/{userId}/
         //el uid no puede traer separadores ni ser "." o "..", para no salirse de su carpeta

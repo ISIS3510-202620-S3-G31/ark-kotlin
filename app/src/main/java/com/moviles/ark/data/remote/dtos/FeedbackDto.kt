@@ -29,6 +29,9 @@ fun FeedbackEntity.toDto(userId: String): FeedbackDto {
     )
 }
 
+//id del documento en firestore: siempre el mismo para la misma fila, asi subirla dos veces no la duplica
+fun FeedbackEntity.documentId(): String = "${createdAt}_$toolId"
+
 //de dto a fila de room; ya viene de firestore, asi que esta sincronizado
 fun FeedbackDto.toEntity(): FeedbackEntity {
     return FeedbackEntity(

@@ -8,7 +8,6 @@ import com.google.firebase.firestore.Source
 import com.moviles.ark.data.local.StatsDiskCache
 import com.moviles.ark.data.local.daos.EmotionCheckInDao
 import com.moviles.ark.data.local.daos.StatsDailyVisitDao
-import com.moviles.ark.data.local.daos.ToolRecordDao
 import com.moviles.ark.data.local.entities.StatsDailyVisitEntity
 import com.moviles.ark.data.local.entities.toDomain
 import com.moviles.ark.data.remote.CrashlyticsHelper
@@ -19,9 +18,14 @@ import com.moviles.ark.data.remote.dtos.toDomain
 import com.moviles.ark.data.remote.dtos.toDto
 import com.moviles.ark.domain.models.StatsCalculator
 import com.moviles.ark.domain.models.StatsModel
+import com.moviles.ark.domain.models.StatsVisitSummary
 import com.moviles.ark.domain.repositories.StatsRepository
+import com.moviles.ark.domain.repositories.ToolInteractionRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -33,7 +37,8 @@ class StatsRepositoryImpl(
     private val firestore: FirebaseFirestore,
     //los daos de room se quedan en el repositorio: el viewmodel nunca toca la base directo
     private val emotionCheckInDao: EmotionCheckInDao,
-    private val toolRecordDao: ToolRecordDao,
+    //interacciones: las de firestore (o su cache sin internet) + las que siguen pendientes en room
+    private val toolInteractionRepository: ToolInteractionRepository,
     //cache en disco de las stats que llegaron de firestore
     private val statsDiskCache: StatsDiskCache? = null,
     private val statsCalculator: StatsCalculator = StatsCalculator(),
@@ -47,16 +52,17 @@ class StatsRepositoryImpl(
         return statsDiskCache?.read(currentUserId)
     }
 
-    //lee check-ins e interacciones de room en IO y calcula en Default; si la base esta vacia devuelve stats en cero
+    //lee check-ins de room e interacciones del repositorio en IO y calcula en Default; sin datos devuelve stats en cero
+    //sin internet incluye las interacciones hechas offline: asi la frecuencia de herramientas se actualiza sin red
     override suspend fun getLocalStats(): Result<StatsModel> = runCatching {
-        val (checkInEntities, interactionEntities) = withContext(Dispatchers.IO) {
-            emotionCheckInDao.getCheckIns().first() to toolRecordDao.getInteractions().first()
+        val (checkInEntities, interactions) = withContext(Dispatchers.IO) {
+            emotionCheckInDao.getCheckIns().first() to toolInteractionRepository.getInteractionsSince(0L).getOrThrow()
         }
         withContext(Dispatchers.Default) {
             statsCalculator.calculateStats(
                 checkIns = checkInEntities.map { it.toDomain() },
-                interactions = interactionEntities.map { it.toDomain() },
-                toolPercentages = StatsCalculator.toolUsagePercentages(interactionEntities.map { it.toolId })
+                interactions = interactions,
+                toolPercentages = StatsCalculator.toolUsagePercentages(interactions.map { it.toolId }.filter { it.isNotBlank() })
             )
         }
     }
@@ -198,28 +204,9 @@ class StatsRepositoryImpl(
             )
             dao.insertOrUpdate(entity)
 
-            // 3. Intentar subir inmediatamente a Firestore si hay conexion
-            try {
-                firestore.collection("users")
-                    .document(currentUserId)
-                    .collection("stats_daily_visits")
-                    .document(todayKey)
-                    .set(
-                        mapOf(
-                            "userId" to currentUserId,
-                            "dateKey" to todayKey,
-                            "count" to newCount,
-                            "lastUpdatedAt" to timestamp
-                        )
-                    )
-                    .await()
-
-                dao.markAsSynced(currentUserId, todayKey)
-                Log.d("StatsRepository", "Stats daily visit for date=$todayKey (count=$newCount) synced to Firestore")
-            } catch (e: Exception) {
-                Log.w("StatsRepository", "Could not sync stats daily visit immediately (offline): ${e.message}")
-                onVisitRecorded()
-            }
+            // 3. Avisar al SyncManager para que lo suba; no se espera a firestore
+            //sin internet esa espera no terminaba y la pantalla de estadisticas se quedaba cargando
+            onVisitRecorded()
 
             newCount
         }.onFailure { error ->
@@ -239,6 +226,16 @@ class StatsRepositoryImpl(
             val dao = statsDailyVisitDao ?: return@runCatching 0
             val todayKey = todayDateKey(now())
             dao.getCountForDate(currentUserId, todayKey) ?: 0
+        }
+    }
+
+    //cada visita nueva cambia la tabla y room vuelve a emitir: la tarjeta de stats cambia en vivo, con o sin red
+    override fun observeVisitSummary(): Flow<StatsVisitSummary> {
+        val dao = statsDailyVisitDao ?: return flowOf(StatsVisitSummary())
+        val currentUserId = auth.currentUser?.uid ?: "anonymous"
+        return dao.observeVisits(currentUserId).map { visits ->
+            val visitsByDay = visits.groupBy({ it.dateKey }, { it.count }).mapValues { it.value.sum() }
+            StatsVisitSummary.from(visitsByDay, now())
         }
     }
 
