@@ -30,7 +30,7 @@ import androidx.compose.ui.unit.sp
 import com.moviles.ark.ui.theme.FigtreeFontFamily
 import com.moviles.ark.ui.theme.TextColor
 
-//banner no invasivo que se muestra en la parte superior cuando se pierde la conexion a internet (#32)
+//banner no invasivo que se muestra en la parte superior cuando se pierde la conexion a internet
 @Composable
 fun OfflineBannerComponent(
     isConnected: Boolean,

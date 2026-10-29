@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -49,11 +51,12 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.domain.composite.Emotion
 import com.moviles.ark.ui.components.MoodSelectorComponent
+import com.moviles.ark.domain.models.FeedbackModel
+import com.moviles.ark.ui.components.ModernVoiceInputBox
 import com.moviles.ark.ui.theme.AppTheme
 import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.theme.FigtreeFontFamily
@@ -67,15 +70,19 @@ import com.moviles.ark.ui.viewmodels.FeedbackViewModel
 @Composable
 fun PostToolFeedbackRoute(
     toolId: String = "",
+    durationSeconds: Int = 0,
     viewModel: FeedbackViewModel = viewModel(factory = FeedbackViewModel.Factory),
     onFeedbackSubmitted: () -> Unit = {},
     onDismiss: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    LaunchedEffect(toolId) {
+    LaunchedEffect(toolId, durationSeconds) {
         if (toolId.isNotBlank()) {
             viewModel.setToolId(toolId)
+        }
+        if (durationSeconds > 0) {
+            viewModel.setDuration(durationSeconds)
         }
     }
 
@@ -90,7 +97,6 @@ fun PostToolFeedbackRoute(
         onRatingChange = viewModel::onRatingChange,
         onCommentChange = viewModel::onCommentChange,
         onEmotionToggle = viewModel::onEmotionToggle,
-        onIntensityChange = viewModel::onIntensityChange,
         onSubmitClick = { viewModel.saveFeedback(onSavedCallback = onFeedbackSubmitted) },
         onDismiss = onDismiss
     )
@@ -102,7 +108,6 @@ fun PostToolFeedbackScreen(
     onRatingChange: (Int) -> Unit,
     onCommentChange: (String) -> Unit,
     onEmotionToggle: (Emotion) -> Unit,
-    onIntensityChange: (Float) -> Unit,
     onSubmitClick: () -> Unit,
     onDismiss: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -114,7 +119,10 @@ fun PostToolFeedbackScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                //imePadding achica el area visible cuando sale el teclado, asi el scroll alcanza el comentario y los botones
                 .statusBarsPadding()
+                .navigationBarsPadding()
+                .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -129,7 +137,7 @@ fun PostToolFeedbackScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Satisfaction Rating (1-5 stars / emojis)
+            //satisfaccion de 1 a 5 estrellas
             SatisfactionRatingSection(
                 rating = uiState.rating,
                 onRatingChange = onRatingChange
@@ -149,31 +157,23 @@ fun PostToolFeedbackScreen(
                         selectedEmotions = uiState.selectedEmotions,
                         intensity = uiState.intensity,
                         onEmotionToggle = onEmotionToggle,
-                        onIntensityChange = onIntensityChange,
-                        activeEmotion = uiState.activeEmotion
+                        onIntensityChange = {},
+                        activeEmotion = uiState.activeEmotion,
+                        showIntensity = false
                     )
                 }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Optional Reflection / Comment Text Field
-            OutlinedTextField(
+            //caja de comentarios moderna con limite de caracteres y dictado por voz integrado
+            ModernVoiceInputBox(
                 value = uiState.comment,
                 onValueChange = onCommentChange,
+                maxLength = FeedbackModel.MAX_COMMENT_LENGTH,
+                placeholder = "Write any thoughts or insights from this session (optional)...",
                 enabled = !uiState.isLoading,
-                modifier = Modifier.fillMaxWidth(),
-                maxLines = 4,
-                textStyle = MaterialTheme.typography.bodyLarge.copy(color = TextColor),
-                label = { Text("Reflection / Comments (optional)", style = LocalTextStyle.current.copy(fontFamily = FigtreeFontFamily)) },
-                placeholder = { Text("Write any thoughts or insights from this session...", style = LocalTextStyle.current.copy(fontFamily = FigtreeFontFamily)) },
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = SecondaryColor,
-                    unfocusedBorderColor = TextColor.copy(alpha = 0.3f),
-                    focusedLabelColor = TextColor,
-                    unfocusedLabelColor = TextColor.copy(alpha = 0.7f),
-                    cursorColor = TextColor
-                )
+                minHeight = 84.dp
             )
 
             if (uiState.errorMessage != null) {
@@ -342,60 +342,38 @@ private fun SatisfactionRatingSection(
 
         Spacer(modifier = Modifier.height(14.dp))
 
+        //cinco estrellas: tocar una llena esa y las anteriores; la cantidad es la calificacion
         Row(
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth()
         ) {
-            val emojis = listOf("😖", "😕", "😐", "🙂", "🤩")
-            val labels = listOf("1", "2", "3", "4", "5")
-
             (1..5).forEach { star ->
                 val isSelected = star <= rating
-                val isExactSelected = star == rating
-                val emoji = emojis[star - 1]
-
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
+                Icon(
+                    imageVector = if (isSelected) Icons.Default.Star else Icons.Default.StarBorder,
+                    contentDescription = if (star == 1) "1 star" else "$star stars",
+                    tint = if (isSelected) PrimaryColor else TextColor.copy(alpha = 0.4f),
                     modifier = Modifier
+                        .size(52.dp)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
+                            role = Role.Button,
                             onClick = { onRatingChange(star) }
                         )
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(52.dp)
-                            .clip(CircleShape)
-                            .background(
-                                when {
-                                    isExactSelected -> PrimaryColor
-                                    isSelected -> PrimaryColor.copy(alpha = 0.4f)
-                                    else -> TextColor.copy(alpha = 0.08f)
-                                }
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(text = emoji, fontSize = 26.sp)
-                    }
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = if (isSelected) Icons.Default.Star else Icons.Default.StarBorder,
-                            contentDescription = null,
-                            tint = if (isSelected) PrimaryColor else TextColor.copy(alpha = 0.4f),
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Text(
-                            text = labels[star - 1],
-                            style = MaterialTheme.typography.labelLarge,
-                            color = if (isSelected) TextColor else TextColor.copy(alpha = 0.5f)
-                        )
-                    }
-                }
+                        .padding(4.dp)
+                )
             }
+        }
+
+        if (rating > 0) {
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = "$rating of 5",
+                style = MaterialTheme.typography.labelLarge,
+                color = TextColor
+            )
         }
     }
 }
@@ -414,7 +392,6 @@ fun PostToolFeedbackScreenPreview() {
             onRatingChange = {},
             onCommentChange = {},
             onEmotionToggle = {},
-            onIntensityChange = {},
             onSubmitClick = {},
             onDismiss = {}
         )

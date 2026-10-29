@@ -1,5 +1,7 @@
 package com.moviles.ark.ui.viewmodels
 
+import android.os.SystemClock
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
@@ -7,8 +9,12 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
-import com.moviles.ark.data.local.sensors.AudioPlayerHelper
+import com.moviles.ark.domain.adapters.AmbientAudioPlayer
+import com.moviles.ark.domain.adapters.HapticFeedbackAdapter
+import com.moviles.ark.domain.models.BreathingPattern
+import com.moviles.ark.domain.models.BreathingPhase
 import com.moviles.ark.domain.models.AmbientTrackModel
+import com.moviles.ark.domain.models.BreathingPreset
 import com.moviles.ark.domain.models.BreathingSession
 import com.moviles.ark.domain.models.ToolLatencyTracker
 import com.moviles.ark.domain.repositories.BreathingRepository
@@ -24,12 +30,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * ViewModel managing the breathing exercise timer, phase transitions, and Jamendo ambient audio playback (#7).
+ * ViewModel managing the breathing exercise timer, phase transitions, and Jamendo ambient audio playback.
  */
 class BreathingViewModel(
     private val breathingRepository: BreathingRepository? = null,
-    private val audioPlayerHelper: AudioPlayerHelper? = null,
-    //cierra la medicion de latencia que empezo con el toque en el home (#90)
+    private val audioPlayerHelper: AmbientAudioPlayer? = null,
+    //vibracion al pasar de hold a exhale; null en previews
+    private val hapticFeedback: HapticFeedbackAdapter? = null,
+    //cierra la medicion de latencia que empezo con el toque en el home
     private val toolLatencyTracker: ToolLatencyTracker? = null
 ) : ViewModel() {
 
@@ -38,8 +46,10 @@ class BreathingViewModel(
 
     private var timerJob: Job? = null
     private var phaseElapsedMs: Long = 0L
-    //tiempo que el temporizador ha corrido en esta sesion, sin contar las pausas (#82)
+    //tiempo que el temporizador ha corrido en esta sesion, sin contar las pausas
     private var sessionRunningMs: Long = 0L
+    private var phaseStartRealtime: Long = 0L
+    private var sessionStartRealtime: Long = 0L
 
     init {
         loadAmbientTracks()
@@ -91,15 +101,18 @@ class BreathingViewModel(
         }
     }
 
-    //reproduce una pista; si falla (por ejemplo sin internet) pasa a la pista que viene en la app (#82)
+    //reproduce una pista; si falla (por ejemplo sin internet) pasa a la pista que viene en la app )
     private fun playTrack(track: AmbientTrackModel) {
-        audioPlayerHelper?.playUrl(
-            url = track.audioUrl,
+        viewModelScope.launch {
+            val audioUrl = breathingRepository?.resolveTrackAudio(track) ?: track.audioUrl
+            audioPlayerHelper?.playUrl(
+            url = audioUrl,
             onPlaybackStateChanged = { isPlaying ->
                 _uiState.update { it.copy(isMusicPlaying = isPlaying) }
             },
             onError = { playOfflineTrackInsteadOf(track) }
-        )
+            )
+        }
     }
 
     private fun playOfflineTrackInsteadOf(failedTrack: AmbientTrackModel) {
@@ -130,9 +143,20 @@ class BreathingViewModel(
         selectTrack(tracks[prevIndex])
     }
 
-    //muestra u oculta el selector desplegable de canciones
+    //muestra u oculta la hoja inferior con las canciones
     fun toggleTrackSelector() {
         _uiState.update { it.copy(showTrackSelector = !it.showTrackSelector) }
+    }
+
+    //toque sobre una pista de la hoja: si es la que esta sonando se pausa; si no, se cambia y se reproduce
+    fun onTrackTapped(track: AmbientTrackModel) {
+        val state = _uiState.value
+        if (track.id == state.selectedTrack?.id && state.isMusicPlaying) {
+            toggleMusic()
+            return
+        }
+        selectTrack(track)
+        if (!state.isMusicPlaying) toggleMusic()
     }
 
     fun togglePlayPause() {
@@ -152,6 +176,10 @@ class BreathingViewModel(
             _uiState.value.phase
         }
 
+        val now = SystemClock.elapsedRealtime()
+        phaseStartRealtime = now - phaseElapsedMs
+        sessionStartRealtime = now - sessionRunningMs
+
         _uiState.value = _uiState.value.copy(
             isRunning = true,
             phase = currentPhase
@@ -163,6 +191,11 @@ class BreathingViewModel(
     fun pause() {
         timerJob?.cancel()
         timerJob = null
+        if (_uiState.value.isRunning) {
+            val now = SystemClock.elapsedRealtime()
+            phaseElapsedMs = (now - phaseStartRealtime).coerceAtLeast(0L)
+            sessionRunningMs = (now - sessionStartRealtime).coerceAtLeast(0L)
+        }
         _uiState.value = _uiState.value.copy(isRunning = false)
     }
 
@@ -178,30 +211,96 @@ class BreathingViewModel(
         )
     }
 
-    fun updateDurations(inhale: Int, hold: Int, exhale: Int) {
+    fun selectPreset(preset: BreathingPreset) {
         val wasRunning = _uiState.value.isRunning
         pause()
         phaseElapsedMs = 0L
-        _uiState.value = _uiState.value.copy(
-            inhaleDuration = inhale.coerceAtLeast(1),
-            holdDuration = hold.coerceAtLeast(1),
-            exhaleDuration = exhale.coerceAtLeast(1),
-            phase = BreathingPhase.READY,
-            secondsRemainingInPhase = inhale,
-            phaseProgress = 0f
-        )
+        _uiState.update { current ->
+            current.copy(
+                selectedPreset = preset,
+                isCustomSelected = false,
+                inhaleDuration = preset.inhale,
+                holdDuration = preset.hold,
+                exhaleDuration = preset.exhale,
+                holdPostExhaleDuration = preset.holdPostExhale,
+                phase = BreathingPhase.READY,
+                secondsRemainingInPhase = preset.inhale,
+                phaseProgress = 0f
+            )
+        }
         if (wasRunning) start()
     }
 
+    fun updateDurations(inhale: Int, hold: Int, exhale: Int, holdPostExhale: Int = 0) {
+        val wasRunning = _uiState.value.isRunning
+        pause()
+        phaseElapsedMs = 0L
+        //el modelo normaliza el ritmo y dice si coincide con un preset
+        val pattern = BreathingPattern(inhale, hold, exhale, holdPostExhale).normalized()
+        val matchingPreset = pattern.matchingPreset() ?: _uiState.value.selectedPreset
+
+        _uiState.update { current ->
+            current.copy(
+                selectedPreset = matchingPreset,
+                inhaleDuration = pattern.inhale,
+                holdDuration = pattern.hold,
+                exhaleDuration = pattern.exhale,
+                holdPostExhaleDuration = pattern.holdPostExhale,
+                phase = BreathingPhase.READY,
+                secondsRemainingInPhase = pattern.inhale,
+                phaseProgress = 0f
+            )
+        }
+        if (wasRunning) start()
+    }
+
+    fun updateDurations(inhale: Int, hold: Int, exhale: Int) {
+        updateDurations(inhale, hold, exhale, 0)
+    }
+
+    //opcion Custom del selector: usa el ritmo guardado y, si nunca se configuro, abre la hoja para hacerlo
+    fun selectCustom() {
+        val state = _uiState.value
+        updateDurations(state.customInhale, state.customHold, state.customExhale)
+        _uiState.update { it.copy(isCustomSelected = true, showCustomRhythmSheet = !it.isCustomConfigured) }
+    }
+
+    fun openCustomRhythmSheet() {
+        _uiState.update { it.copy(showCustomRhythmSheet = true) }
+    }
+
+    fun dismissCustomRhythmSheet() {
+        _uiState.update { it.copy(showCustomRhythmSheet = false) }
+    }
+
+    //boton Done de la hoja: guarda el ritmo (solo mientras la pantalla siga abierta) y lo aplica al circulo
+    fun saveCustomRhythm(inhale: Int, hold: Int, exhale: Int) {
+        //el modelo deja el ritmo Custom dentro de los rangos permitidos
+        val custom = BreathingPattern.custom(inhale, hold, exhale)
+        updateDurations(custom.inhale, custom.hold, custom.exhale)
+        _uiState.update {
+            it.copy(
+                isCustomSelected = true,
+                customInhale = custom.inhale,
+                customHold = custom.hold,
+                customExhale = custom.exhale,
+                isCustomConfigured = true,
+                showCustomRhythmSheet = false
+            )
+        }
+    }
+
+    //bucle del temporizador de respiracion en hilo principal midiendo tiempo real (elapsedRealtime) sin acumulacion de latencia
     private fun startTimerLoop() {
         timerJob?.cancel()
-        timerJob = viewModelScope.launch(Dispatchers.IO) {
-            val tickIntervalMs = 50L
+        timerJob = viewModelScope.launch(Dispatchers.Main.immediate) {
+            val tickIntervalMs = 16L
 
             while (_uiState.value.isRunning) {
                 delay(tickIntervalMs)
-                phaseElapsedMs += tickIntervalMs
-                sessionRunningMs += tickIntervalMs
+                val now = SystemClock.elapsedRealtime()
+                phaseElapsedMs = (now - phaseStartRealtime).coerceAtLeast(0L)
+                sessionRunningMs = (now - sessionStartRealtime).coerceAtLeast(0L)
 
                 val currentPhase = _uiState.value.phase
                 val targetDurationSeconds = getPhaseDuration(currentPhase)
@@ -212,7 +311,8 @@ class BreathingViewModel(
                 val secondsRemaining = ((remainingMs + 999L) / 1000L).toInt()
 
                 if (phaseElapsedMs >= targetDurationMs) {
-                    advanceToNextPhase()
+                    val overshoot = phaseElapsedMs - targetDurationMs
+                    advanceToNextPhase(now - overshoot)
                 } else {
                     _uiState.value = _uiState.value.copy(
                         phaseProgress = progress,
@@ -223,15 +323,15 @@ class BreathingViewModel(
         }
     }
 
-    private fun advanceToNextPhase() {
-        phaseElapsedMs = 0L
+    private fun advanceToNextPhase(phaseStartTime: Long = SystemClock.elapsedRealtime()) {
+        phaseStartRealtime = phaseStartTime
+        phaseElapsedMs = (SystemClock.elapsedRealtime() - phaseStartRealtime).coerceAtLeast(0L)
         val currentPhase = _uiState.value.phase
 
-        val (nextPhase, isCycleCompleted) = when (currentPhase) {
-            BreathingPhase.READY -> Pair(BreathingPhase.INHALE, false)
-            BreathingPhase.INHALE -> Pair(BreathingPhase.HOLD, false)
-            BreathingPhase.HOLD -> Pair(BreathingPhase.EXHALE, false)
-            BreathingPhase.EXHALE -> Pair(BreathingPhase.INHALE, true)
+        //el modelo dice que fase sigue y si se completo un ciclo
+        val (nextPhase, isCycleCompleted) = _uiState.value.pattern.next(currentPhase)
+        if (BreathingPattern.cuesExhale(currentPhase, nextPhase)) {
+            hapticFeedback?.vibrateExhaleCue()
         }
 
         val updatedCycles = if (isCycleCompleted) {
@@ -250,44 +350,43 @@ class BreathingViewModel(
         )
     }
 
-    //la pantalla termino su primer dibujo: se cierra la medicion de latencia que empezo con el toque (#90)
+    //la pantalla termino su primer dibujo: se cierra la medicion de latencia que empezo con el toque
     fun onScreenRendered() {
         toolLatencyTracker?.onToolRendered(BreathingSession.TOOL_ID)
     }
 
-    //el usuario sale de la herramienta o reinicia: si termino al menos un ciclo, se guarda la sesion en el telefono (#82)
+    //el usuario sale de la herramienta o reinicia: si termino al menos un ciclo, se guarda la sesion en el telefono
     fun finishSession(): Boolean {
+        val (completed, _) = finishSessionWithDuration()
+        return completed
+    }
+
+    fun finishSessionWithDuration(): Pair<Boolean, Int> {
         pause()
         val state = _uiState.value
+        val durationSeconds = (sessionRunningMs / 1000L).toInt()
         val session = BreathingSession(
             completedCycles = state.completedCycles,
-            durationSeconds = (sessionRunningMs / 1000L).toInt(),
+            durationSeconds = durationSeconds,
             timestamp = System.currentTimeMillis(),
-            pattern = BreathingSession.patternOf(state.inhaleDuration, state.holdDuration, state.exhaleDuration)
+            pattern = BreathingSession.patternOf(state.inhaleDuration, state.holdDuration, state.exhaleDuration, state.holdPostExhaleDuration)
         )
         //se reinicia el tiempo para que la misma sesion no se guarde dos veces
         sessionRunningMs = 0L
         //le preguntamos al modelo si la sesion cuenta antes de guardarla
         val isComplete = session.isComplete()
-        if (!isComplete) return false
-        val repository = breathingRepository ?: return true
+        if (!isComplete) return Pair(false, durationSeconds)
+        val repository = breathingRepository ?: return Pair(true, durationSeconds)
         viewModelScope.launch {
             //NonCancellable: al salir de la pantalla el viewmodel se limpia enseguida y no debe cortar el guardado
             withContext(NonCancellable) {
                 repository.saveSession(session)
             }
         }
-        return true
+        return Pair(true, durationSeconds)
     }
 
-    private fun getPhaseDuration(phase: BreathingPhase): Int {
-        return when (phase) {
-            BreathingPhase.READY -> _uiState.value.inhaleDuration
-            BreathingPhase.INHALE -> _uiState.value.inhaleDuration
-            BreathingPhase.HOLD -> _uiState.value.holdDuration
-            BreathingPhase.EXHALE -> _uiState.value.exhaleDuration
-        }
-    }
+    private fun getPhaseDuration(phase: BreathingPhase): Int = _uiState.value.pattern.durationOf(phase)
 
     override fun onCleared() {
         super.onCleared()
@@ -302,9 +401,12 @@ class BreathingViewModel(
                 BreathingViewModel(
                     breathingRepository = app.container.breathingRepository,
                     audioPlayerHelper = app.container.audioPlayerHelper,
+                    hapticFeedback = app.container.hapticFeedback,
                     toolLatencyTracker = app.container.toolLatencyTracker
                 )
             }
         }
     }
 }
+
+

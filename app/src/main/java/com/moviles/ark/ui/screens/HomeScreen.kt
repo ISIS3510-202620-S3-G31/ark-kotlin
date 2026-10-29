@@ -17,28 +17,28 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.AccessibilityNew
-import androidx.compose.material.icons.filled.Air
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.AcUnit
 import androidx.compose.material.icons.filled.Casino
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Psychology
-import androidx.compose.material.icons.filled.Whatshot
+import java.util.Locale
+import java.util.Date
+import java.text.SimpleDateFormat
+import com.moviles.ark.ui.components.getEmotionEmoji
+import com.moviles.ark.ui.components.getEmotionColor
+import com.moviles.ark.domain.composite.SingleEmotion
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Umbrella
+import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -58,8 +58,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -69,13 +67,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.moviles.ark.ArkApplication
 import com.moviles.ark.R
-import com.moviles.ark.data.repositories.FakeToolRepository
-import com.moviles.ark.domain.models.Tool
+import com.moviles.ark.ui.components.avatarDrawable
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.foundation.border
+import com.moviles.ark.domain.models.MoodCheckInModel
+import com.moviles.ark.domain.models.ToolModel
 import com.moviles.ark.domain.models.ToolCategory
+import com.moviles.ark.domain.models.ToolEntryPoint
+import com.moviles.ark.domain.models.WeatherCondition
+import com.moviles.ark.domain.models.WeatherSuggestion
 import com.moviles.ark.ui.components.RecommendationCardComponent
+import com.moviles.ark.ui.theme.AccentColor
 import com.moviles.ark.ui.theme.AppTheme
 import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.theme.FigtreeFontFamily
@@ -83,11 +88,12 @@ import com.moviles.ark.ui.theme.PrimaryColor
 import com.moviles.ark.ui.theme.SecondaryColor
 import com.moviles.ark.ui.theme.SoreanFontFamily
 import com.moviles.ark.ui.theme.TextColor
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.moviles.ark.ui.viewmodels.HomeUiState
 import com.moviles.ark.ui.viewmodels.HomeViewModel
 import com.moviles.ark.ui.viewmodels.MoodCheckInViewModel
-import kotlinx.coroutines.delay
+
+//fondo neutro de chips y cajas internas sacado de la paleta: el color de texto con muy poca opacidad
+private val NeutralSurfaceColor = TextColor.copy(alpha = 0.06f)
 
 @Composable
 fun HomeRoute(
@@ -96,7 +102,7 @@ fun HomeRoute(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    //al volver de una herramienta se recalculan las recomendaciones con la nueva interaccion (#96)
+    //al volver de una herramienta se recalculan las recomendaciones con la nueva interaccion
     LaunchedEffect(Unit) {
         viewModel.onHomeShown()
     }
@@ -114,22 +120,24 @@ fun HomeRoute(
         onSurpriseMe = viewModel::onSurpriseMe,
         onToolClick = viewModel::onToolClick,
         onCheckInSaved = viewModel::onCheckInSaved,
+        onCheckInPromptShown = viewModel::onCheckInPromptShown,
         onNavigateToTool = onNavigateToTool
     )
 }
 
 @Composable
 fun HomeScreen(
-    uiState: HomeUiState = HomeUiState(tools = FakeToolRepository.sampleTools, filteredTools = FakeToolRepository.sampleTools),
+    uiState: HomeUiState = HomeUiState(tools = ToolModel.DEFAULT_CATALOG, filteredTools = ToolModel.DEFAULT_CATALOG),
     onCategorySelect: (ToolCategory?) -> Unit = {},
     onSurpriseMe: () -> Unit = {},
-    onToolClick: (String) -> Unit = {},
+    onToolClick: (String, ToolEntryPoint) -> Unit = { _, _ -> },
     onCheckInSaved: () -> Unit = {},
+    onCheckInPromptShown: () -> Unit = {},
     onNavigateToTool: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     var showCheckInPopup by remember { mutableStateOf(false) }
-    var hasAutoPrompted by remember { mutableStateOf(false) }
+    var showReviewPopup by remember { mutableStateOf(false) }
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -142,10 +150,13 @@ fun HomeScreen(
                 Manifest.permission.ACCESS_COARSE_LOCATION
             )
         )
-        if (!uiState.isCheckInCompleted && !hasAutoPrompted) {
-            delay(1500)
-            hasAutoPrompted = true
+    }
+
+    //el viewmodel decide cuando ofrecer el check-in; la pantalla solo abre el dialogo
+    LaunchedEffect(uiState.showCheckInPrompt) {
+        if (uiState.showCheckInPrompt) {
             showCheckInPopup = true
+            onCheckInPromptShown()
         }
     }
 
@@ -167,19 +178,45 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "Ark",
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = PrimaryColor
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .border(1.5.dp, PrimaryColor, CircleShape)
+                                .background(SecondaryColor.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Image(
+                                painter = painterResource(avatarDrawable(uiState.avatarId)),
+                                contentDescription = "User Avatar",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                        Text(
+                            text = "Ark",
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = PrimaryColor
+                        )
+                    }
 
                     Surface(
                         modifier = Modifier
                             .clip(RoundedCornerShape(20.dp))
-                            .clickable { showCheckInPopup = true },
-                        color = if (!uiState.isCheckInCompleted) PrimaryColor.copy(alpha = 0.15f) else Color(0xFFEFE0C2),
-                        border = BorderStroke(1.dp, if (!uiState.isCheckInCompleted) PrimaryColor.copy(alpha = 0.4f) else Color.Transparent),
+                            .clickable {
+                                if (uiState.isCheckInCompleted) {
+                                    showReviewPopup = true
+                                } else {
+                                    showCheckInPopup = true
+                                }
+                            },
+                        color = if (!uiState.isCheckInCompleted) PrimaryColor.copy(alpha = 0.15f) else NeutralSurfaceColor,
+                        border = BorderStroke(1.dp, if (!uiState.isCheckInCompleted) PrimaryColor.copy(alpha = 0.4f) else TextColor.copy(alpha = 0.12f)),
                         shape = RoundedCornerShape(20.dp)
                     ) {
                         Row(
@@ -188,13 +225,13 @@ fun HomeScreen(
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.FavoriteBorder,
-                                contentDescription = "Daily Check-in",
-                                tint = if (!uiState.isCheckInCompleted) PrimaryColor else TextColor.copy(alpha = 0.6f),
+                                imageVector = if (!uiState.isCheckInCompleted) Icons.Default.FavoriteBorder else Icons.Default.Lock,
+                                contentDescription = if (!uiState.isCheckInCompleted) "Daily Check-in" else "Checked-in Today",
+                                tint = if (!uiState.isCheckInCompleted) PrimaryColor else TextColor.copy(alpha = 0.65f),
                                 modifier = Modifier.size(16.dp)
                             )
                             Text(
-                                text = if (!uiState.isCheckInCompleted) "Daily Check-in" else "Checked-in",
+                                text = if (!uiState.isCheckInCompleted) "Daily Check-in" else "Checked-in Today",
                                 style = MaterialTheme.typography.labelMedium,
                                 fontFamily = FigtreeFontFamily,
                                 fontWeight = FontWeight.Bold,
@@ -205,24 +242,46 @@ fun HomeScreen(
                 }
             }
 
-            //seccion de bienvenida con la mascota
+            //seccion de bienvenida con la mascota dejando espacio comodo
             item {
                 Column(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Image(
-                        painter = painterResource(R.drawable.ic_mascot_log),
-                        contentDescription = "Mascot",
-                        modifier = Modifier.size(96.dp)
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Box(contentAlignment = Alignment.BottomEnd) {
+                        Image(
+                            painter = painterResource(R.drawable.ic_mascot_log),
+                            contentDescription = "Mascot",
+                            modifier = Modifier.size(88.dp)
+                        )
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .border(2.dp, BackgroundColor, CircleShape)
+                                .background(SecondaryColor.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Image(
+                                painter = painterResource(avatarDrawable(uiState.avatarId)),
+                                contentDescription = "Active Avatar Badge",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    val firstName = uiState.userName.trim().split(" ").firstOrNull { it.isNotBlank() }
+                    val greeting = if (!firstName.isNullOrBlank()) "Welcome back, $firstName!" else "Welcome back!"
                     Text(
-                        text = "Welcome back!",
+                        text = greeting,
                         style = MaterialTheme.typography.headlineMedium,
                         fontFamily = SoreanFontFamily,
                         color = TextColor
                     )
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = "Track your wellbeing and explore tools",
                         style = MaterialTheme.typography.bodyMedium,
@@ -231,86 +290,92 @@ fun HomeScreen(
                 }
             }
 
-            //tarjeta de recomendacion inteligente (#16)
-            val recommendedTool = uiState.tools.firstOrNull()
+            //tarjeta interactiva para el check-in diario si aun no se ha completado hoy
+            if (!uiState.isCheckInCompleted) {
+                item {
+                    DailyCheckInCard(
+                        onClick = { showCheckInPopup = true }
+                    )
+                }
+            }
+
+            //encabezado de la seccion de recomendaciones
+            item {
+                Text(
+                    text = "Today's Recommendations",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontFamily = FigtreeFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    color = TextColor,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+                )
+            }
+
+            //1. recomendacion inteligente por Strategy (la elige el viewmodel)
+            val recommendedTool = uiState.recommendedTool
             if (recommendedTool != null) {
                 item {
                     RecommendationCardComponent(
                         tool = recommendedTool,
                         rationaleTag = "Suggested for today",
-                        onOpenTool = { toolId -> onToolClick(toolId) }
+                        onOpenTool = { toolId -> onToolClick(toolId, ToolEntryPoint.RECOMMENDATION) }
                     )
                 }
             }
 
-            //tarjeta leave it to chance (Surprise me - seleccion al azar)
+            //2. recomendacion al azar (Surprise me): abre directamente una herramienta al azar
             item {
                 LeaveItToChanceCard(
                     onSurpriseMe = onSurpriseMe
                 )
             }
 
-            //banner si eligio una herramienta al azar
-            if (uiState.surpriseTool != null) {
+            //3. recomendacion basada en el clima: solo aparece cuando el clima sugiere una herramienta,
+            //y Explore la abre; sin internet, sin ubicacion o con clima neutro la tarjeta no se muestra
+            uiState.weatherSuggestion?.let { suggestion ->
                 item {
-                    SurpriseResultBanner(
-                        tool = uiState.surpriseTool,
-                        onOpenTool = { onToolClick(uiState.surpriseTool.id) }
+                    WeatherRecommendationCard(
+                        suggestion = suggestion,
+                        onOpenTool = { toolId -> onToolClick(toolId, ToolEntryPoint.WEATHER) }
                     )
                 }
             }
 
-            //pestañas de filtro por categoria usando ToolCategory enum
+            //acceso directo al catalogo completo de herramientas de regulacion
             item {
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(vertical = 4.dp)
-                ) {
-                    // Chip para "All" (null)
-                    item {
-                        CategoryChip(
-                            label = "All",
-                            isSelected = uiState.selectedCategory == null,
-                            onClick = { onCategorySelect(null) }
-                        )
-                    }
-                    // Chips para cada categoria del enum ToolCategory
-                    items(ToolCategory.entries.toTypedArray()) { category ->
-                        CategoryChip(
-                            label = category.displayName,
-                            isSelected = uiState.selectedCategory == category,
-                            onClick = { onCategorySelect(category) }
-                        )
-                    }
-                }
-            }
-
-            //listado de herramientas filtradas/ordenadas
-            items(uiState.filteredTools) { tool ->
-                ToolCardItem(
-                    tool = tool,
-                    onClick = { onToolClick(tool.id) }
+                BrowseCatalogBanner(
+                    onOpenCatalog = { onNavigateToTool("tools_catalog_screen") }
                 )
             }
         }
     }
 
     if (showCheckInPopup) {
+        val checkInViewModel: MoodCheckInViewModel = viewModel(factory = MoodCheckInViewModel.Factory)
         Dialog(
-            onDismissRequest = { showCheckInPopup = false },
-            properties = DialogProperties(usePlatformDefaultWidth = false)
+            onDismissRequest = {
+                checkInViewModel.resetDraft()
+                showCheckInPopup = false
+            },
+            //decorFitsSystemWindows en false: el dialogo no se encoge solo con el teclado, asi que
+            //safeDrawingPadding le quita el espacio del teclado y de las barras y el formulario puede hacer scroll
+            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .safeDrawingPadding()
                     .padding(horizontal = 16.dp, vertical = 24.dp)
                     .shadow(16.dp, RoundedCornerShape(26.dp))
                     .clip(RoundedCornerShape(26.dp))
                     .background(MaterialTheme.colorScheme.background)
             ) {
                 MoodCheckInScreen(
-                    viewModel = viewModel(factory = MoodCheckInViewModel.Factory),
-                    onNavigateBack = { showCheckInPopup = false },
+                    viewModel = checkInViewModel,
+                    onNavigateBack = {
+                        checkInViewModel.resetDraft()
+                        showCheckInPopup = false
+                    },
                     onCheckInSaved = {
                         showCheckInPopup = false
                         onCheckInSaved()
@@ -319,41 +384,261 @@ fun HomeScreen(
             }
         }
     }
+
+    if (showReviewPopup) {
+        DailyCheckInReviewDialog(
+            checkIn = uiState.todayCheckIn,
+            onDismiss = { showReviewPopup = false }
+        )
+    }
 }
 
 @Composable
-private fun CategoryChip(
-    label: String,
-    isSelected: Boolean,
-    onClick: () -> Unit
+private fun DailyCheckInCard(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    Surface(
-        modifier = Modifier
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
             .clickable { onClick() },
-        color = if (isSelected) PrimaryColor else Color(0xFFEFE0C2),
         shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = PrimaryColor.copy(alpha = 0.15f)),
+        border = BorderStroke(1.2.dp, PrimaryColor.copy(alpha = 0.45f))
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            if (isSelected) {
-                Icon(
-                    imageVector = Icons.Default.Check,
-                    contentDescription = null,
-                    tint = TextColor,
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Box(
                     modifier = Modifier
-                        .size(16.dp)
-                        .padding(end = 4.dp),
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(PrimaryColor),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.FavoriteBorder,
+                        contentDescription = "Daily Check-in",
+                        tint = TextColor,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(14.dp))
+
+                Column {
+                    Text(
+                        text = "DAILY REFLECTION",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontFamily = FigtreeFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        color = PrimaryColor,
+                        fontSize = 11.sp,
+                        letterSpacing = 0.5.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(2.dp))
+
+                    Text(
+                        text = "How are you feeling?",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontFamily = FigtreeFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        color = TextColor,
+                        fontSize = 16.sp
+                    )
+
+                    Text(
+                        text = "Log your check-in to personalize your practices.",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontFamily = FigtreeFontFamily,
+                        color = TextColor.copy(alpha = 0.75f),
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(10.dp))
+
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(CircleShape)
+                    .background(PrimaryColor),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                    contentDescription = "Start check-in",
+                    tint = TextColor,
+                    modifier = Modifier.size(16.dp)
                 )
             }
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                color = TextColor,
+        }
+    }
+}
+
+@Composable
+private fun WeatherRecommendationCard(
+    suggestion: WeatherSuggestion,
+    onOpenTool: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    //la tarjeta abre la herramienta que sugiere el clima
+    val onCardClick = { onOpenTool(suggestion.toolModel.id) }
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .clickable { onCardClick() },
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF3E4CF)),
+        border = BorderStroke(1.2.dp, AccentColor.copy(alpha = 0.35f))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(AccentColor.copy(alpha = 0.18f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = when (suggestion.condition) {
+                            WeatherCondition.RAINY -> Icons.Default.Umbrella
+                            WeatherCondition.COLD -> Icons.Default.AcUnit
+                            else -> Icons.Default.WbSunny
+                        },
+                        contentDescription = "Weather suggestion",
+                        tint = AccentColor,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(14.dp))
+
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "WEATHER SUGGESTION",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontFamily = FigtreeFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            color = AccentColor,
+                            fontSize = 11.sp,
+                            letterSpacing = 0.5.sp
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(2.dp))
+
+                    Text(
+                        text = suggestion.toolModel.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontFamily = FigtreeFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        color = TextColor,
+                        fontSize = 16.sp
+                    )
+
+                    Text(
+                        text = suggestion.reason,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontFamily = FigtreeFontFamily,
+                        color = TextColor.copy(alpha = 0.75f),
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(10.dp))
+
+            Surface(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { onCardClick() },
+                color = AccentColor.copy(alpha = 0.18f),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text(
+                    text = "Explore",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontFamily = FigtreeFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    color = AccentColor,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BrowseCatalogBanner(
+    onOpenCatalog: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .clickable { onOpenCatalog() },
+        color = NeutralSurfaceColor,
+        shape = RoundedCornerShape(18.dp),
+        border = BorderStroke(1.dp, TextColor.copy(alpha = 0.08f))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.GridView,
+                    contentDescription = null,
+                    tint = SecondaryColor,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = "Browse Full Regulation Tools Catalog",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontFamily = FigtreeFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    color = TextColor,
+                    fontSize = 13.sp
+                )
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = "Open catalog",
+                tint = SecondaryColor,
+                modifier = Modifier.size(16.dp)
             )
         }
     }
@@ -447,7 +732,7 @@ private fun LeaveItToChanceCard(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                     contentDescription = "Surprise me",
-                    tint = Color.White,
+                    tint = TextColor,
                     modifier = Modifier.size(16.dp)
                 )
             }
@@ -455,134 +740,253 @@ private fun LeaveItToChanceCard(
     }
 }
 
+//dialogo no editable para revisar el check-in completado del dia sin permitir duplicados
 @Composable
-private fun SurpriseResultBanner(
-    tool: Tool,
-    onOpenTool: () -> Unit
+private fun DailyCheckInReviewDialog(
+    checkIn: MoodCheckInModel?,
+    onDismiss: () -> Unit
 ) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onOpenTool() },
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = SecondaryColor),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "WE PICKED FOR YOU",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontFamily = FigtreeFontFamily,
-                    fontWeight = FontWeight.Bold,
-                    color = TextColor.copy(alpha = 0.8f),
-                    fontSize = 11.sp,
-                    letterSpacing = 0.5.sp
-                )
-                Text(
-                    text = tool.name,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = TextColor,
-                )
-            }
-            Button(
-                onClick = onOpenTool,
-                colors = ButtonDefaults.buttonColors(containerColor = PrimaryColor),
-                shape = RoundedCornerShape(14.dp),
-            ) {
-                Text("Open", color = TextColor, fontWeight = FontWeight.Bold)
-            }
-        }
+    val todayFormatted = remember(checkIn?.timestamp) {
+        val date = if (checkIn != null) Date(checkIn.timestamp) else Date()
+        val formatter = SimpleDateFormat("EEEE, MMMM d", Locale.ENGLISH)
+        formatter.format(date)
     }
-}
 
-@Composable
-private fun ToolCardItem(
-    tool: Tool,
-    onClick: () -> Unit
-) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .clickable { onClick() },
-        color = Color(0xFFEFE0C2),
-        shape = RoundedCornerShape(18.dp),
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
-        Row(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .padding(20.dp),
+            contentAlignment = Alignment.Center
         ) {
-            Box(
+            Card(
                 modifier = Modifier
-                    .size(52.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(SecondaryColor),
-                contentAlignment = Alignment.Center,
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(24.dp)),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = BackgroundColor),
+                border = BorderStroke(1.dp, TextColor.copy(alpha = 0.1f))
             ) {
-                Icon(
-                    imageVector = getToolIcon(tool.id),
-                    contentDescription = tool.name,
-                    tint = TextColor,
-                    modifier = Modifier.size(26.dp),
-                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(22.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = NeutralSurfaceColor,
+                            border = BorderStroke(1.dp, TextColor.copy(alpha = 0.12f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Lock,
+                                    contentDescription = "Locked",
+                                    tint = TextColor.copy(alpha = 0.7f),
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Text(
+                                    text = "Checked-in Today",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontFamily = FigtreeFontFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextColor.copy(alpha = 0.8f)
+                                )
+                            }
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(CircleShape)
+                                .background(NeutralSurfaceColor)
+                                .clickable(onClick = onDismiss),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "âœ•",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextColor.copy(alpha = 0.75f)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Text(
+                        text = "Your Daily Check-In",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = TextColor
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Text(
+                        text = todayFormatted,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = PrimaryColor,
+                        fontWeight = FontWeight.SemiBold
+                    )
+
+                    Spacer(modifier = Modifier.height(18.dp))
+
+                    val emotions = checkIn?.mood?.getEmotions().orEmpty()
+                    if (emotions.isNotEmpty()) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        ) {
+                            emotions.forEach { emotion ->
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = getEmotionColor(emotion).copy(alpha = 0.18f),
+                                    border = BorderStroke(1.dp, getEmotionColor(emotion).copy(alpha = 0.35f))
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(
+                                            text = getEmotionEmoji(emotion),
+                                            fontSize = 16.sp
+                                        )
+                                        Text(
+                                            text = emotion.name.lowercase().replaceFirstChar { it.uppercase() },
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = TextColor
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        val intensity = checkIn?.mood?.getIntensity()?.toInt() ?: 3
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = "Intensity:",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                color = TextColor.copy(alpha = 0.65f)
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                for (i in SingleEmotion.MIN_INTENSITY..SingleEmotion.MAX_INTENSITY) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(
+                                                if (i <= intensity) PrimaryColor
+                                                else TextColor.copy(alpha = 0.15f)
+                                            )
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "$intensity/5",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold,
+                                color = TextColor
+                            )
+                        }
+                    } else {
+                        Text(
+                            text = "Daily check-in completed",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextColor.copy(alpha = 0.7f)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(NeutralSurfaceColor)
+                            .border(1.dp, TextColor.copy(alpha = 0.12f), RoundedCornerShape(16.dp))
+                            .padding(14.dp)
+                    ) {
+                        Text(
+                            text = "Note",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = TextColor.copy(alpha = 0.6f)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = if (!checkIn?.note.isNullOrBlank()) checkIn.note else "No note added for today.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (!checkIn?.note.isNullOrBlank()) TextColor else TextColor.copy(alpha = 0.45f)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(NeutralSurfaceColor)
+                            .padding(horizontal = 12.dp, vertical = 5.dp)
+                    ) {
+                        Text("ðŸ“", fontSize = 12.sp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        val locationText = if (checkIn?.latitude != null && checkIn.longitude != null) {
+                            String.format(Locale.US, "%.4f, %.4f", checkIn.latitude, checkIn.longitude)
+                        } else {
+                            "Location unavailable"
+                        }
+                        Text(
+                            text = locationText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextColor.copy(alpha = 0.75f),
+                            fontSize = 11.5.sp
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    Button(
+                        onClick = onDismiss,
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryColor),
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                    ) {
+                        Text(
+                            text = "Close",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = TextColor
+                        )
+                    }
+                }
             }
-
-            Spacer(modifier = Modifier.width(14.dp))
-
-            Column(
-                modifier = Modifier.weight(1f),
-            ) {
-                Text(
-                    text = tool.name,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    color = TextColor,
-                )
-
-                Spacer(modifier = Modifier.height(2.dp))
-
-                Text(
-                    text = tool.description,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = TextColor.copy(alpha = 0.7f),
-                    fontSize = 13.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            Icon(
-                imageVector = Icons.Default.ChevronRight,
-                contentDescription = "Open",
-                tint = TextColor.copy(alpha = 0.6f),
-                modifier = Modifier.size(22.dp),
-            )
         }
-    }
-}
-
-private fun getToolIcon(toolId: String): ImageVector {
-    return when (toolId) {
-        "blow_it_out" -> Icons.Default.Whatshot
-        "photo_of_the_day" -> Icons.Default.CameraAlt
-        "custom_breathing" -> Icons.Default.Air
-        "achievement_jar" -> Icons.Default.EmojiEvents
-        "scream_tank" -> Icons.Default.Mic
-        "body_mapping" -> Icons.Default.AccessibilityNew
-        "emotion_detective" -> Icons.Default.Psychology
-        else -> Icons.Default.AutoAwesome
     }
 }
 

@@ -2,8 +2,8 @@ package com.moviles.ark.domain.models
 
 import java.util.Date
 
-//una sesion de respiracion guiada que el usuario hizo en Custom breathing (#82)
-//se guarda en room (breathing_sessions) y tambien como ToolInteraction, que la usan estadisticas, insights y recomendaciones
+//una sesion de respiracion guiada que el usuario hizo en Custom breathing
+//se guarda en room (breathing_sessions) y tambien como ToolInteractionModel, que la usan estadisticas y recomendaciones
 data class BreathingSession(
     //ciclos completos (inhalar, sostener y exhalar)
     val completedCycles: Int,
@@ -20,13 +20,14 @@ data class BreathingSession(
     }
 
     //la misma sesion como interaccion con la herramienta; value = ciclos completos
-    fun toInteraction(userId: String): ToolInteraction {
-        return ToolInteraction(
+    fun toInteraction(userId: String): ToolInteractionModel {
+        return ToolInteractionModel(
             userId = userId,
             toolId = TOOL_ID,
             duration = durationSeconds,
             interactionType = INTERACTION_TYPE,
-            complete = true,
+            intensity = completedCycles.coerceIn(1, 5),
+            complete = isComplete(),
             value = completedCycles,
             timestamp = Date(timestamp),
             description = if (pattern.isBlank()) "" else "pattern $pattern"
@@ -34,15 +35,30 @@ data class BreathingSession(
     }
 
     companion object {
-        //id de la herramienta en el catalogo (Tool.id)
+        //id de la herramienta en el catalogo (ToolModel.id)
         const val TOOL_ID = "custom_breathing"
 
         //la herramienta se usa tocando la pantalla
-        const val INTERACTION_TYPE = "touch"
+        const val INTERACTION_TYPE = "TOUCH"
 
         const val MIN_COMPLETED_CYCLES = 1
 
         //patron legible a partir de las tres duraciones
+        fun patternOf(
+            inhaleSeconds: Int,
+            holdSeconds: Int,
+            exhaleSeconds: Int,
+            holdPostExhaleSeconds: Int = 0
+        ): String {
+            return if (holdPostExhaleSeconds > 0) {
+                "$inhaleSeconds-$holdSeconds-$exhaleSeconds-$holdPostExhaleSeconds"
+            } else if (holdSeconds == 0) {
+                "$inhaleSeconds-$exhaleSeconds"
+            } else {
+                "$inhaleSeconds-$holdSeconds-$exhaleSeconds"
+            }
+        }
+
         fun patternOf(inhaleSeconds: Int, holdSeconds: Int, exhaleSeconds: Int): String {
             return "$inhaleSeconds-$holdSeconds-$exhaleSeconds"
         }

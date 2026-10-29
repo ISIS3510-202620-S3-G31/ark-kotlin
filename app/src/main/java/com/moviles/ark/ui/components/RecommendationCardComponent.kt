@@ -33,17 +33,17 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.moviles.ark.domain.models.Tool
+import com.moviles.ark.domain.models.ToolModel
 import com.moviles.ark.ui.theme.AppTheme
 import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.theme.FigtreeFontFamily
 import com.moviles.ark.ui.theme.PrimaryColor
 import com.moviles.ark.ui.theme.TextColor
 
-//componente visual de recomendacion para el home (#16)
+//componente visual de recomendacion para el home
 @Composable
 fun RecommendationCardComponent(
-    tool: Tool,
+    tool: ToolModel,
     rationaleTag: String = "Suggested for today",
     modifier: Modifier = Modifier,
     onOpenTool: (String) -> Unit = {}
@@ -136,7 +136,7 @@ fun RecommendationCardComponent(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                     contentDescription = "Open",
-                    tint = Color.White,
+                    tint = TextColor,
                     modifier = Modifier.size(16.dp)
                 )
             }
@@ -147,7 +147,7 @@ fun RecommendationCardComponent(
 @Preview(showBackground = true)
 @Composable
 fun RecommendationCardComponentPreview() {
-    val sampleTool = Tool(
+    val sampleTool = ToolModel(
         id = "custom_breathing",
         name = "Custom breathing",
         description = "Build the rhythm that fits you.",

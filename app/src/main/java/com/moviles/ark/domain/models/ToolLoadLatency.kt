@@ -1,11 +1,16 @@
 package com.moviles.ark.domain.models
 
-//cuanto tardo una herramienta en abrirse: desde el toque del usuario hasta que su pantalla se dibujo (#8)
+//cuanto tardo una herramienta en abrirse: desde el toque del usuario hasta que su pantalla se dibujo
 //responde la pregunta de negocio #1 con el evento tool_load_latency
 data class ToolLoadLatency(
-    //id de la herramienta, el mismo de Tool (por ejemplo "photo_of_the_day")
+    //id de la herramienta, el mismo de ToolModel (por ejemplo "photo_of_the_day")
     val toolId: String,
-    val latencyMs: Long
+    val latencyMs: Long,
+    //por donde entro el usuario
+    val entryPoint: ToolEntryPoint = ToolEntryPoint.CATALOG,
+    //true si es la primera herramienta que se abre desde que arranco la app:
+    //esa carga incluye crear clases y pantallas por primera vez y suele ser la mas lenta
+    val firstOpen: Boolean = false
 ) {
     //reglas de negocio: una medicion negativa o de mas de un minuto no es una carga real
     //(por ejemplo, el usuario toco la herramienta, salio de la app y volvio mucho despues)
@@ -17,8 +22,14 @@ data class ToolLoadLatency(
         const val MAX_LATENCY_MS = 60_000L
 
         //arma la medicion a partir de dos instantes en nanosegundos (System.nanoTime)
-        fun between(toolId: String, startNanos: Long, endNanos: Long): ToolLoadLatency {
-            return ToolLoadLatency(toolId, (endNanos - startNanos) / 1_000_000)
+        fun between(
+            toolId: String,
+            startNanos: Long,
+            endNanos: Long,
+            entryPoint: ToolEntryPoint = ToolEntryPoint.CATALOG,
+            firstOpen: Boolean = false
+        ): ToolLoadLatency {
+            return ToolLoadLatency(toolId, (endNanos - startNanos) / 1_000_000, entryPoint, firstOpen)
         }
     }
 }

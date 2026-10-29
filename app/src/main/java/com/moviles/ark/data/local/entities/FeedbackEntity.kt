@@ -2,8 +2,9 @@ package com.moviles.ark.data.local.entities
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import com.moviles.ark.domain.models.FeedbackModel
 
-//tabla de calificaciones que deja el usuario al terminar una herramienta (#21)
+//tabla de calificaciones que deja el usuario al terminar una herramienta
 @Entity(tableName = "tool_feedback")
 data class FeedbackEntity(
     @PrimaryKey(autoGenerate = true)
@@ -17,6 +18,36 @@ data class FeedbackEntity(
     val comment: String = "",
     //fecha en milisegundos
     val createdAt: Long,
-    //false mientras no se haya subido a firestore (#33)
+    //false mientras no se haya subido a firestore
     val isSynced: Boolean = false,
 )
+
+//de fila de Room a modelo de dominio
+fun FeedbackEntity.toDomain(): FeedbackModel {
+    val safeRating = if (FeedbackModel.ratingError(rating) == null) rating else FeedbackModel.MIN_RATING
+    val safeToolId = toolId.ifBlank { "unknown_tool" }
+    val safeCreatedAt = if (createdAt > 0L) createdAt else System.currentTimeMillis()
+    val safeInteractionId = if (interactionId != null && interactionId > 0L) interactionId else null
+    return FeedbackModel(
+        id = id,
+        interactionId = safeInteractionId,
+        toolId = safeToolId,
+        rating = safeRating,
+        comment = comment,
+        createdAt = safeCreatedAt,
+        isSynced = isSynced
+    )
+}
+
+//de modelo de dominio a fila de Room
+fun FeedbackModel.toEntity(): FeedbackEntity {
+    return FeedbackEntity(
+        id = id,
+        interactionId = interactionId,
+        toolId = toolId,
+        rating = rating,
+        comment = comment,
+        createdAt = createdAt,
+        isSynced = isSynced
+    )
+}

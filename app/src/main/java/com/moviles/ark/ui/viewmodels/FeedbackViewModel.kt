@@ -9,39 +9,51 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
-import com.moviles.ark.data.local.daos.FeedbackDao
-import com.moviles.ark.data.local.entities.FeedbackEntity
-import com.moviles.ark.domain.composite.CompoundMood
 import com.moviles.ark.domain.composite.Emotion
-import com.moviles.ark.domain.composite.MoodComponent
 import com.moviles.ark.domain.composite.SingleEmotion
-import com.moviles.ark.domain.models.CheckInModel
-import com.moviles.ark.domain.repositories.AnalyticsRepository
+import com.moviles.ark.domain.models.MoodCheckInModel
+import com.moviles.ark.domain.models.FeedbackModel
+import com.moviles.ark.domain.models.ToolInteractionModel
+import com.moviles.ark.domain.repositories.FeedbackRepository
 import com.moviles.ark.domain.repositories.MoodRepository
+import com.moviles.ark.domain.repositories.ToolInteractionRepository
 import com.moviles.ark.domain.repositories.ToolRepository
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class FeedbackViewModel(
-    private val feedbackDao: FeedbackDao? = null,
+    private val feedbackRepository: FeedbackRepository? = null,
+    private val toolInteractionRepository: ToolInteractionRepository? = null,
     private val moodRepository: MoodRepository? = null,
-    private val analyticsRepository: AnalyticsRepository? = null,
     private val toolRepository: ToolRepository? = null,
     savedStateHandle: SavedStateHandle? = null,
-    initialToolId: String = ""
+    initialToolId: String = "",
+    initialDuration: Int = 0,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) : ViewModel() {
 
     private val privateUiState = MutableStateFlow(
         FeedbackUiState(
-            toolId = savedStateHandle?.get<String>("toolId") ?: initialToolId
+            toolId = savedStateHandle?.get<String>("toolId") ?: initialToolId,
+            duration = savedStateHandle?.get<Int>("duration")
+                ?: savedStateHandle?.get<String>("duration")?.toIntOrNull()
+                ?: initialDuration
         )
     )
     val uiState: StateFlow<FeedbackUiState> = privateUiState.asStateFlow()
 
     fun setToolId(toolId: String) {
         privateUiState.value = privateUiState.value.copy(toolId = toolId)
+    }
+
+    fun setDuration(duration: Int) {
+        privateUiState.value = privateUiState.value.copy(duration = duration)
     }
 
     fun onRatingChange(rating: Int) {
@@ -52,10 +64,12 @@ class FeedbackViewModel(
     }
 
     fun onCommentChange(comment: String) {
-        privateUiState.value = privateUiState.value.copy(
-            comment = comment,
-            errorMessage = null
-        )
+        if (comment.length <= FeedbackModel.MAX_COMMENT_LENGTH) {
+            privateUiState.value = privateUiState.value.copy(
+                comment = comment,
+                errorMessage = null
+            )
+        }
     }
 
     fun onEmotionToggle(emotion: Emotion) {
@@ -74,71 +88,68 @@ class FeedbackViewModel(
         privateUiState.value = privateUiState.value.copy(
             selectedEmotions = newEmotions,
             activeEmotion = newActive,
-            intensity = if (isAdding) 3f else privateUiState.value.intensity,
+            intensity = if (isAdding) SingleEmotion.DEFAULT_INTENSITY.toFloat() else privateUiState.value.intensity,
             errorMessage = null
         )
     }
 
-    fun onIntensityChange(newIntensity: Float) {
-        privateUiState.value = privateUiState.value.copy(
-            intensity = newIntensity,
-            errorMessage = null
-        )
-    }
-
+    // Persiste en Room SQLite y sincroniza a Firestore desacoplado via FeedbackRepository
+    // Vincula la calificacion tanto a toolId como a interactionId
     fun saveFeedback(onSavedCallback: () -> Unit = {}) {
         val state = privateUiState.value
 
-        if (state.rating < 1 || state.rating > 5) {
-            privateUiState.value = state.copy(errorMessage = "Please select a rating from 1 to 5 stars")
+        //la regla de la calificacion vive en el modelo
+        val ratingError = FeedbackModel.ratingError(state.rating)
+        if (ratingError != null) {
+            privateUiState.value = state.copy(errorMessage = ratingError)
             return
         }
 
         privateUiState.value = state.copy(isLoading = true, errorMessage = null)
 
-        viewModelScope.launch {
+        viewModelScope.launch(ioDispatcher) {
             try {
-                // Save feedback to Room local database
-                feedbackDao?.insertFeedback(
-                    FeedbackEntity(
-                        toolId = state.toolId,
-                        rating = state.rating,
-                        comment = state.comment,
-                        createdAt = System.currentTimeMillis()
-                    )
-                )
+                val nowMillis = System.currentTimeMillis()
+                val format = toolRepository?.getToolById(state.toolId)?.format ?: ToolInteractionModel.DEFAULT_INTERACTION_TYPE
+                val durationSeconds = if (state.duration > 0) state.duration else ToolInteractionModel.DEFAULT_DURATION_SECONDS
 
-                // Save post-tool emotion check-in if emotions were selected
-                if (state.selectedEmotions.isNotEmpty() && moodRepository != null) {
-                    val moodResult: MoodComponent = if (state.selectedEmotions.size == 1) {
-                        SingleEmotion(state.selectedEmotions.first(), state.intensity.toInt())
-                    } else {
-                        val compound = CompoundMood()
-                        for (emotion in state.selectedEmotions) {
-                            compound.add(SingleEmotion(emotion, state.intensity.toInt()))
-                        }
-                        compound
-                    }
-                    val checkIn = CheckInModel(
-                        mood = moodResult,
-                        note = if (state.comment.isNotBlank()) "Post-tool feedback: ${state.comment}" else "Post-tool feedback"
+                // 1. Grabar la interaccion de forma bloqueante para obtener el interactionId generado
+                val interactionId = async(ioDispatcher) {
+                    toolInteractionRepository
+                        ?.recordCompletion(state.toolId, durationSeconds, format, nowMillis)
+                        ?.getOrThrow()
+                }.await()
+
+                // 2. Persistir feedback y check-in en paralelo en hilos de IO con async/await para no degradar la experiencia de usuario
+                val saveFeedbackDeferred = async(ioDispatcher) {
+                    feedbackRepository?.saveFeedback(
+                        FeedbackModel(
+                            toolId = state.toolId,
+                            rating = state.rating,
+                            comment = state.comment.trim(),
+                            createdAt = nowMillis,
+                            interactionId = interactionId
+                        )
                     )
-                    moodRepository.saveCheckIn(checkIn)
                 }
 
-                // Log tool completion event to Firebase Analytics (#34)
-                val format = toolRepository?.getToolById(state.toolId)?.format ?: "touch"
-                analyticsRepository?.logToolEntryCompleted(
-                    toolId = state.toolId.ifBlank { "custom_breathing" },
-                    toolFormat = format
-                )
+                val saveCheckInDeferred = async(ioDispatcher) {
+                    if (state.selectedEmotions.isNotEmpty() && moodRepository != null) {
+                        moodRepository.saveCheckIn(MoodCheckInModel.afterTool(state.selectedEmotions, state.intensity.toInt(), state.comment))
+                    }
+                }
 
+                // Esperar concurrentemente ambas operaciones antes de navegar
+                saveFeedbackDeferred.await()
+                saveCheckInDeferred.await()
                 privateUiState.value = privateUiState.value.copy(
                     isLoading = false,
                     isSaved = true,
                     errorMessage = null
                 )
-                onSavedCallback()
+                withContext(Dispatchers.Main) {
+                    onSavedCallback()
+                }
             } catch (e: Exception) {
                 Log.e("FeedbackViewModel", "Error saving feedback", e)
                 privateUiState.value = privateUiState.value.copy(
@@ -154,9 +165,9 @@ class FeedbackViewModel(
             initializer {
                 val app = this[APPLICATION_KEY] as ArkApplication
                 FeedbackViewModel(
-                    feedbackDao = app.container.feedbackDao,
+                    feedbackRepository = app.container.feedbackRepository,
+                    toolInteractionRepository = app.container.toolInteractionRepository,
                     moodRepository = app.container.moodRepository,
-                    analyticsRepository = app.container.analyticsRepository,
                     toolRepository = app.container.toolRepository
                 )
             }

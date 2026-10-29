@@ -1,0 +1,63 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="96dp"
+    android:height="96dp"
+    android:viewportWidth="96"
+    android:viewportHeight="96">
+    <!-- Fondo: llena todo el lienzo; la app lo recorta en circulo, asi no quedan bordes vacios -->
+    <path
+        android:fillColor="#2BA79B"
+        android:pathData="M0,0 L96,0 L96,96 L0,96 Z" />
+
+    <!-- Ear Tufts -->
+    <path
+        android:fillColor="#1F8278"
+        android:pathData="M30,36 L32,20 L42,32 Z" />
+    <path
+        android:fillColor="#1F8278"
+        android:pathData="M66,36 L64,20 L54,32 Z" />
+
+    <!-- Owl Body -->
+    <path
+        android:fillColor="#38BDB0"
+        android:pathData="M48,25 C32,25 24,38 24,56 C24,71 34,79 48,79 C62,79 72,71 72,56 C72,38 64,25 48,25 Z" />
+
+    <!-- Belly Patch -->
+    <path
+        android:fillColor="#FFF5E6"
+        android:pathData="M48,52 C38,52 32,60 32,71 C36,77 42,79 48,79 C54,79 60,77 64,71 C64,60 58,52 48,52 Z" />
+
+    <!-- Belly Feathers / Chevrons -->
+    <path
+        android:strokeColor="#D9C2A3"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M43,62 L48,66 L53,62 M43,69 L48,73 L53,69" />
+
+    <!-- Left Eye Ring & Pupil -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M37,44 A8,8 0 1,1 36.99,44 Z" />
+    <path
+        android:fillColor="#221100"
+        android:pathData="M37,44 A4.5,4.5 0 1,1 36.99,44 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M35.5,42.5 A1.5,1.5 0 1,1 35.49,42.5 Z" />
+
+    <!-- Right Eye Ring & Pupil -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M59,44 A8,8 0 1,1 58.99,44 Z" />
+    <path
+        android:fillColor="#221100"
+        android:pathData="M59,44 A4.5,4.5 0 1,1 58.99,44 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M57.5,42.5 A1.5,1.5 0 1,1 57.49,42.5 Z" />
+
+    <!-- Golden Beak -->
+    <path
+        android:fillColor="#FFA53B"
+        android:pathData="M48,46 L44,52 L52,52 Z" />
+</vector>

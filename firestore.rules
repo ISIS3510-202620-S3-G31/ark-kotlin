@@ -1,7 +1,9 @@
 rules_version = '2';
 
-// Same rules published in the Firebase console (project ark-mobiles), shared by the Kotlin and Flutter apps.
-// Keep this file in sync with the console: `firebase deploy --only firestore:rules` publishes it as is.
+// Version 3 de reglas de Ark (Sprint 3):
+// - Soporte de birthDate (YYYY-MM-DD) para el registro de usuarios
+// - Retrocompatibilidad con age para el subequipo de Flutter
+// - Colecciones privadas actualizadas para Kotlin y Flutter
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -9,12 +11,15 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == userId;
     }
 
-    // Profile saved by register: name, age, email
+    // Profile saved by register: name, email, and birthDate (or legacy age from flutter)
     function isValidUser(data) {
-      return data.keys().hasOnly(['name', 'age', 'email'])
+      return (data.keys().hasOnly(['name', 'birthDate', 'email']) ||
+              data.keys().hasOnly(['name', 'age', 'email']) ||
+              data.keys().hasOnly(['name', 'birthDate', 'age', 'email']))
         && data.name is string && data.name.size() > 0 && data.name.size() <= 100
-        && data.age is int && data.age >= 0 && data.age <= 120
-        && data.email is string && data.email.size() <= 254;
+        && data.email is string && data.email.size() <= 254
+        && (!('birthDate' in data) || (data.birthDate is string && data.birthDate.size() >= 8 && data.birthDate.size() <= 15))
+        && (!('age' in data) || (data.age is int && data.age >= 0 && data.age <= 120));
     }
 
     match /users/{userId}/check_ins/{day} {
@@ -41,12 +46,13 @@ service cloud.firestore {
 
       // Private data of each user
       // Flutter: photos, breathing_sessions, tear_entries, tool_sessions, stats, feedback
-      // Kotlin: mood_checkins, photos, tool_interactions (#33), stats_summary and useful_insights (Stats, #15/#29)
+      // Kotlin: mood_checkins, photos, tool_interactions, stats_summary, useful_insights, tool_load_latency, screen_time, stats_daily_visits
       match /{collection}/{docId} {
         allow read, write: if isOwner(userId)
           && collection in ['photos', 'breathing_sessions', 'mood_checkins', 'tear_entries',
                             'tool_sessions', 'stats', 'feedback',
-                            'tool_interactions', 'stats_summary', 'useful_insights'];
+                            'tool_interactions', 'stats_summary', 'useful_insights',
+                            'tool_load_latency', 'screen_time', 'stats_daily_visits'];
       }
     }
   }

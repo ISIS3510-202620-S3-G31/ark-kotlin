@@ -5,10 +5,10 @@ import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.AP
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import com.google.firebase.FirebaseNetworkException
-import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
-import com.google.firebase.auth.FirebaseAuthInvalidUserException
 import com.moviles.ark.ArkApplication
+import com.moviles.ark.domain.exceptions.InvalidCredentialsException
+import com.moviles.ark.domain.exceptions.NetworkUnavailableException
+import com.moviles.ark.domain.models.LoginCredentials
 import com.moviles.ark.domain.repositories.AuthRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,46 +16,58 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 class LoginViewModel(private val authRepository: AuthRepository) : ViewModel() {
-    //  Privado: solo el ViewModel puede modificarlo
-    private val _uiState = MutableStateFlow(LoginUiState()) // se le pasa los valores por defecto que estan en ese archivo
-
-    //  Público: la pantalla solo lo escucha
+    private val _uiState = MutableStateFlow(LoginUiState())
     val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()
 
+    //las reglas de cada campo estan en el modelo LoginCredentials; aqui solo se guarda el resultado
     fun onEmailChange(newEmail: String) {
-        _uiState.value = _uiState.value.copy(email = newEmail, errorMessage = null) // hacemos la copia por lo que los valores son inmutables y aja entonces hacemos copia modificando el nuevo valor y el otro se elimina
+        val updated = _uiState.value.copy(email = newEmail, emailError = LoginCredentials.emailErrorWhileTyping(newEmail), errorMessage = null)
+        _uiState.value = updated.copy(isFormValid = LoginCredentials(updated.email, updated.password).isValid())
     }
 
     fun onPasswordChange(newPassword: String) {
-        _uiState.value = _uiState.value.copy(password = newPassword, errorMessage = null)
+        val updated = _uiState.value.copy(password = newPassword, passwordError = LoginCredentials.passwordErrorWhileTyping(newPassword), errorMessage = null)
+        _uiState.value = updated.copy(isFormValid = LoginCredentials(updated.email, updated.password).isValid())
+    }
+
+    fun dismissNoInternetDialog() {
+        _uiState.value = _uiState.value.copy(showNoInternetDialog = false)
     }
 
     fun onLoginClick(onSuccess: () -> Unit) {
         val state = _uiState.value
-        if (state.email.isBlank() || state.password.isBlank()) {
-            _uiState.value = state.copy(errorMessage = "Please fill in all fields")
+        val credentials = LoginCredentials(state.email, state.password)
+        val submitError = credentials.submitError()
+        if (submitError != null) {
+            _uiState.value = state.copy(emailError = credentials.emailSubmitError() ?: state.emailError, errorMessage = submitError)
             return
         }
 
-        _uiState.value = state.copy(isLoading = true, errorMessage = null)
+        _uiState.value = state.copy(isLoading = true, errorMessage = null, showNoInternetDialog = false)
         viewModelScope.launch {
             val result = authRepository.login(state.email, state.password)
             _uiState.value = _uiState.value.copy(isLoading = false)
 
             result.onSuccess { onSuccess() }
             result.onFailure { error ->
-                // firebase no dice si fallo el correo o la clave, por eso es un solo mensaje
-                val message = when (error) {
-                    is FirebaseAuthInvalidCredentialsException, is FirebaseAuthInvalidUserException -> "Incorrect email or password"
-                    is FirebaseNetworkException -> "No internet connection, try again"
-                    else -> "Could not log in, try again"
+                //el repositorio ya traduce los errores de firebase a excepciones del dominio
+                if (error is NetworkUnavailableException) {
+                    _uiState.value = _uiState.value.copy(
+                        showNoInternetDialog = true,
+                        isAirplaneModeError = error.isAirplaneMode,
+                        errorMessage = null
+                    )
+                } else {
+                    val message = when (error) {
+                        is InvalidCredentialsException -> "Incorrect email or password"
+                        else -> "Could not log in, try again"
+                    }
+                    _uiState.value = _uiState.value.copy(errorMessage = message)
                 }
-                _uiState.value = _uiState.value.copy(errorMessage = message)
             }
         }
     }
 
-    // factory para que el viewmodel reciba el authRepository del AppContainer
     companion object {
         val Factory = viewModelFactory {
             initializer {

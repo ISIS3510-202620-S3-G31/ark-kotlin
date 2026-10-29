@@ -2,19 +2,19 @@ package com.moviles.ark.data.local.entities
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
-import com.moviles.ark.domain.models.ToolInteraction
+import com.moviles.ark.domain.models.ToolInteractionModel
 import java.util.Date
 
 //tabla de interacciones con herramientas: una fila cada vez que el usuario usa una herramienta
-//los atributos siguen la clase ToolInteraction del diagrama de clases
-//la usan las estadisticas (#15), la recomendacion por frecuencia (#22), los insights (#28) y la bq del #34
+//los atributos siguen la clase ToolInteractionModel del diagrama de clases
+//la usan las estadisticas, la recomendacion por frecuencia y la telemetria
 @Entity(tableName = "tool_interactions")
 data class ToolInteractionEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
     //usuario que uso la herramienta (User.id; relacion userId del diagrama)
     val userId: String,
-    //herramienta usada (Tool.id; relacion idTool del diagrama), por ejemplo "custom_breathing"
+    //herramienta usada (ToolModel.id; relacion idTool del diagrama), por ejemplo "custom_breathing"
     val toolId: String,
     //cuanto duro, en segundos
     val duration: Int,
@@ -35,8 +35,8 @@ data class ToolInteractionEntity(
 )
 
 //de fila de la tabla a modelo de dominio
-fun ToolInteractionEntity.toDomain(): ToolInteraction {
-    return ToolInteraction(
+fun ToolInteractionEntity.toDomain(): ToolInteractionModel {
+    return ToolInteractionModel(
         userId = userId,
         toolId = toolId,
         duration = duration,
@@ -50,7 +50,7 @@ fun ToolInteractionEntity.toDomain(): ToolInteraction {
 }
 
 //de modelo de dominio a fila de la tabla
-fun ToolInteraction.toEntity(): ToolInteractionEntity {
+fun ToolInteractionModel.toEntity(): ToolInteractionEntity {
     return ToolInteractionEntity(
         userId = userId,
         toolId = toolId,

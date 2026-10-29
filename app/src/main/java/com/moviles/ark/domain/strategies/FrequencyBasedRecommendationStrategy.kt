@@ -1,6 +1,6 @@
 package com.moviles.ark.domain.strategies
 
-import com.moviles.ark.domain.models.Tool
+import com.moviles.ark.domain.models.ToolModel
 
 /**
  * Concrete recommendation strategy that surfaces tools the user completes most often.
@@ -11,9 +11,9 @@ class FrequencyBasedRecommendationStrategy(
 ) : RecommendationStrategy {
 
     override fun recommend(
-        tools: List<Tool>,
+        tools: List<ToolModel>,
         context: RecommendationContext
-    ): List<Tool> {
+    ): List<ToolModel> {
         val usageMap = if (context.usageCounts.isNotEmpty()) {
             context.usageCounts
         } else {

@@ -2,16 +2,28 @@ package com.moviles.ark.data.repositories
 
 import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
-import com.moviles.ark.domain.composite.CompoundMood
-import com.moviles.ark.domain.composite.Emotion
-import com.moviles.ark.domain.composite.SingleEmotion
-import com.moviles.ark.domain.models.CheckInModel
+import com.google.firebase.firestore.Source
+import com.moviles.ark.data.local.StatsDiskCache
+import com.moviles.ark.data.local.daos.EmotionCheckInDao
+import com.moviles.ark.data.local.daos.StatsDailyVisitDao
+import com.moviles.ark.data.local.daos.ToolRecordDao
+import com.moviles.ark.data.local.entities.StatsDailyVisitEntity
+import com.moviles.ark.data.local.entities.toDomain
+import com.moviles.ark.data.remote.CrashlyticsHelper
+import com.moviles.ark.data.remote.dtos.MoodCheckInDto
+import com.moviles.ark.data.remote.dtos.StatsSummaryDto
+import com.moviles.ark.data.remote.dtos.ToolInteractionDto
+import com.moviles.ark.data.remote.dtos.toDomain
+import com.moviles.ark.data.remote.dtos.toDto
 import com.moviles.ark.domain.models.StatsCalculator
 import com.moviles.ark.domain.models.StatsModel
-import com.moviles.ark.domain.models.ToolInteraction
 import com.moviles.ark.domain.repositories.StatsRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -19,18 +31,73 @@ import java.util.Locale
 class StatsRepositoryImpl(
     private val auth: FirebaseAuth,
     private val firestore: FirebaseFirestore,
-    private val statsCalculator: StatsCalculator = StatsCalculator()
+    //los daos de room se quedan en el repositorio: el viewmodel nunca toca la base directo
+    private val emotionCheckInDao: EmotionCheckInDao,
+    private val toolRecordDao: ToolRecordDao,
+    //cache en disco de las stats que llegaron de firestore
+    private val statsDiskCache: StatsDiskCache? = null,
+    private val statsCalculator: StatsCalculator = StatsCalculator(),
+    private val statsDailyVisitDao: StatsDailyVisitDao? = null,
+    private val onVisitRecorded: () -> Unit = {},
+    private val now: () -> Long = { System.currentTimeMillis() }
 ) : StatsRepository {
-    @Suppress("UNCHECKED_CAST")
-    override suspend fun getUserStats(): Result<StatsModel> = runCatching {
+
+    override suspend fun getCachedStats(): StatsModel? {
+        val currentUserId = auth.currentUser?.uid ?: "anonymous"
+        return statsDiskCache?.read(currentUserId)
+    }
+
+    //lee check-ins e interacciones de room en IO y calcula en Default; si la base esta vacia devuelve stats en cero
+    override suspend fun getLocalStats(): Result<StatsModel> = runCatching {
+        val (checkInEntities, interactionEntities) = withContext(Dispatchers.IO) {
+            emotionCheckInDao.getCheckIns().first() to toolRecordDao.getInteractions().first()
+        }
+        withContext(Dispatchers.Default) {
+            statsCalculator.calculateStats(
+                checkIns = checkInEntities.map { it.toDomain() },
+                interactions = interactionEntities.map { it.toDomain() },
+                toolPercentages = StatsCalculator.toolUsagePercentages(interactionEntities.map { it.toolId })
+            )
+        }
+    }
+
+    //pide a firestore en IO (Source.SERVER: sin red falla en vez de devolver datos viejos) y actualiza el cache
+    override suspend fun getUserStats(): Result<StatsModel> = withContext(Dispatchers.IO) { fetchAndCacheStats() }
+
+    private suspend fun fetchAndCacheStats(): Result<StatsModel> = runCatching {
         val currentUserId = auth.currentUser?.uid ?: "anonymous"
         val todayKey = SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date())
 
-        //consulta los checkins emocionales de firestore
+        //consulta primero el resumen precomputado directamente del backend en firestore
+        val summary = try {
+            firestore.collection("users")
+                .document(currentUserId)
+                .collection("stats_summary")
+                .document("latest")
+                .get(Source.SERVER)
+                .await()
+                .takeIf { it.exists() }
+                ?.toDtoOrNull<StatsSummaryDto>()
+        } catch (e: Exception) {
+            Log.w("StatsRepository", "Could not fetch precomputed stats summary directly from server", e)
+            null
+        }
+
+        //un resumen incompleto se recalcula abajo y se vuelve a guardar ya completo
+        if (summary != null && summary.isComplete()) {
+            val precomputedStats = summary.toDomain()
+
+            //guarda de inmediato en el disco del telefono para cache-then-network
+            statsDiskCache?.write(currentUserId, precomputedStats)
+            Log.d("StatsRepository", "Loaded precomputed stats directly from backend: totalCheckIns=${summary.totalCheckIns}")
+            return@runCatching precomputedStats
+        }
+
+        //consulta los checkins emocionales de firestore en caso de fallback o calculo inicial
         val checkInsSnapshot = firestore.collection("users")
             .document(currentUserId)
             .collection("mood_checkins")
-            .get()
+            .get(Source.SERVER)
             .await()
         val checkInDocs = checkInsSnapshot.documents
         val totalCheckIns = checkInDocs.size
@@ -39,90 +106,49 @@ class StatsRepositoryImpl(
         val toolsSnapshot = firestore.collection("users")
             .document(currentUserId)
             .collection("tool_interactions")
-            .get()
+            .get(Source.SERVER)
             .await()
         val toolDocs = toolsSnapshot.documents
         val totalToolEntries = toolDocs.size
 
-        //transforma los documentos crudos de firestore a modelos de dominio
-        val checkInModels = mutableListOf<CheckInModel>()
-        for (doc in checkInDocs) {
-            val timestamp = doc.getLong("timestamp") ?: continue
-            val emotionsRaw = doc.get("emotions") as? List<Map<String, Any>> ?: emptyList()
-            val note = doc.getString("note") ?: ""
-            val lat = doc.getDouble("latitude")
-            val lon = doc.getDouble("longitude")
-
-            val parsedEmotions = mutableListOf<SingleEmotion>()
-            for (em in emotionsRaw) {
-                val rawName = em["name"] as? String ?: continue
-                val emotionEnum = parseEmotionSafe(rawName)
-                val intensity = (em["intensity"] as? Number)?.toInt() ?: 3
-                parsedEmotions.add(SingleEmotion(emotion = emotionEnum, intensity = intensity))
-            }
-
-            val moodComponent = when {
-                parsedEmotions.size > 1 -> {
-                    val compound = CompoundMood()
-                    parsedEmotions.forEach { compound.add(it) }
-                    compound
-                }
-                parsedEmotions.size == 1 -> parsedEmotions[0]
-                else -> SingleEmotion(Emotion.HAPPINESS, 3)
-            }
-
-            checkInModels.add(
-                CheckInModel(
-                    mood = moodComponent,
-                    note = note,
-                    latitude = lat,
-                    longitude = lon,
-                    timestamp = timestamp
-                )
+        //si el usuario es nuevo y no tiene registros, devuelve modelo vacio para mostrar empty state ilustrado
+        if (totalCheckIns == 0 && totalToolEntries == 0) {
+            val emptyStats = StatsModel(
+                totalCheckIns = 0,
+                topEmotion = null,
+                weeklyIntensities = emptyMap(),
+                weeklyEmotions = emptyMap(),
+                toolUsagePercentages = emptyMap(),
+                lastUpdated = System.currentTimeMillis()
             )
+            statsDiskCache?.write(currentUserId, emptyStats)
+            return@runCatching emptyStats
         }
 
-        val toolInteractions = mutableListOf<ToolInteraction>()
-        for (doc in toolDocs) {
-            val toolId = doc.getString("toolId") ?: "breathing_pacer"
-            val timestampDate = doc.getDate("timestamp")
-                ?: doc.getLong("timestamp")?.let { Date(it) }
-                ?: Date()
-            val duration = (doc.getLong("duration") ?: 60L).toInt()
-            val interactionType = doc.getString("interactionType") ?: "touch"
-            val intensity = (doc.getLong("intensity") ?: 0L).toInt()
-            val complete = doc.getBoolean("complete") ?: true
-            val value = (doc.getLong("value") ?: 0L).toInt()
-            val description = doc.getString("description") ?: ""
+        //cada documento se lee con su dto, el mismo que usa el sync para subirlo
+        val checkInModels = checkInDocs
+            .mapNotNull { it.toDtoOrNull<MoodCheckInDto>() }
+            .filter { it.timestamp > 0L }
+            .map { it.toDomain() }
+        val interactionDtos = toolDocs.mapNotNull { it.toDtoOrNull<ToolInteractionDto>() }
+        val toolInteractions = interactionDtos.map { it.toDomain() }
+        val toolPercentages = StatsCalculator.toolUsagePercentages(interactionDtos.map { it.toolId }.filter { it.isNotBlank() })
 
-            toolInteractions.add(
-                ToolInteraction(
-                    userId = currentUserId,
-                    toolId = toolId,
-                    duration = duration,
-                    interactionType = interactionType,
-                    intensity = intensity,
-                    complete = complete,
-                    value = value,
-                    timestamp = timestampDate,
-                    description = description
-                )
-            )
-        }
-
-        val toolPercentages = computeToolPercentages(toolDocs)
-
-        //la logica de calculo de estadisticas e insights vive en StatsCalculator (dominio)
-        val computedStats = statsCalculator.calculateStats(
+        //la logica de calculo de estadisticas vive en StatsCalculator (dominio)
+        val calculated = statsCalculator.calculateStats(
             checkIns = checkInModels,
             interactions = toolInteractions,
             toolPercentages = toolPercentages
         )
+        val computedStats = calculated.copy(lastUpdated = System.currentTimeMillis())
 
-        //guarda el resumen de estadisticas e insights historicos en firestore
+        //guarda el resumen en el disco del telefono para pintarlo al instante la proxima vez
+        statsDiskCache?.write(currentUserId, computedStats)
+
+        //guarda el resumen precomputado en firestore para futuras lecturas directas del backend
         saveUserStatsInternal(currentUserId, computedStats, totalToolEntries, todayKey)
 
-        Log.d("StatsRepository", "Calculated and persisted stats with ${computedStats.allInsights.size} insights: total=$totalCheckIns")
+        Log.d("StatsRepository", "Calculated and persisted stats total=$totalCheckIns")
         return@runCatching computedStats
     }
 
@@ -138,97 +164,92 @@ class StatsRepositoryImpl(
     }
 
     private suspend fun saveUserStatsInternal(userId: String, stats: StatsModel, totalTools: Int, dayKey: String) {
-        val currentInsightMap = stats.currentInsight?.let {
-            hashMapOf(
-                "title" to it.title,
-                "message" to it.message,
-                "advice" to it.advice,
-                "actionLabel" to it.actionLabel
-            )
-        }
-
-        val data = hashMapOf(
-            "totalCheckIns" to stats.totalCheckIns,
-            "totalToolEntries" to totalTools,
-            "topEmotion" to stats.topEmotion?.name,
-            "weeklyIntensities" to stats.weeklyIntensities,
-            "weeklyEmotions" to stats.weeklyEmotions.mapValues { it.value.name },
-            "toolUsagePercentages" to stats.toolUsagePercentages,
-            "currentInsight" to currentInsightMap,
-            "lastDayKey" to dayKey,
-            "lastUpdated" to System.currentTimeMillis()
-        )
         try {
             firestore.collection("users")
                 .document(userId)
                 .collection("stats_summary")
                 .document("latest")
-                .set(data)
+                .set(stats.toDto(totalTools, dayKey))
                 .await()
+        } catch (e: Exception) {
+            Log.e("StatsRepository", "Error saving stats summary to firestore", e)
+        }
+    }
 
-            //persiste los hallazgos calculados en la subcoleccion de insights historicos
-            for (insight in stats.allInsights) {
-                val insightDoc = hashMapOf(
-                    "title" to insight.title,
-                    "message" to insight.message,
-                    "advice" to insight.advice,
-                    "actionLabel" to insight.actionLabel,
-                    "savedAt" to System.currentTimeMillis()
-                )
+    //registra la entrada del usuario a la pantalla de estadisticas e incrementa el contador del dia
+    override suspend fun recordStatsVisit(): Result<Int> = withContext(Dispatchers.IO) {
+        runCatching {
+            val currentUserId = auth.currentUser?.uid ?: "anonymous"
+            val timestamp = now()
+            val todayKey = todayDateKey(timestamp)
+            val dao = statsDailyVisitDao ?: return@runCatching 0
+
+            // 1. Obtener registro previo del dia o iniciar en 0
+            val existing = dao.getVisitForDate(currentUserId, todayKey)
+            val newCount = (existing?.count ?: 0) + 1
+
+            // 2. Guardar primero en Room SQLite (offline-first) con isSynced = false
+            val entity = StatsDailyVisitEntity(
+                userId = currentUserId,
+                dateKey = todayKey,
+                count = newCount,
+                lastUpdatedAt = timestamp,
+                isSynced = false
+            )
+            dao.insertOrUpdate(entity)
+
+            // 3. Intentar subir inmediatamente a Firestore si hay conexion
+            try {
                 firestore.collection("users")
-                    .document(userId)
-                    .collection("useful_insights")
-                    .document(insight.title.lowercase().replace(" ", "_"))
-                    .set(insightDoc)
+                    .document(currentUserId)
+                    .collection("stats_daily_visits")
+                    .document(todayKey)
+                    .set(
+                        mapOf(
+                            "userId" to currentUserId,
+                            "dateKey" to todayKey,
+                            "count" to newCount,
+                            "lastUpdatedAt" to timestamp
+                        )
+                    )
                     .await()
+
+                dao.markAsSynced(currentUserId, todayKey)
+                Log.d("StatsRepository", "Stats daily visit for date=$todayKey (count=$newCount) synced to Firestore")
+            } catch (e: Exception) {
+                Log.w("StatsRepository", "Could not sync stats daily visit immediately (offline): ${e.message}")
+                onVisitRecorded()
             }
-        } catch (e: Exception) {
-            Log.e("StatsRepository", "Error saving stats summary and insights to firestore", e)
+
+            newCount
+        }.onFailure { error ->
+            Log.e("StatsRepository", "Error recording daily stats visit", error)
+            CrashlyticsHelper.logNonFatal(
+                componentName = "StatsRepository",
+                action = "recordStatsVisit",
+                throwable = error
+            )
         }
     }
 
-    //convierte el string de emocion en el enum oficial del patron composite
-    private fun parseEmotionSafe(name: String): Emotion {
-        return try {
-            Emotion.valueOf(name.uppercase())
-        } catch (e: Exception) {
-            Emotion.HAPPINESS
+    //obtiene cuantas veces ha entrado el usuario en el dia de hoy
+    override suspend fun getTodayStatsVisitsCount(): Result<Int> = withContext(Dispatchers.IO) {
+        runCatching {
+            val currentUserId = auth.currentUser?.uid ?: "anonymous"
+            val dao = statsDailyVisitDao ?: return@runCatching 0
+            val todayKey = todayDateKey(now())
+            dao.getCountForDate(currentUserId, todayKey) ?: 0
         }
     }
 
-    //calcula la distribucion porcentual de herramientas a partir de los documentos
-    private fun computeToolPercentages(toolDocs: List<com.google.firebase.firestore.DocumentSnapshot>): Map<String, Float> {
-        val toolCountsMap = mutableMapOf<String, Int>()
-
-        for (doc in toolDocs) {
-            val rawName = doc.getString("toolName") ?: doc.getString("toolId")
-            if (!rawName.isNullOrBlank()) {
-                val toolName = formatToolName(rawName)
-                toolCountsMap[toolName] = toolCountsMap.getOrDefault(toolName, 0) + 1
-            }
-        }
-
-        if (toolCountsMap.isEmpty()) {
-            return emptyMap()
-        }
-
-        val total = toolCountsMap.values.sum()
-        val result = mutableMapOf<String, Float>()
-        for ((name, count) in toolCountsMap) {
-            result[name] = (count.toFloat() / total.toFloat()) * 100f
-        }
-        return result
+    private fun todayDateKey(timestamp: Long): String {
+        return SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date(timestamp))
     }
 
-    private fun formatToolName(raw: String): String {
-        return when (raw.lowercase().replace("-", "_").trim()) {
-            "breathing_pacer", "breathing", "respiracion" -> "Breathing Pacer"
-            "photo_of_the_day", "photo", "foto" -> "Photo of the Day"
-            "achievement_jar", "jar", "frasco" -> "Achievement Jar"
-            "blow_it_out", "blow", "sopla" -> "Blow It Out"
-            else -> raw.split("_", "-").joinToString(" ") { word ->
-                word.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
-            }
-        }
-    }
+    //arma el dto con los campos del documento
+    //un documento con otra forma (por ejemplo uno de prueba escrito a mano) se salta en vez de tumbar toda la pantalla
+    private inline fun <reified T : Any> DocumentSnapshot.toDtoOrNull(): T? =
+        runCatching { toObject(T::class.java) }
+            .onFailure { Log.w("StatsRepository", "Skipping document $id with an unexpected shape", it) }
+            .getOrNull()
 }
