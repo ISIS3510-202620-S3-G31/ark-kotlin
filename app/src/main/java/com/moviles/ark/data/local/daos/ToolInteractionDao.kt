@@ -101,22 +101,9 @@ interface ToolRecordDao {
     }
 
     //las ya subidas a firestore se borran del telefono: alla queda la copia
+    //si falla, el sync lo registra en crashlytics y las filas se vuelven a subir con el mismo id (sin duplicar)
     @Query("DELETE FROM tool_interactions WHERE id IN (:ids)")
-    suspend fun deleteByIdsRaw(ids: List<Long>)
-
-    suspend fun deleteByIds(ids: List<Long>) {
-        try {
-            deleteByIdsRaw(ids)
-        } catch (e: Exception) {
-            CrashlyticsHelper.logNonFatal(
-                componentName = "ToolRecordDao",
-                action = "deleteByIds",
-                throwable = e,
-                extraKeys = mapOf("ids_count" to ids.size)
-            )
-            throw e
-        }
-    }
+    suspend fun deleteByIds(ids: List<Long>)
 
     //filas que versiones anteriores marcaban como subidas en vez de borrarlas
     @Query("DELETE FROM tool_interactions WHERE isSynced = 1")
