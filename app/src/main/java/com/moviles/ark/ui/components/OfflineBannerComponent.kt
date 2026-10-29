@@ -62,7 +62,7 @@ fun OfflineBannerComponent(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "You are offline • Changes will save locally",
+                    text = "You are offline",
                     style = MaterialTheme.typography.labelMedium,
                     fontFamily = FigtreeFontFamily,
                     fontWeight = FontWeight.Bold,
