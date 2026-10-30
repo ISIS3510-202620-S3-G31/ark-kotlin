@@ -6,8 +6,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.text.BasicText
-import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -71,7 +69,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.domain.models.AmbientTrackModel
@@ -153,11 +150,7 @@ fun CustomBreathingScreen(
                 .navigationBarsPadding(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            BreathingTopBar(
-                uiState = uiState,
-                onBack = onBack,
-                onToggleTrackSelector = onToggleTrackSelector
-            )
+            BreathingTopBar(onBack = onBack)
 
             //el circulo queda centrado en todo el espacio libre del medio
             Box(
@@ -169,7 +162,18 @@ fun CustomBreathingScreen(
                 BreathingCircle(uiState = uiState)
             }
 
-            //debajo del circulo y centrado en la pantalla: el patron (antes de empezar) o los ciclos (mientras corre)
+            //debajo del circulo, centrado y al alcance del pulgar: la musica y luego el patron o los ciclos
+            //borde = musica en pausa; relleno con ondas = sonando. Tocarlo abre la hoja con las pistas
+            RoundIconButton(
+                icon = if (uiState.isMusicPlaying) Icons.Filled.GraphicEq else Icons.Filled.MusicNote,
+                contentDescription = if (uiState.isMusicPlaying) "Ambient music playing, choose track" else "Ambient music",
+                filled = uiState.isMusicPlaying,
+                onClick = onToggleTrackSelector
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            //el patron (antes de empezar) o los ciclos (mientras corre)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -225,13 +229,9 @@ fun CustomBreathingScreen(
     }
 }
 
-//boton atras redondo secondary, titulo en H1 y la musica arriba a la derecha
+//boton atras redondo secondary y titulo en H1
 @Composable
-private fun BreathingTopBar(
-    uiState: BreathingUiState,
-    onBack: () -> Unit,
-    onToggleTrackSelector: () -> Unit
-) {
+private fun BreathingTopBar(onBack: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -254,25 +254,13 @@ private fun BreathingTopBar(
                 modifier = Modifier.size(24.dp)
             )
         }
-        Spacer(modifier = Modifier.width(12.dp))
-        //en pantallas angostas el titulo se achica lo justo para caber junto a la musica en vez de cortarse
-        BasicText(
+        Spacer(modifier = Modifier.width(16.dp))
+        Text(
             text = "Custom Breathing",
-            style = MaterialTheme.typography.headlineLarge.copy(color = TextColor),
+            style = MaterialTheme.typography.headlineLarge,
+            color = TextColor,
             maxLines = 1,
-            autoSize = TextAutoSize.StepBased(
-                minFontSize = MIN_TITLE_FONT_SIZE,
-                maxFontSize = MaterialTheme.typography.headlineLarge.fontSize
-            ),
-            modifier = Modifier.weight(1f)
-        )
-        Spacer(modifier = Modifier.width(12.dp))
-        //borde = musica en pausa; relleno con ondas = sonando. Tocarlo abre la hoja con las pistas
-        RoundIconButton(
-            icon = if (uiState.isMusicPlaying) Icons.Filled.GraphicEq else Icons.Filled.MusicNote,
-            contentDescription = if (uiState.isMusicPlaying) "Ambient music playing, choose track" else "Ambient music",
-            filled = uiState.isMusicPlaying,
-            onClick = onToggleTrackSelector
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
@@ -707,7 +695,6 @@ private val SELECTOR_PRESETS = listOf(
 )
 
 private val CIRCLE_SIZE = 260.dp
-private val MIN_TITLE_FONT_SIZE = 20.sp
 //en reposo el circulo ocupa la mitad del anillo
 private const val MIN_CIRCLE_SCALE = 0.5f
 
