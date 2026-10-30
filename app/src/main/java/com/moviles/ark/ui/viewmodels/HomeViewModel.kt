@@ -145,10 +145,19 @@ class HomeViewModel(
     }
 
     private fun observeAvatar() {
-        val repository = avatarRepository ?: return
-        viewModelScope.launch {
-            repository.currentAvatarId.collect { id ->
-                _uiState.value = _uiState.value.copy(avatarId = id)
+        avatarRepository?.let { repository ->
+            viewModelScope.launch {
+                repository.currentAvatarId.collect { id ->
+                    _uiState.value = _uiState.value.copy(avatarId = id)
+                }
+            }
+        }
+        //la foto subida vive en room por cuenta; con ella el home muestra lo mismo que la pantalla de perfil
+        userRepository?.let { repository ->
+            viewModelScope.launch {
+                repository.observeProfile().collect { profile ->
+                    _uiState.update { it.copy(avatarPhotoPath = profile?.avatarPath) }
+                }
             }
         }
     }

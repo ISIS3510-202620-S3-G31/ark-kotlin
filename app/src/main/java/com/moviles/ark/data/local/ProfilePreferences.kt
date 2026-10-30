@@ -49,6 +49,33 @@ object ProfilePreferences {
 
     private var prefs: SharedPreferences? = null
 
+    //cuenta con sesion abierta; el avatar se guarda tambien por cuenta ("avatar_id_<uid>") para que
+    //cerrar sesion no lo borre: al volver a entrar esa cuenta recupera el avatar que eligio (con o sin red)
+    private var boundUid: String? = null
+
+    private fun avatarKey(uid: String) = "${KEY_AVATAR_ID}_$uid"
+
+    //lo llama el listener de sesion de ArkApplication cada vez que entra o sale una cuenta
+    fun bindUser(uid: String?) {
+        boundUid = uid
+        val store = prefs ?: return
+        if (uid == null) return
+        val saved = store.getString(avatarKey(uid), null)
+            //perfiles de antes de guardar por cuenta: el avatar global era el de esta misma cuenta
+            ?: store.getString(KEY_AVATAR_ID, null)
+            ?: DEFAULT_AVATAR_ID
+        store.edit().putString(avatarKey(uid), saved).putString(KEY_AVATAR_ID, saved).apply()
+        _currentAvatarId.value = saved
+        _userProfile.value = _userProfile.value.copy(avatarId = saved)
+    }
+
+    //guarda el avatar global y el de la cuenta abierta
+    private fun SharedPreferences.Editor.putAvatar(avatarId: String): SharedPreferences.Editor {
+        putString(KEY_AVATAR_ID, avatarId)
+        boundUid?.let { putString(avatarKey(it), avatarId) }
+        return this
+    }
+
     //inicializa las preferencias en el arranque de la aplicacion
     fun init(context: Context) {
         if (prefs == null) {
@@ -89,7 +116,7 @@ object ProfilePreferences {
             putString(KEY_USER_NAME, name)
             putString(KEY_USER_EMAIL, email)
             putInt(KEY_USER_AGE, age)
-            putString(KEY_AVATAR_ID, targetAvatar)
+            putAvatar(targetAvatar)
             apply()
         }
         _currentAvatarId.value = targetAvatar
@@ -103,14 +130,14 @@ object ProfilePreferences {
 
     //guarda solo el avatar seleccionado en segundo plano con dispatchers.io
     suspend fun saveAvatarId(avatarId: String) = withContext(Dispatchers.IO) {
-        prefs?.edit()?.putString(KEY_AVATAR_ID, avatarId)?.apply()
+        prefs?.edit()?.putAvatar(avatarId)?.apply()
         _currentAvatarId.value = avatarId
         _userProfile.value = _userProfile.value.copy(avatarId = avatarId)
     }
 
     //modificacion sincronica de respaldo para llamadas directas
     fun setAvatarId(avatarId: String) {
-        prefs?.edit()?.putString(KEY_AVATAR_ID, avatarId)?.apply()
+        prefs?.edit()?.putAvatar(avatarId)?.apply()
         _currentAvatarId.value = avatarId
         _userProfile.value = _userProfile.value.copy(avatarId = avatarId)
     }
@@ -120,9 +147,15 @@ object ProfilePreferences {
         setAvatarId(avatarId)
     }
 
-    //limpia los datos escalares en caso de cerrar sesion
+    //limpia los datos escalares en caso de cerrar sesion; el avatar de cada cuenta ("avatar_id_<uid>") se queda
+    //(antes se borraba todo y al volver a entrar el avatar elegido regresaba al de defecto)
     suspend fun clear() = withContext(Dispatchers.IO) {
-        prefs?.edit()?.clear()?.apply()
+        prefs?.edit()
+            ?.remove(KEY_USER_NAME)
+            ?.remove(KEY_USER_EMAIL)
+            ?.remove(KEY_USER_AGE)
+            ?.remove(KEY_AVATAR_ID)
+            ?.apply()
         _currentAvatarId.value = DEFAULT_AVATAR_ID
         _userProfile.value = ScalarUserProfile()
     }

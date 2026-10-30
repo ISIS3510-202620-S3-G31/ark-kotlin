@@ -83,6 +83,7 @@ import com.moviles.ark.domain.models.UserProfile
 import com.moviles.ark.domain.models.WeatherCondition
 import com.moviles.ark.domain.models.WeatherSuggestion
 import com.moviles.ark.ui.components.CheckInSummaryComponent
+import com.moviles.ark.ui.components.UserAvatarImage
 import com.moviles.ark.ui.components.RecommendationCardComponent
 import com.moviles.ark.ui.theme.AccentColor
 import com.moviles.ark.ui.theme.ScreenTopPadding
@@ -195,10 +196,11 @@ fun HomeScreen(
                                 .background(SecondaryColor.copy(alpha = 0.15f)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Image(
-                                painter = painterResource(avatarDrawable(uiState.avatarId)),
-                                contentDescription = "User Avatar",
-                                contentScale = ContentScale.Crop,
+                            UserAvatarImage(
+                                photoPath = uiState.avatarPhotoPath,
+                                avatarId = uiState.avatarId,
+                                photoDescription = "User Avatar",
+                                avatarDescription = "User Avatar",
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
