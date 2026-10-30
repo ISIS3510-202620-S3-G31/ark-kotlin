@@ -88,6 +88,14 @@ class FeedbackViewModel(
         )
     }
 
+    //la intensidad se guarda en el check-in de despues de la herramienta, junto con las emociones
+    fun onIntensityChange(newIntensity: Float) {
+        privateUiState.value = privateUiState.value.copy(
+            intensity = newIntensity,
+            errorMessage = null
+        )
+    }
+
     // Persiste en Room SQLite; el SyncManager lo sube a Firestore cuando hay internet
     fun saveFeedback(onSavedCallback: () -> Unit = {}) {
         val state = privateUiState.value

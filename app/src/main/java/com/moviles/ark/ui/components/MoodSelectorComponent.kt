@@ -70,7 +70,6 @@ fun getEmotionColor(emotion: Emotion): Color {
 }
 
 //componente visual de seleccion emocional con halos diferenciados y slider
-//showIntensity = false deja solo los emojis (el feedback despues de una herramienta no pide intensidad)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MoodSelectorComponent(
@@ -79,7 +78,6 @@ fun MoodSelectorComponent(
     onEmotionToggle: (Emotion) -> Unit,
     onIntensityChange: (Float) -> Unit,
     activeEmotion: Emotion? = null,
-    showIntensity: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val orderedEmotions = listOf(
@@ -101,7 +99,7 @@ fun MoodSelectorComponent(
             color = MaterialTheme.colorScheme.onBackground
         )
         Text(
-            text = if (showIntensity) "Select emotions and adjust intensity" else "Select the emotions you feel",
+            text = "Select emotions and adjust intensity",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
         )
@@ -186,7 +184,7 @@ fun MoodSelectorComponent(
         }
 
         AnimatedVisibility(
-            visible = showIntensity && selectedEmotions.isNotEmpty(),
+            visible = selectedEmotions.isNotEmpty(),
             enter = fadeIn() + expandVertically(),
             exit = fadeOut() + shrinkVertically()
         ) {

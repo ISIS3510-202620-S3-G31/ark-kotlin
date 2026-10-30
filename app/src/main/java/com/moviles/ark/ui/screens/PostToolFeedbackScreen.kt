@@ -97,6 +97,7 @@ fun PostToolFeedbackRoute(
         onRatingChange = viewModel::onRatingChange,
         onCommentChange = viewModel::onCommentChange,
         onEmotionToggle = viewModel::onEmotionToggle,
+        onIntensityChange = viewModel::onIntensityChange,
         onSubmitClick = { viewModel.saveFeedback(onSavedCallback = onFeedbackSubmitted) },
         onDismiss = onDismiss
     )
@@ -108,6 +109,7 @@ fun PostToolFeedbackScreen(
     onRatingChange: (Int) -> Unit,
     onCommentChange: (String) -> Unit,
     onEmotionToggle: (Emotion) -> Unit,
+    onIntensityChange: (Float) -> Unit,
     onSubmitClick: () -> Unit,
     onDismiss: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -157,9 +159,8 @@ fun PostToolFeedbackScreen(
                         selectedEmotions = uiState.selectedEmotions,
                         intensity = uiState.intensity,
                         onEmotionToggle = onEmotionToggle,
-                        onIntensityChange = {},
-                        activeEmotion = uiState.activeEmotion,
-                        showIntensity = false
+                        onIntensityChange = onIntensityChange,
+                        activeEmotion = uiState.activeEmotion
                     )
                 }
             }
@@ -392,6 +393,7 @@ fun PostToolFeedbackScreenPreview() {
             onRatingChange = {},
             onCommentChange = {},
             onEmotionToggle = {},
+            onIntensityChange = {},
             onSubmitClick = {},
             onDismiss = {}
         )
