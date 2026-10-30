@@ -83,6 +83,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.domain.models.AmbientTrackModel
 import com.moviles.ark.domain.models.BreathingPreset
 import com.moviles.ark.ui.theme.AppTheme
+import com.moviles.ark.ui.theme.ScreenTopPadding
 import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.theme.ErrorColor
 import com.moviles.ark.ui.theme.FigtreeFontFamily
@@ -258,8 +259,7 @@ private fun BreathingTopBar(onBack: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(64.dp)
-            .padding(horizontal = 20.dp),
+            .padding(start = 20.dp, end = 20.dp, top = ScreenTopPadding, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(

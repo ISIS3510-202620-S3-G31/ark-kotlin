@@ -119,6 +119,7 @@ fun RecommendationCardComponent(
                         fontFamily = FigtreeFontFamily,
                         color = TextColor.copy(alpha = 0.75f),
                         fontSize = 12.sp,
+                        lineHeight = 16.sp,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )

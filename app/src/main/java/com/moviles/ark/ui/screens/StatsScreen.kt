@@ -9,6 +9,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -96,6 +97,8 @@ import java.util.Locale
 //paleta consistente de superficies de tarjeta sobre BackgroundColor
 private val CardSurfaceColor = Color(0xFFF3E4CF)
 private val CardBorderColor = TextColor.copy(alpha = 0.12f)
+//alto del emoji y su separacion encima de cada barra de la grafica semanal
+private val EMOJI_SPACE = 38.dp
 
 @Composable
 fun StatsScreen(
@@ -854,11 +857,11 @@ private fun WeeklyEmotionJourneyCard(
                     .height(165.dp),
                 verticalAlignment = Alignment.Bottom
             ) {
-                //eje Y con numeros del 5 al 1
+                //eje Y con numeros del 5 al 1; arriba deja el mismo espacio del emoji para que el 5 quede a la altura de la barra mas alta
                 Column(
                     modifier = Modifier
                         .fillMaxHeight()
-                        .padding(end = 8.dp, bottom = 24.dp),
+                        .padding(end = 8.dp, top = EMOJI_SPACE - 8.dp, bottom = 24.dp),
                     verticalArrangement = Arrangement.SpaceBetween,
                     horizontalAlignment = Alignment.End
                 ) {
@@ -892,56 +895,69 @@ private fun WeeklyEmotionJourneyCard(
 
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
                         ) {
-                            if (hasEntry && emoji.isNotBlank()) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(34.dp)
-                                        .drawBehind {
-                                            drawCircle(
-                                                brush = Brush.radialGradient(
-                                                    colors = listOf(
-                                                        barColor.copy(alpha = 0.75f),
-                                                        barColor.copy(alpha = 0.25f),
-                                                        Color.Transparent
-                                                    ),
-                                                    radius = 18.dp.toPx()
-                                                ),
-                                                radius = 18.dp.toPx()
-                                            )
-                                        },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = emoji,
-                                        fontSize = 20.sp
-                                    )
-                                }
-                            } else {
-                                Box(modifier = Modifier.size(34.dp))
-                            }
-
-                            Spacer(modifier = Modifier.height(4.dp))
-
-                            //barra de altura proporcional al nivel 1..5 con relieve
-                            Box(
+                            //la barra se mide sobre el espacio que queda: la de nivel 5 deja lugar al emoji y a la etiqueta
+                            BoxWithConstraints(
                                 modifier = Modifier
-                                    .width(22.dp)
-                                    .fillMaxHeight(fraction = if (hasEntry) intensityRatio.coerceAtLeast(0.12f) else 0.08f)
-                                    .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp, bottomStart = 4.dp, bottomEnd = 4.dp))
-                                    .background(
-                                        if (hasEntry) {
-                                            Brush.verticalGradient(
-                                                colors = listOf(barColor, barColor.copy(alpha = 0.72f))
-                                            )
-                                        } else {
-                                            Brush.verticalGradient(
-                                                colors = listOf(Color(0xFFEADBCE), Color(0xFFDFCCBC))
+                                    .weight(1f)
+                                    .fillMaxWidth(),
+                                contentAlignment = Alignment.BottomCenter
+                            ) {
+                                val barMaxHeight = maxHeight - EMOJI_SPACE
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    if (hasEntry && emoji.isNotBlank()) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(34.dp)
+                                                .drawBehind {
+                                                    drawCircle(
+                                                        brush = Brush.radialGradient(
+                                                            colors = listOf(
+                                                                barColor.copy(alpha = 0.75f),
+                                                                barColor.copy(alpha = 0.25f),
+                                                                Color.Transparent
+                                                            ),
+                                                            radius = 18.dp.toPx()
+                                                        ),
+                                                        radius = 18.dp.toPx()
+                                                    )
+                                                },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = emoji,
+                                                fontSize = 20.sp
                                             )
                                         }
+                                    } else {
+                                        Box(modifier = Modifier.size(34.dp))
+                                    }
+
+                                    Spacer(modifier = Modifier.height(4.dp))
+
+                                    //barra de altura proporcional al nivel 1..5 con relieve
+                                    Box(
+                                        modifier = Modifier
+                                            .width(22.dp)
+                                            .height(barMaxHeight * (if (hasEntry) intensityRatio.coerceAtLeast(0.12f) else 0.08f))
+                                            .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp, bottomStart = 4.dp, bottomEnd = 4.dp))
+                                            .background(
+                                                if (hasEntry) {
+                                                    Brush.verticalGradient(
+                                                        colors = listOf(barColor, barColor.copy(alpha = 0.72f))
+                                                    )
+                                                } else {
+                                                    Brush.verticalGradient(
+                                                        colors = listOf(Color(0xFFEADBCE), Color(0xFFDFCCBC))
+                                                    )
+                                                }
+                                            )
                                     )
-                            )
+                                }
+                            }
 
                             Spacer(modifier = Modifier.height(6.dp))
 
