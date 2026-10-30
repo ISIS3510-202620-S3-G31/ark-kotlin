@@ -61,6 +61,8 @@ class SpeechToTextHelper(
     private var keepListening = false
     //frases ya reconocidas en esta sesion de dictado; el texto parcial se suma al final
     private var sessionText = ""
+    //caja de texto que abrio el dictado: el helper es uno para toda la app y solo ella recibe lo dictado
+    private var sessionOwner: Any? = null
     private var preloadRequested = false
     private var switchedRecognizer = false
     private var userAskedForPack = false
@@ -231,8 +233,11 @@ class SpeechToTextHelper(
             ?: sameLanguage.firstOrNull()
     }
 
+    fun isOwnedBy(owner: Any): Boolean = sessionOwner === owner
+
     //inicia el dictado: sigue escuchando aunque el usuario haga pausas, hasta que toque parar
-    fun startListening() {
+    fun startListening(owner: Any) {
+        sessionOwner = owner
         mainHandler.post {
             if (!hasPermission()) {
                 _state.value = SpeechRecognitionState.ERROR
@@ -305,10 +310,21 @@ class SpeechToTextHelper(
         }
     }
 
-    //cancela la escucha inmediatamente sin procesar
+    //la caja de texto se va (se sale del feedback o del check-in): se apaga el microfono aunque siga escuchando
+    //y se olvida lo dictado, asi el siguiente feedback empieza con su caja vacia
+    fun release(owner: Any) {
+        if (sessionOwner !== owner) return
+        sessionOwner = null
+        cancel()
+    }
+
+    //cancela la escucha inmediatamente sin procesar y borra lo dictado
     fun cancel() {
         mainHandler.post {
             keepListening = false
+            sessionText = ""
+            _transcription.value = ""
+            _errorMessage.value = null
             try {
                 speechRecognizer?.cancel()
             } catch (e: Exception) {

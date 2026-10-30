@@ -238,6 +238,9 @@ fun VoiceDictationComponent(
     val soundLevel by speechToTextHelper.soundLevel.collectAsStateWithLifecycle()
     val errorMessage by speechToTextHelper.errorMessage.collectAsStateWithLifecycle()
 
+    //identifica a esta caja de texto ante el helper compartido: solo recibe lo que ella misma dicto
+    val sessionOwner = remember { Any() }
+
     //aviso corto de una linea junto al microfono; se quita solo para no tapar nada
     var notice by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(notice) {
@@ -251,28 +254,27 @@ fun VoiceDictationComponent(
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
-        notice = if (isGranted) startListeningWithCheck(speechToTextHelper) else SpeechToTextHelper.MIC_PERMISSION_NOTICE
+        notice = if (isGranted) startListeningWithCheck(speechToTextHelper, sessionOwner) else SpeechToTextHelper.MIC_PERMISSION_NOTICE
     }
 
     //emite el texto en vivo que viene por los flujos de memoria ram (stateflow)
+    //lo dictado en otra pantalla (otro feedback) nunca llega a esta caja
     LaunchedEffect(transcription) {
-        if (transcription.isNotBlank()) {
+        if (transcription.isNotBlank() && speechToTextHelper.isOwnedBy(sessionOwner)) {
             onTranscription(transcription)
         }
     }
 
     //si el dictado falla, el helper ya trae el aviso corto
     LaunchedEffect(errorMessage) {
-        errorMessage?.let { notice = it }
+        if (speechToTextHelper.isOwnedBy(sessionOwner)) errorMessage?.let { notice = it }
     }
 
     //limpia recursos al salir de la pantalla
+    //al salir de la pantalla siempre se apaga el microfono de esta caja; antes dependia de un estado que podia
+    //estar desactualizado y el dictado seguia escuchando y llenaba el siguiente feedback
     DisposableEffect(speechToTextHelper) {
-        onDispose {
-            if (state == SpeechRecognitionState.LISTENING) {
-                speechToTextHelper.cancel()
-            }
-        }
+        onDispose { speechToTextHelper.release(sessionOwner) }
     }
 
     Row(
@@ -289,7 +291,7 @@ fun VoiceDictationComponent(
                 when {
                     state == SpeechRecognitionState.LISTENING -> speechToTextHelper.stopListening()
                     !speechToTextHelper.hasPermission() -> permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                    else -> notice = startListeningWithCheck(speechToTextHelper)
+                    else -> notice = startListeningWithCheck(speechToTextHelper, sessionOwner)
                 }
             }
         )
@@ -434,9 +436,9 @@ fun VoiceDictationButton(
 }
 
 //verifica si el celular tiene reconocimiento disponible antes de activar el microfono; devuelve el aviso si no se pudo
-private fun startListeningWithCheck(helper: SpeechToTextHelper): String? {
+private fun startListeningWithCheck(helper: SpeechToTextHelper, owner: Any): String? {
     if (!helper.isRecognitionAvailable()) return SpeechToTextHelper.VOICE_UNAVAILABLE_NOTICE
-    helper.startListening()
+    helper.startListening(owner)
     return null
 }
 
