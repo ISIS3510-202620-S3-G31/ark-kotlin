@@ -1,6 +1,7 @@
 package com.moviles.ark.ui.viewmodels
 
 //estado de la pantalla de registro con campos de entrada y errores reactivos inline
+//errorMessage va en rojo debajo de los campos: resume que corregir o avisa que no hay internet
 data class RegisterUiState(
     val name: String = "",
     val birthDate: String = "",
@@ -12,10 +13,7 @@ data class RegisterUiState(
     val emailError: String? = null,
     val passwordError: String? = null,
     val confirmPasswordError: String? = null,
-    val isFormValid: Boolean = false,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
-    val successMessage: String? = null,
-    val showNoInternetDialog: Boolean = false,
-    val isAirplaneModeError: Boolean = false
+    val successMessage: String? = null
 )

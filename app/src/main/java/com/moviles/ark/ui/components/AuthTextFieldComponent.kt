@@ -19,7 +19,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.moviles.ark.ui.theme.BackgroundColor
-import com.moviles.ark.ui.theme.ErrorColor
 import com.moviles.ark.ui.theme.FigtreeFontFamily
 import com.moviles.ark.ui.theme.SecondaryColor
 import com.moviles.ark.ui.theme.TextColor
@@ -29,7 +28,7 @@ val AuthFieldShape = RoundedCornerShape(14.dp)
 val AuthButtonShape = RoundedCornerShape(16.dp)
 
 //campo de texto de login y registro: solo colores de la paleta (ms6) y letra figtree
-//el error se muestra debajo del campo unicamente cuando existe
+//el error se muestra debajo del campo unicamente cuando existe, en el rojo de error del tema
 @Composable
 fun AuthTextField(
     value: String,
@@ -44,13 +43,14 @@ fun AuthTextField(
     isPassword: Boolean = false,
     passwordVisible: Boolean = false
 ) {
+    val errorColor = MaterialTheme.colorScheme.error
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
         //se cambia solo la fuente: material anima el tamano de la etiqueta y usaria su letra por defecto
         label = { Text(label, style = LocalTextStyle.current.copy(fontFamily = FigtreeFontFamily)) },
         isError = error != null,
-        supportingText = error?.let { { Text(it, style = MaterialTheme.typography.bodyLarge, color = ErrorColor) } },
+        supportingText = error?.let { { Text(it, style = MaterialTheme.typography.bodyLarge, color = errorColor) } },
         leadingIcon = leadingIcon?.let { icon ->
             { Icon(imageVector = icon, contentDescription = null, tint = TextColor, modifier = Modifier.size(20.dp)) }
         },
@@ -66,10 +66,10 @@ fun AuthTextField(
             errorContainerColor = BackgroundColor,
             focusedBorderColor = SecondaryColor,
             unfocusedBorderColor = TextColor.copy(alpha = 0.3f),
-            errorBorderColor = ErrorColor,
+            errorBorderColor = errorColor,
             focusedLabelColor = TextColor,
             unfocusedLabelColor = TextColor.copy(alpha = 0.7f),
-            errorLabelColor = ErrorColor,
+            errorLabelColor = errorColor,
             cursorColor = TextColor
         ),
         modifier = modifier.fillMaxWidth()
