@@ -3,7 +3,6 @@ package com.moviles.ark.ui.components
 import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -27,15 +26,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -54,6 +49,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -70,6 +66,7 @@ import com.moviles.ark.ui.theme.FigtreeFontFamily
 import com.moviles.ark.ui.theme.PrimaryColor
 import com.moviles.ark.ui.theme.SecondaryColor
 import com.moviles.ark.ui.theme.TextColor
+import kotlinx.coroutines.delay
 
 //obtiene la instancia compartida de speechtotexthelper del appcontainer
 @Composable
@@ -108,8 +105,6 @@ fun ModernVoiceInputBox(
         isNearLimit -> PrimaryColor.copy(alpha = 0.60f)
         else -> SecondaryColor.copy(alpha = 0.35f)
     }
-
-    var fallbackMessage by remember { mutableStateOf<String?>(null) }
 
     Column(modifier = modifier.fillMaxWidth()) {
         Box(
@@ -170,9 +165,10 @@ fun ModernVoiceInputBox(
                         speechToTextHelper = speechToTextHelper,
                         buttonSize = 34.dp,
                         enabled = enabled,
-                        showInlineNotice = false,
-                        onFallback = { notice -> fallbackMessage = notice }
+                        modifier = Modifier.weight(1f)
                     )
+
+                    Spacer(modifier = Modifier.width(8.dp))
 
                     Text(
                         text = if (isAtLimit) "0 remaining" else "$remainingChars remaining",
@@ -181,17 +177,6 @@ fun ModernVoiceInputBox(
                         fontWeight = if (isNearLimit) FontWeight.Bold else FontWeight.Normal,
                         fontSize = 11.sp
                     )
-                }
-
-                //aviso de fallback en una fila propia inferior para evitar colisiones con el contador
-                AnimatedVisibility(visible = fallbackMessage != null) {
-                    fallbackMessage?.let { notice ->
-                        Spacer(modifier = Modifier.height(8.dp))
-                        VoiceFallbackNotice(
-                            message = notice,
-                            onDismiss = { fallbackMessage = null }
-                        )
-                    }
                 }
             }
         }
@@ -207,9 +192,7 @@ fun VoiceDictationComponent(
     maxLength: Int = Int.MAX_VALUE,
     speechToTextHelper: SpeechToTextHelper = rememberSpeechToTextHelper(),
     buttonSize: Dp = 38.dp,
-    enabled: Boolean = true,
-    showInlineNotice: Boolean = true,
-    onFallback: (String) -> Unit = {}
+    enabled: Boolean = true
 ) {
     var baseTextSnapshot by remember { mutableStateOf("") }
     val state by speechToTextHelper.state.collectAsStateWithLifecycle()
@@ -236,45 +219,39 @@ fun VoiceDictationComponent(
         modifier = modifier,
         speechToTextHelper = speechToTextHelper,
         buttonSize = buttonSize,
-        enabled = enabled,
-        showInlineNotice = showInlineNotice,
-        onFallback = onFallback
+        enabled = enabled
     )
 }
 
 //componente de dictado por voz para entradas de texto
+//tocar el microfono empieza a escuchar y sigue escuchando hasta tocar parar; al lado dice en que estado esta
 @Composable
 fun VoiceDictationComponent(
     onTranscription: (String) -> Unit,
     modifier: Modifier = Modifier,
     speechToTextHelper: SpeechToTextHelper = rememberSpeechToTextHelper(),
     buttonSize: Dp = 38.dp,
-    enabled: Boolean = true,
-    showInlineNotice: Boolean = true,
-    onFallback: (String) -> Unit = {}
+    enabled: Boolean = true
 ) {
     val state by speechToTextHelper.state.collectAsStateWithLifecycle()
     val transcription by speechToTextHelper.transcription.collectAsStateWithLifecycle()
     val soundLevel by speechToTextHelper.soundLevel.collectAsStateWithLifecycle()
     val errorMessage by speechToTextHelper.errorMessage.collectAsStateWithLifecycle()
 
-    var fallbackNotice by remember { mutableStateOf<String?>(null) }
+    //aviso corto de una linea junto al microfono; se quita solo para no tapar nada
+    var notice by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(notice) {
+        if (notice != null) {
+            delay(NOTICE_VISIBLE_MILLIS)
+            notice = null
+        }
+    }
 
     //permiso de microfono pedido de forma nativa en compose
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
-        if (isGranted) {
-            fallbackNotice = null
-            startListeningWithCheck(speechToTextHelper) { notice ->
-                fallbackNotice = notice
-                onFallback(notice)
-            }
-        } else {
-            val notice = "Microphone denied. Please use the keyboard."
-            fallbackNotice = notice
-            onFallback(notice)
-        }
+        notice = if (isGranted) startListeningWithCheck(speechToTextHelper) else SpeechToTextHelper.MIC_PERMISSION_NOTICE
     }
 
     //emite el texto en vivo que viene por los flujos de memoria ram (stateflow)
@@ -284,13 +261,9 @@ fun VoiceDictationComponent(
         }
     }
 
-    //si ocurre un error de hardware o audio, avisa para usar el teclado
+    //si el dictado falla, el helper ya trae el aviso corto
     LaunchedEffect(errorMessage) {
-        errorMessage?.let {
-            val notice = "Voice dictation stopped. Please use the keyboard."
-            fallbackNotice = notice
-            onFallback(notice)
-        }
+        errorMessage?.let { notice = it }
     }
 
     //limpia recursos al salir de la pantalla
@@ -302,84 +275,54 @@ fun VoiceDictationComponent(
         }
     }
 
-    Column(modifier = modifier) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            VoiceDictationButton(
-                state = state,
-                soundLevel = soundLevel,
-                size = buttonSize,
-                enabled = enabled,
-                onClick = {
-                    if (state == SpeechRecognitionState.LISTENING) {
-                        speechToTextHelper.stopListening()
-                    } else {
-                        if (!speechToTextHelper.hasPermission()) {
-                            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                        } else {
-                            startListeningWithCheck(speechToTextHelper) { notice ->
-                                fallbackNotice = notice
-                                onFallback(notice)
-                            }
-                        }
-                    }
-                }
-            )
-
-            if (state == SpeechRecognitionState.LISTENING) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp)
-                ) {
-                    RealtimeAudioVisualizer(soundLevel = soundLevel)
-                    Text(
-                        text = "Listening...",
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontFamily = FigtreeFontFamily,
-                            fontSize = 12.sp
-                        ),
-                        color = PrimaryColor,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            } else if (state == SpeechRecognitionState.PROCESSING) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp)
-                ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(12.dp),
-                        color = SecondaryColor,
-                        strokeWidth = 1.5.dp
-                    )
-                    Text(
-                        text = "Processing...",
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontFamily = FigtreeFontFamily,
-                            fontSize = 12.sp
-                        ),
-                        color = SecondaryColor,
-                        fontWeight = FontWeight.Medium
-                    )
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        VoiceDictationButton(
+            state = state,
+            soundLevel = soundLevel,
+            size = buttonSize,
+            enabled = enabled,
+            onClick = {
+                when {
+                    state == SpeechRecognitionState.LISTENING -> speechToTextHelper.stopListening()
+                    !speechToTextHelper.hasPermission() -> permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    else -> notice = startListeningWithCheck(speechToTextHelper)
                 }
             }
-        }
+        )
 
-        if (showInlineNotice) {
-            //tarjeta de respaldo corta y clara si no hay permiso o falta el motor de voz
-            AnimatedVisibility(visible = fallbackNotice != null) {
-                fallbackNotice?.let { notice ->
-                    Spacer(modifier = Modifier.height(6.dp))
-                    VoiceFallbackNotice(
-                        message = notice,
-                        onDismiss = { fallbackNotice = null }
-                    )
-                }
+        when {
+            state == SpeechRecognitionState.LISTENING -> {
+                RealtimeAudioVisualizer(soundLevel = soundLevel)
+                DictationStatusText(text = "Listening · tap to stop", color = PrimaryColor)
             }
+            state == SpeechRecognitionState.PROCESSING -> {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(12.dp),
+                    color = SecondaryColor,
+                    strokeWidth = 1.5.dp
+                )
+                DictationStatusText(text = "Processing...", color = SecondaryColor)
+            }
+            notice != null -> DictationStatusText(text = notice.orEmpty(), color = TextColor.copy(alpha = 0.65f))
         }
     }
+}
+
+//texto de estado del dictado en una sola linea
+@Composable
+private fun DictationStatusText(text: String, color: Color) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FigtreeFontFamily, fontSize = 12.sp),
+        color = color,
+        fontWeight = FontWeight.SemiBold,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis
+    )
 }
 
 //visualizador de barras de audio en tiempo real reactivo al nivel de sonido (RMS)
@@ -490,70 +433,14 @@ fun VoiceDictationButton(
     }
 }
 
-//aviso corto de respaldo cuando se debe usar el teclado
-@Composable
-fun VoiceFallbackNotice(
-    message: String,
-    onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .border(1.dp, PrimaryColor.copy(alpha = 0.25f), RoundedCornerShape(8.dp)),
-        color = BackgroundColor.copy(alpha = 0.5f),
-        shadowElevation = 0.dp
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Default.Keyboard,
-                contentDescription = "Keyboard fallback",
-                tint = PrimaryColor,
-                modifier = Modifier.size(16.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodySmall.copy(
-                    fontFamily = FigtreeFontFamily,
-                    fontSize = 11.sp
-                ),
-                color = TextColor.copy(alpha = 0.85f),
-                modifier = Modifier.weight(1f)
-            )
-            IconButton(
-                onClick = onDismiss,
-                modifier = Modifier.size(20.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "Dismiss notice",
-                    tint = TextColor.copy(alpha = 0.5f),
-                    modifier = Modifier.size(12.dp)
-                )
-            }
-        }
-    }
-}
-
-//verifica si el celular tiene reconocimiento disponible antes de activar el microfono
-private fun startListeningWithCheck(
-    helper: SpeechToTextHelper,
-    onFallback: (String) -> Unit
-) {
-    if (!helper.isRecognitionAvailable()) {
-        onFallback("Voice recognition unavailable on this device. Please use the keyboard.")
-        return
-    }
-
+//verifica si el celular tiene reconocimiento disponible antes de activar el microfono; devuelve el aviso si no se pudo
+private fun startListeningWithCheck(helper: SpeechToTextHelper): String? {
+    if (!helper.isRecognitionAvailable()) return SpeechToTextHelper.VOICE_UNAVAILABLE_NOTICE
     helper.startListening()
+    return null
 }
+
+private const val NOTICE_VISIBLE_MILLIS = 4_000L
 
 @Preview(showBackground = true, name = "Voice Dictation - Idle")
 @Composable
@@ -564,19 +451,6 @@ fun VoiceDictationButtonIdlePreview() {
                 state = SpeechRecognitionState.IDLE,
                 soundLevel = 0f,
                 onClick = {}
-            )
-        }
-    }
-}
-
-@Preview(showBackground = true, name = "Voice Dictation - Fallback Notice")
-@Composable
-fun VoiceFallbackNoticePreview() {
-    AppTheme {
-        Box(modifier = Modifier.padding(16.dp)) {
-            VoiceFallbackNotice(
-                message = "Microphone denied. Please use the keyboard.",
-                onDismiss = {}
             )
         }
     }
