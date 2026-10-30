@@ -17,32 +17,38 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.OfflinePin
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -60,21 +66,26 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.keepScreenOn
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.domain.models.AmbientTrackModel
 import com.moviles.ark.domain.models.BreathingPreset
 import com.moviles.ark.ui.theme.AppTheme
 import com.moviles.ark.ui.theme.BackgroundColor
+import com.moviles.ark.ui.theme.ErrorColor
+import com.moviles.ark.ui.theme.FigtreeFontFamily
 import com.moviles.ark.ui.theme.PrimaryColor
 import com.moviles.ark.ui.theme.SecondaryColor
 import com.moviles.ark.ui.theme.TextColor
@@ -82,6 +93,7 @@ import com.moviles.ark.domain.models.BreathingPattern
 import com.moviles.ark.domain.models.BreathingPhase
 import com.moviles.ark.ui.viewmodels.BreathingUiState
 import com.moviles.ark.ui.viewmodels.BreathingViewModel
+import java.util.Locale
 
 //vista minimalista del figma "Diseno Custom Breathing": el circulo es lo unico que pide atencion
 //solo colores de la paleta (ms6), peso 400 y estilos del tema: H1 (Sorean) en el titulo y la fase, el resto Figtree
@@ -119,8 +131,11 @@ fun CustomBreathingRoute(
         onEditCustom = viewModel::openCustomRhythmSheet,
         onDismissCustom = viewModel::dismissCustomRhythmSheet,
         onSaveCustom = viewModel::saveCustomRhythm,
-        onToggleTrackSelector = viewModel::toggleTrackSelector,
-        onTrackTapped = viewModel::onTrackTapped
+        onToggleMusic = viewModel::toggleMusic,
+        onOpenTrackSelector = viewModel::openTrackSelector,
+        onDismissTrackSelector = viewModel::dismissTrackSelector,
+        onTrackTapped = viewModel::onTrackTapped,
+        onRetryTracks = viewModel::loadAmbientTracks
     )
 }
 
@@ -136,11 +151,19 @@ fun CustomBreathingScreen(
     onEditCustom: () -> Unit = {},
     onDismissCustom: () -> Unit = {},
     onSaveCustom: (inhale: Int, hold: Int, exhale: Int) -> Unit = { _, _, _ -> },
-    onToggleTrackSelector: () -> Unit = {},
-    onTrackTapped: (AmbientTrackModel) -> Unit = {}
+    onToggleMusic: () -> Unit = {},
+    onOpenTrackSelector: () -> Unit = {},
+    onDismissTrackSelector: () -> Unit = {},
+    onTrackTapped: (AmbientTrackModel) -> Unit = {},
+    onRetryTracks: () -> Unit = {}
 ) {
+    //mientras respira o suena la musica la pantalla no se apaga sola: el ejercicio se hace sin tocar el telefono
+    //y al apagarse la pantalla la app pasaba a segundo plano en plena sesion
+    val keepScreenAwake = uiState.isRunning || uiState.isMusicActive
     Surface(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .then(if (keepScreenAwake) Modifier.keepScreenOn() else Modifier),
         color = BackgroundColor
     ) {
         Column(
@@ -163,12 +186,11 @@ fun CustomBreathingScreen(
             }
 
             //debajo del circulo, centrado y al alcance del pulgar: la musica y luego el patron o los ciclos
-            //borde = musica en pausa; relleno con ondas = sonando. Tocarlo abre la hoja con las pistas
-            RoundIconButton(
-                icon = if (uiState.isMusicPlaying) Icons.Filled.GraphicEq else Icons.Filled.MusicNote,
-                contentDescription = if (uiState.isMusicPlaying) "Ambient music playing, choose track" else "Ambient music",
-                filled = uiState.isMusicPlaying,
-                onClick = onToggleTrackSelector
+            //play/pausa de la pista elegida y su nombre; tocar el nombre abre la hoja con las pistas
+            MusicControl(
+                uiState = uiState,
+                onToggleMusic = onToggleMusic,
+                onOpenTracks = onOpenTrackSelector
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -215,8 +237,9 @@ fun CustomBreathingScreen(
     if (uiState.showTrackSelector) {
         AmbientMusicSheet(
             uiState = uiState,
-            onDismiss = onToggleTrackSelector,
-            onTrackTapped = onTrackTapped
+            onDismiss = onDismissTrackSelector,
+            onTrackTapped = onTrackTapped,
+            onRetry = onRetryTracks
         )
     }
 
@@ -506,14 +529,114 @@ private fun RoundIconButton(
     }
 }
 
-//hoja inferior con las pistas: la que suena va en secondary con ondas; tocar una la reproduce, tocar la que suena la pausa
+//pastilla de musica: boton play/pausa de la pista elegida, su nombre y el icono de la lista
+//el boton controla la musica sin abrir nada; el resto de la pastilla abre la hoja para cambiar de pista
+@Composable
+private fun MusicControl(
+    uiState: BreathingUiState,
+    onToggleMusic: () -> Unit,
+    onOpenTracks: () -> Unit
+) {
+    val track = uiState.selectedTrack
+    val label = when {
+        track == null -> "Ambient music"
+        track.id == uiState.unplayableTrackId -> "Couldn't play, choose another track"
+        else -> track.title
+    }
+    Row(
+        modifier = Modifier
+            .widthIn(max = MUSIC_CONTROL_MAX_WIDTH)
+            .height(48.dp)
+            .clip(CircleShape)
+            .border(1.dp, SecondaryColor, CircleShape)
+            .clickable(role = Role.Button, onClickLabel = "Choose ambient music", onClick = onOpenTracks)
+            .padding(start = 4.dp, end = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        MusicPlayButton(
+            isPlaying = uiState.isMusicPlaying,
+            isBuffering = uiState.isTrackBuffering,
+            filled = uiState.isMusicActive,
+            onClick = if (track != null) onToggleMusic else null
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            color = TextColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+            contentDescription = null,
+            tint = TextColor,
+            modifier = Modifier.size(20.dp)
+        )
+    }
+}
+
+//circulo con play, pausa o un indicador mientras la pista carga; sin onClick lo maneja la fila que lo contiene
+@Composable
+private fun MusicPlayButton(
+    isPlaying: Boolean,
+    isBuffering: Boolean,
+    filled: Boolean,
+    onClick: (() -> Unit)?,
+    size: Dp = 40.dp
+) {
+    val isActive = isPlaying || isBuffering
+    val clickModifier = if (onClick != null) {
+        Modifier.clickable(
+            role = Role.Button,
+            onClickLabel = if (isActive) "Pause music" else "Play music",
+            onClick = onClick
+        )
+    } else {
+        Modifier
+    }
+    Box(
+        modifier = Modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(if (filled) SecondaryColor else BackgroundColor)
+            .border(1.dp, SecondaryColor, CircleShape)
+            .then(clickModifier),
+        contentAlignment = Alignment.Center
+    ) {
+        if (isBuffering) {
+            CircularProgressIndicator(
+                modifier = Modifier
+                    .size(size / 2)
+                    .semantics { contentDescription = "Loading track" },
+                color = TextColor,
+                strokeWidth = 2.dp
+            )
+        } else {
+            Icon(
+                imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                contentDescription = if (isPlaying) "Pause music" else "Play music",
+                tint = TextColor,
+                modifier = Modifier.size(size / 2)
+            )
+        }
+    }
+}
+
+//hoja inferior con las pistas: la pista de la app arriba y debajo las de jamendo (o las guardadas, sin internet)
+//la fila elegida se resalta; tocar una fila la reproduce y tocar la elegida la pausa o la reanuda
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AmbientMusicSheet(
     uiState: BreathingUiState,
     onDismiss: () -> Unit,
-    onTrackTapped: (AmbientTrackModel) -> Unit
+    onTrackTapped: (AmbientTrackModel) -> Unit,
+    onRetry: () -> Unit
 ) {
+    val (builtInTracks, moreTracks) = uiState.ambientTracks.partition { it.id == uiState.defaultTrackId }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -529,16 +652,32 @@ private fun AmbientMusicSheet(
                 text = "Ambient music",
                 style = MaterialTheme.typography.headlineSmall,
                 color = TextColor,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+                modifier = Modifier.padding(horizontal = 16.dp)
             )
-            Spacer(modifier = Modifier.height(8.dp))
-            when {
-                uiState.isLoadingMusic && uiState.ambientTracks.isEmpty() -> SheetMessage("Loading music…")
-                uiState.ambientTracks.isEmpty() -> SheetMessage("No music available right now")
-                else -> uiState.ambientTracks.forEach { track ->
-                    val isPlaying = uiState.isMusicPlaying && track.id == uiState.selectedTrack?.id
-                    TrackRow(track = track, isPlaying = isPlaying, onClick = { onTrackTapped(track) })
-                    Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Tap a track to play or pause it. It loops while you breathe.",
+                style = SecondaryTextStyle,
+                color = TextColor.copy(alpha = 0.7f),
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 12.dp)
+            )
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(builtInTracks, key = { it.id }) { track ->
+                    TrackRow(track = track, uiState = uiState, onClick = { onTrackTapped(track) })
+                }
+                if (moreTracks.isNotEmpty()) {
+                    item(key = "more_tracks_label") {
+                        SectionLabel(text = if (uiState.tracksLoadFailed) "Saved on this phone" else "From Jamendo")
+                    }
+                    items(moreTracks, key = { it.id }) { track ->
+                        TrackRow(track = track, uiState = uiState, onClick = { onTrackTapped(track) })
+                    }
+                }
+                item(key = "tracks_status") {
+                    TracksStatus(
+                        isLoading = uiState.isLoadingTracks,
+                        loadFailed = uiState.tracksLoadFailed,
+                        onRetry = onRetry
+                    )
                 }
             }
         }
@@ -546,43 +685,111 @@ private fun AmbientMusicSheet(
 }
 
 @Composable
-private fun TrackRow(track: AmbientTrackModel, isPlaying: Boolean, onClick: () -> Unit) {
+private fun SectionLabel(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelLarge,
+        color = TextColor.copy(alpha = 0.7f),
+        modifier = Modifier.padding(start = 16.dp, top = 8.dp)
+    )
+}
+
+//fila de una pista: boton play/pausa, titulo, artista y duracion; el pin indica que suena sin internet
+@Composable
+private fun TrackRow(track: AmbientTrackModel, uiState: BreathingUiState, onClick: () -> Unit) {
+    val isSelected = track.id == uiState.selectedTrack?.id
+    val isPlaying = isSelected && uiState.isMusicPlaying
+    val isBuffering = isSelected && uiState.isTrackBuffering
+    val isUnplayable = track.id == uiState.unplayableTrackId
+    val details = listOf(track.artist, formatTrackDuration(track.durationSeconds)).filter { it.isNotBlank() }.joinToString(" · ")
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(56.dp)
-            .clip(RoundedCornerShape(28.dp))
-            .background(if (isPlaying) SecondaryColor else BackgroundColor)
-            .clickable(role = Role.Button, onClick = onClick)
-            .padding(horizontal = 16.dp),
+            .heightIn(min = 64.dp)
+            .clip(RoundedCornerShape(32.dp))
+            //la que suena va en secondary; la elegida en pausa queda con borde para saber cual se reanuda
+            .background(if (isPlaying || isBuffering) SecondaryColor else BackgroundColor)
+            .border(1.dp, if (isSelected) SecondaryColor else BackgroundColor, RoundedCornerShape(32.dp))
+            .clickable(
+                role = Role.Button,
+                onClickLabel = if (isPlaying || isBuffering) "Pause ${track.title}" else "Play ${track.title}",
+                onClick = onClick
+            )
+            .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(
-            imageVector = if (isPlaying) Icons.Filled.GraphicEq else Icons.Filled.MusicNote,
-            contentDescription = if (isPlaying) "Playing" else null,
-            tint = TextColor,
-            modifier = Modifier.size(22.dp)
-        )
-        Spacer(modifier = Modifier.width(16.dp))
-        Text(
-            text = track.title,
-            style = MaterialTheme.typography.bodyLarge,
-            color = TextColor,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
+        MusicPlayButton(isPlaying = isPlaying, isBuffering = isBuffering, filled = false, onClick = null)
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = track.title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = TextColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = if (isUnplayable) "Couldn't play. Check your connection" else details,
+                style = SecondaryTextStyle,
+                color = if (isUnplayable) ErrorColor else TextColor.copy(alpha = 0.7f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        if (track.isAvailableOffline) {
+            Spacer(modifier = Modifier.width(8.dp))
+            Icon(
+                imageVector = Icons.Filled.OfflinePin,
+                contentDescription = "Available offline",
+                tint = TextColor,
+                modifier = Modifier.size(18.dp)
+            )
+        }
     }
 }
 
+//debajo de la lista: aviso mientras llegan las pistas de jamendo o si no se pudieron cargar
 @Composable
-private fun SheetMessage(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.bodyLarge,
-        color = TextColor,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-    )
+private fun TracksStatus(isLoading: Boolean, loadFailed: Boolean, onRetry: () -> Unit) {
+    when {
+        isLoading -> Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = SecondaryColor, strokeWidth = 2.dp)
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(text = "Loading more tracks from Jamendo…", style = MaterialTheme.typography.bodyLarge, color = TextColor)
+        }
+        loadFailed -> Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, top = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Couldn't load more tracks. Offline tracks still work.",
+                style = SecondaryTextStyle,
+                color = TextColor.copy(alpha = 0.7f),
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(onClick = onRetry) {
+                Text(text = "Try again", style = MaterialTheme.typography.labelLarge, color = TextColor)
+            }
+        }
+    }
 }
+
+//duracion como 4:05; vacia si jamendo no la envio
+private fun formatTrackDuration(totalSeconds: Int): String {
+    if (totalSeconds <= 0) return ""
+    return String.format(Locale.US, "%d:%02d", totalSeconds / 60, totalSeconds % 60)
+}
+
+//texto secundario (artista, avisos) en figtree, mas pequeno que el cuerpo
+private val SecondaryTextStyle = TextStyle(fontFamily = FigtreeFontFamily, fontSize = 12.sp, lineHeight = 16.sp)
 
 //hoja "Custom rhythm": - / + para inhale, hold y exhale; el ritmo se aplica al tocar Done
 @OptIn(ExperimentalMaterial3Api::class)
@@ -695,6 +902,8 @@ private val SELECTOR_PRESETS = listOf(
 )
 
 private val CIRCLE_SIZE = 260.dp
+//la pastilla de musica no ocupa todo el ancho: queda centrada bajo el circulo
+private val MUSIC_CONTROL_MAX_WIDTH = 300.dp
 //en reposo el circulo ocupa la mitad del anillo
 private const val MIN_CIRCLE_SCALE = 0.5f
 
@@ -724,7 +933,8 @@ fun CustomBreathingRunningPreview() {
                 isRunning = true,
                 completedCycles = 2,
                 secondsRemainingInPhase = 2,
-                isMusicPlaying = true
+                isMusicPlaying = true,
+                selectedTrack = AmbientTrackModel(id = "preview", title = "Calm Waves", artist = "Ark", audioUrl = "", durationSeconds = 60, isAvailableOffline = true)
             ),
             onBack = {},
             onTogglePlayPause = {},

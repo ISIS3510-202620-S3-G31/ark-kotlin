@@ -51,115 +51,122 @@ class BreathingViewModel(
     private var phaseStartRealtime: Long = 0L
     private var sessionStartRealtime: Long = 0L
 
+    //carga de la pista elegida y descarga para offline en curso; se cancelan al cambiar de pista
+    private var playbackJob: Job? = null
+    private var offlineCacheJob: Job? = null
+    //pista que tiene cargada el reproductor, para reanudarla desde donde iba
+    private var loadedTrackId: String? = null
+
     init {
+        //la pista de la app es la unica predeterminada: suena de una vez, con o sin internet
+        breathingRepository?.defaultTrack?.let { track ->
+            _uiState.update { it.copy(ambientTracks = listOf(track), defaultTrackId = track.id, selectedTrack = track) }
+        }
         loadAmbientTracks()
     }
 
-    //carga las canciones relajantes desde el repositorio de respiracion (jamendo)
+    //carga las canciones relajantes desde el repositorio de respiracion (jamendo o, sin conexion, la cache)
     fun loadAmbientTracks() {
-        if (breathingRepository == null || _uiState.value.isLoadingMusic) return
+        val repository = breathingRepository ?: return
+        if (_uiState.value.isLoadingTracks) return
 
-        _uiState.update { it.copy(isLoadingMusic = true) }
+        _uiState.update { it.copy(isLoadingTracks = true, tracksLoadFailed = false) }
         viewModelScope.launch {
-            val result = breathingRepository.getAmbientTracks()
-            result.onSuccess { tracks ->
-                _uiState.update { current ->
-                    current.copy(
-                        ambientTracks = tracks,
-                        selectedTrack = current.selectedTrack ?: tracks.firstOrNull(),
-                        isLoadingMusic = false
-                    )
-                }
-            }
-            result.onFailure {
-                _uiState.update { it.copy(isLoadingMusic = false) }
+            val catalog = repository.getAmbientTracks()
+            _uiState.update { current ->
+                current.copy(
+                    ambientTracks = catalog.tracks,
+                    //la pista elegida se conserva aunque cambie la lista; si no habia, la primera (la de la app)
+                    selectedTrack = catalog.tracks.firstOrNull { it.id == current.selectedTrack?.id }
+                        ?: current.selectedTrack
+                        ?: catalog.tracks.firstOrNull(),
+                    isLoadingTracks = false,
+                    tracksLoadFailed = !catalog.isOnline
+                )
             }
         }
     }
 
-    //reproduce o pausa la musica ambiental
+    //boton de play/pausa de la musica: pausa la que suena o reproduce la elegida
     fun toggleMusic() {
-        val currentState = _uiState.value
-        val track = currentState.selectedTrack ?: currentState.ambientTracks.firstOrNull() ?: return
-
-        if (currentState.isMusicPlaying) {
-            audioPlayerHelper?.pause()
-            _uiState.update { it.copy(isMusicPlaying = false) }
-        } else {
-            _uiState.update { it.copy(isMusicPlaying = true, selectedTrack = track) }
-            playTrack(track)
-        }
-    }
-
-    //cambia de cancion seleccionada
-    fun selectTrack(track: AmbientTrackModel) {
-        val wasPlaying = _uiState.value.isMusicPlaying
-        _uiState.update { it.copy(selectedTrack = track) }
-
-        if (wasPlaying) {
-            playTrack(track)
-        }
-    }
-
-    //reproduce una pista; si falla (por ejemplo sin internet) pasa a la pista que viene en la app )
-    private fun playTrack(track: AmbientTrackModel) {
-        viewModelScope.launch {
-            val audioUrl = breathingRepository?.resolveTrackAudio(track) ?: track.audioUrl
-            audioPlayerHelper?.playUrl(
-            url = audioUrl,
-            onPlaybackStateChanged = { isPlaying ->
-                _uiState.update { it.copy(isMusicPlaying = isPlaying) }
-            },
-            onError = { playOfflineTrackInsteadOf(track) }
-            )
-        }
-    }
-
-    private fun playOfflineTrackInsteadOf(failedTrack: AmbientTrackModel) {
-        val offlineTrack = _uiState.value.ambientTracks.firstOrNull { it.isAvailableOffline } ?: return
-        //si la que fallo ya era la de la app no se reintenta, para no quedar en un ciclo
-        if (failedTrack.isAvailableOffline) return
-        _uiState.update { it.copy(selectedTrack = offlineTrack, isMusicPlaying = true) }
-        playTrack(offlineTrack)
-    }
-
-    //pasa a la siguiente cancion de la lista
-    fun nextTrack() {
-        val tracks = _uiState.value.ambientTracks
-        if (tracks.isEmpty()) return
-
-        val currentIndex = tracks.indexOfFirst { it.id == _uiState.value.selectedTrack?.id }
-        val nextIndex = if (currentIndex in 0 until tracks.size - 1) currentIndex + 1 else 0
-        selectTrack(tracks[nextIndex])
-    }
-
-    //vuelve a la cancion anterior de la lista
-    fun previousTrack() {
-        val tracks = _uiState.value.ambientTracks
-        if (tracks.isEmpty()) return
-
-        val currentIndex = tracks.indexOfFirst { it.id == _uiState.value.selectedTrack?.id }
-        val prevIndex = if (currentIndex > 0) currentIndex - 1 else tracks.size - 1
-        selectTrack(tracks[prevIndex])
-    }
-
-    //muestra u oculta la hoja inferior con las canciones
-    //al abrir la hoja se vuelve a pedir la lista: si la pantalla se abrio sin internet solo tenia la pista de la app
-    fun toggleTrackSelector() {
-        val opening = !_uiState.value.showTrackSelector
-        _uiState.update { it.copy(showTrackSelector = opening) }
-        if (opening) loadAmbientTracks()
-    }
-
-    //toque sobre una pista de la hoja: si es la que esta sonando se pausa; si no, se cambia y se reproduce
-    fun onTrackTapped(track: AmbientTrackModel) {
         val state = _uiState.value
-        if (track.id == state.selectedTrack?.id && state.isMusicPlaying) {
-            toggleMusic()
-            return
+        val track = state.selectedTrack ?: state.ambientTracks.firstOrNull() ?: return
+        if (state.isMusicActive) pauseMusic() else playTrack(track)
+    }
+
+    //toque sobre una pista de la hoja: la elegida se pausa o reanuda; otra pista se cambia y empieza a sonar
+    fun onTrackTapped(track: AmbientTrackModel) {
+        if (track.id == _uiState.value.selectedTrack?.id) toggleMusic() else playTrack(track)
+    }
+
+    private fun pauseMusic() {
+        //si todavia estaba cargando se cancela para que no empiece a sonar despues de la pausa
+        playbackJob?.cancel()
+        audioPlayerHelper?.pause()
+        _uiState.update { it.copy(isMusicPlaying = false, isTrackBuffering = false) }
+    }
+
+    //reproduce la pista en bucle hasta que el usuario la pause, elija otra o salga de la pantalla
+    private fun playTrack(track: AmbientTrackModel) {
+        val audioPlayer = audioPlayerHelper ?: return
+        playbackJob?.cancel()
+        if (track.id != loadedTrackId) {
+            //la pista anterior se calla de una vez para que no siga avisando que suena mientras carga la nueva
+            audioPlayer.pause()
         }
-        selectTrack(track)
-        if (!state.isMusicPlaying) toggleMusic()
+        //solo se descarga para offline la pista que se esta escuchando
+        if (track.id != _uiState.value.selectedTrack?.id) offlineCacheJob?.cancel()
+        _uiState.update {
+            it.copy(selectedTrack = track, isMusicPlaying = false, isTrackBuffering = true, unplayableTrackId = null)
+        }
+
+        //la misma pista que estaba en pausa sigue desde donde iba
+        if (track.id == loadedTrackId && audioPlayer.resume()) return
+
+        playbackJob = viewModelScope.launch {
+            val audioUrl = breathingRepository?.resolveTrackAudio(track) ?: track.audioUrl
+            loadedTrackId = track.id
+            audioPlayer.playUrl(
+                url = audioUrl,
+                onPlaybackStateChanged = { isPlaying ->
+                    _uiState.update { it.copy(isMusicPlaying = isPlaying, isTrackBuffering = false) }
+                },
+                onError = { onTrackPlaybackFailed(track) }
+            )
+            //mientras suena por streaming se guarda en la cache del disco para que quede disponible sin internet
+            if (!track.isAvailableOffline) saveTrackForOffline(track)
+        }
+    }
+
+    private fun saveTrackForOffline(track: AmbientTrackModel) {
+        val repository = breathingRepository ?: return
+        if (offlineCacheJob?.isActive == true) return
+        offlineCacheJob = viewModelScope.launch {
+            val savedTrack = repository.saveTrackForOffline(track) ?: return@launch
+            //la pista ya suena sin internet: se marca en la lista
+            _uiState.update { current ->
+                current.copy(
+                    ambientTracks = current.ambientTracks.map { if (it.id == savedTrack.id) it.copy(isAvailableOffline = true) else it },
+                    selectedTrack = current.selectedTrack?.let { if (it.id == savedTrack.id) it.copy(isAvailableOffline = true) else it }
+                )
+            }
+        }
+    }
+
+    //no se pudo reproducir (por ejemplo se perdio la conexion en pleno streaming): se avisa en su fila y no se cambia sola
+    private fun onTrackPlaybackFailed(track: AmbientTrackModel) {
+        loadedTrackId = null
+        _uiState.update { it.copy(isMusicPlaying = false, isTrackBuffering = false, unplayableTrackId = track.id) }
+    }
+
+    //abre la hoja con las pistas; si la ultima carga fallo (por ejemplo se abrio sin internet) se vuelve a intentar
+    fun openTrackSelector() {
+        _uiState.update { it.copy(showTrackSelector = true) }
+        if (_uiState.value.tracksLoadFailed) loadAmbientTracks()
+    }
+
+    fun dismissTrackSelector() {
+        _uiState.update { it.copy(showTrackSelector = false) }
     }
 
     fun togglePlayPause() {

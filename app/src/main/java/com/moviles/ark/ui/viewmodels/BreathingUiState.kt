@@ -30,12 +30,26 @@ data class BreathingUiState(
     val isCustomConfigured: Boolean = false,
     val showCustomRhythmSheet: Boolean = false,
     // Estado de musica ambiental
+    //la pista de la app va primero y es la elegida al abrir; las de jamendo llegan despues
     val ambientTracks: List<AmbientTrackModel> = emptyList(),
+    //id de la pista de la app, para mostrarla aparte de las de jamendo
+    val defaultTrackId: String? = null,
     val selectedTrack: AmbientTrackModel? = null,
     val isMusicPlaying: Boolean = false,
-    val isLoadingMusic: Boolean = false,
+    //true desde que se pide una pista hasta que de verdad suena (streaming cargando)
+    val isTrackBuffering: Boolean = false,
+    //true mientras se piden las pistas a jamendo
+    val isLoadingTracks: Boolean = false,
+    //true si jamendo no respondio (sin internet): solo se ofrecen las pistas que suenan offline
+    val tracksLoadFailed: Boolean = false,
+    //pista que no se pudo reproducir, para avisarlo en su fila
+    val unplayableTrackId: String? = null,
     val showTrackSelector: Boolean = false
 ) {
+    //la musica esta sonando o a punto de sonar: el boton muestra pausa
+    val isMusicActive: Boolean
+        get() = isMusicPlaying || isTrackBuffering
+
     //ritmo actual como modelo del dominio
     val pattern: BreathingPattern
         get() = BreathingPattern(inhaleDuration, holdDuration, exhaleDuration, holdPostExhaleDuration)

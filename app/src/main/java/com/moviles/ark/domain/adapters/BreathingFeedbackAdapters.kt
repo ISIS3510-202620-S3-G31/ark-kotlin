@@ -10,8 +10,13 @@ interface HapticFeedbackAdapter {
 
 //reproductor de la musica ambiental; la implementacion usa el MediaPlayer de android
 interface AmbientAudioPlayer {
+    //prepara la url (archivo en cache, res/raw o streaming) y la reproduce en bucle
+    //onPlaybackStateChanged avisa cuando de verdad empieza a sonar o se detiene
     //onError avisa si no se pudo reproducir (por ejemplo una pista de internet sin conexion)
     fun playUrl(url: String, onPlaybackStateChanged: (isPlaying: Boolean) -> Unit = {}, onError: () -> Unit = {})
+    //pausa; si la pista todavia estaba cargando ya no empieza a sonar sola al terminar de cargar
     fun pause()
+    //reanuda la pista cargada desde donde iba; false si no hay ninguna cargada
+    fun resume(): Boolean
     fun release()
 }

@@ -145,10 +145,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     }
     // adapter de musica ambiental para desacoplar el consumo de jamendo y cachear audios en disco
     override val musicServiceAdapter: com.moviles.ark.domain.adapters.MusicServiceAdapter by lazy {
-        com.moviles.ark.data.remote.apis.JamendoServiceAdapterImpl(
-            context = context,
-            bundledAudioUri = "android.resource://${context.packageName}/${R.raw.breathing_ambient}"
-        )
+        com.moviles.ark.data.remote.apis.JamendoServiceAdapterImpl(context = context)
     }
     override val feedbackDao: FeedbackDao by lazy { database.feedbackDao() }
     // repositorio de feedback desacoplado de Room y Firestore
