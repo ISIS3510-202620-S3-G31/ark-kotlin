@@ -173,11 +173,14 @@ class BreathingViewModel(
     fun start() {
         if (_uiState.value.isRunning) return
 
-        val currentPhase = if (_uiState.value.phase == BreathingPhase.READY) {
+        val isFirstPhase = _uiState.value.phase == BreathingPhase.READY
+        val currentPhase = if (isFirstPhase) {
             BreathingPhase.INHALE
         } else {
             _uiState.value.phase
         }
+        //la primera inhalacion tambien vibra; al reanudar una pausa la etapa sigue y no se repite
+        if (isFirstPhase) hapticFeedback?.vibratePhaseCue(BreathingPhase.INHALE)
 
         val now = SystemClock.elapsedRealtime()
         phaseStartRealtime = now - phaseElapsedMs
@@ -333,12 +336,8 @@ class BreathingViewModel(
 
         //el modelo dice que fase sigue y si se completo un ciclo
         val (nextPhase, isCycleCompleted) = _uiState.value.pattern.next(currentPhase)
-        //cada cambio de fase vibra para seguir el ejercicio con los ojos cerrados
-        if (BreathingPattern.cuesExhale(currentPhase, nextPhase)) {
-            hapticFeedback?.vibrateExhaleCue()
-        } else {
-            hapticFeedback?.vibratePhaseCue()
-        }
+        //cada etapa que empieza vibra, tambien en cada ciclo nuevo
+        hapticFeedback?.vibratePhaseCue(nextPhase)
 
         val updatedCycles = if (isCycleCompleted) {
             _uiState.value.completedCycles + 1

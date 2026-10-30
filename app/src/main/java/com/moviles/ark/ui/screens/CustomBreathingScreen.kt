@@ -92,7 +92,7 @@ fun CustomBreathingRoute(
     onBack: (wasCompleted: Boolean, durationSeconds: Int) -> Unit = { _, _ -> }
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    //la vibracion al pasar de hold a exhale la dispara el viewmodel
+    //la vibracion de cada etapa la dispara el viewmodel
 
     //atras (boton o gesto) = abandonar: se guarda como no terminada y se vuelve sin feedback
     val leave = { onBack(false, viewModel.abandonSession()) }
@@ -152,7 +152,17 @@ fun CustomBreathingScreen(
         ) {
             BreathingTopBar(onBack = onBack)
 
-            //arriba: el patron (antes de empezar) o los ciclos (mientras corre), junto a la musica
+            //el circulo queda centrado en todo el espacio libre del medio
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                BreathingCircle(uiState = uiState)
+            }
+
+            //debajo del circulo, cerca del pulgar: el patron (antes de empezar) o los ciclos (mientras corre), junto a la musica
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -191,15 +201,7 @@ fun CustomBreathingScreen(
                 )
             }
 
-            //el circulo queda centrado en todo el espacio libre del medio
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                contentAlignment = Alignment.Center
-            ) {
-                BreathingCircle(uiState = uiState)
-            }
+            Spacer(modifier = Modifier.height(24.dp))
 
             //abajo del todo: reiniciar, iniciar/pausar y terminar
             BreathingControls(
