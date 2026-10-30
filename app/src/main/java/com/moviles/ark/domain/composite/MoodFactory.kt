@@ -25,4 +25,20 @@ object MoodFactory {
 
     //igual que emotionFromName pero con felicidad cuando el nombre no se reconoce (resumenes viejos de estadisticas)
     fun emotionOrDefault(name: String): Emotion = emotionFromName(name) ?: Emotion.HAPPINESS
+
+    //cada emocion con su propia intensidad, recorriendo el composite hasta las hojas
+    fun partsOf(mood: MoodComponent): List<SingleEmotion> =
+        if (mood is SingleEmotion) listOf(mood) else mood.getChildren().flatMap { partsOf(it) }
+
+    //room guarda cada emocion con su intensidad en la misma columna de texto: "HAPPINESS:4"
+    fun encodeParts(parts: List<SingleEmotion>): List<String> = parts.map { "${it.emotion.name}$PART_SEPARATOR${it.intensity}" }
+
+    //lee "HAPPINESS:4"; las filas viejas solo traen "HAPPINESS" y usan la intensidad general de la fila
+    fun decodeParts(stored: List<String>, fallbackIntensity: Int): List<SingleEmotion> = stored.mapNotNull { item ->
+        val emotion = emotionFromName(item.substringBefore(PART_SEPARATOR)) ?: return@mapNotNull null
+        val intensity = item.substringAfter(PART_SEPARATOR, "").toIntOrNull() ?: fallbackIntensity
+        SingleEmotion(emotion, intensity.coerceIn(SingleEmotion.MIN_INTENSITY, SingleEmotion.MAX_INTENSITY))
+    }
+
+    private const val PART_SEPARATOR = ":"
 }

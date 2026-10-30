@@ -62,6 +62,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -78,10 +79,13 @@ import com.moviles.ark.domain.models.MoodCheckInModel
 import com.moviles.ark.domain.models.ToolModel
 import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.domain.models.ToolEntryPoint
+import com.moviles.ark.domain.models.UserProfile
 import com.moviles.ark.domain.models.WeatherCondition
 import com.moviles.ark.domain.models.WeatherSuggestion
+import com.moviles.ark.ui.components.CheckInSummaryComponent
 import com.moviles.ark.ui.components.RecommendationCardComponent
 import com.moviles.ark.ui.theme.AccentColor
+import com.moviles.ark.ui.theme.ScreenTopPadding
 import com.moviles.ark.ui.theme.AppTheme
 import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.theme.FigtreeFontFamily
@@ -169,7 +173,7 @@ fun HomeScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding(),
-            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 32.dp),
+            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = ScreenTopPadding, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             //encabezado de la app con boton discreto de Daily Check-in a un lado
@@ -251,36 +255,22 @@ fun HomeScreen(
                         .padding(vertical = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Box(contentAlignment = Alignment.BottomEnd) {
-                        Image(
-                            painter = painterResource(R.drawable.ic_mascot_log),
-                            contentDescription = "Mascot",
-                            modifier = Modifier.size(88.dp)
-                        )
-                        Box(
-                            modifier = Modifier
-                                .size(32.dp)
-                                .clip(CircleShape)
-                                .border(2.dp, BackgroundColor, CircleShape)
-                                .background(SecondaryColor.copy(alpha = 0.15f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Image(
-                                painter = painterResource(avatarDrawable(uiState.avatarId)),
-                                contentDescription = "Active Avatar Badge",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
-                    }
+                    //solo la mascota: el avatar del perfil ya esta arriba a la izquierda
+                    Image(
+                        painter = painterResource(R.drawable.ic_mascot_log),
+                        contentDescription = "Mascot",
+                        modifier = Modifier.size(88.dp)
+                    )
                     Spacer(modifier = Modifier.height(8.dp))
-                    val firstName = uiState.userName.trim().split(" ").firstOrNull { it.isNotBlank() }
-                    val greeting = if (!firstName.isNullOrBlank()) "Welcome back, $firstName!" else "Welcome back!"
+                    val firstName = UserProfile.greetingName(uiState.userName)
+                    val greeting = if (firstName.isNotBlank()) "Welcome back, $firstName!" else "Welcome back!"
                     Text(
                         text = greeting,
                         style = MaterialTheme.typography.headlineMedium,
                         fontFamily = SoreanFontFamily,
-                        color = TextColor
+                        color = TextColor,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
@@ -318,7 +308,8 @@ fun HomeScreen(
                 item {
                     RecommendationCardComponent(
                         tool = recommendedTool,
-                        rationaleTag = "Suggested for today",
+                        rationaleTag = uiState.recommendationReason.label,
+                        reason = uiState.recommendationReason.explanation,
                         onOpenTool = { toolId -> onToolClick(toolId, ToolEntryPoint.RECOMMENDATION) }
                     )
                 }
@@ -331,7 +322,7 @@ fun HomeScreen(
                 )
             }
 
-            //3. recomendacion basada en el clima: siempre aparece y Explore abre la herramienta sugerida;
+            //3. recomendacion basada en el clima: siempre aparece y la flecha abre la herramienta sugerida;
             //sin internet ni cache, sin ubicacion o con clima templado queda la sugerencia neutral
             uiState.weatherSuggestion?.let { suggestion ->
                 item {
@@ -570,7 +561,7 @@ private fun WeatherRecommendationCard(
                         fontFamily = FigtreeFontFamily,
                         color = TextColor.copy(alpha = 0.75f),
                         fontSize = 12.sp,
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
@@ -578,20 +569,19 @@ private fun WeatherRecommendationCard(
 
             Spacer(modifier = Modifier.width(10.dp))
 
-            Surface(
+            //flecha igual que en las otras dos recomendaciones
+            Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(12.dp))
-                    .clickable { onCardClick() },
-                color = AccentColor.copy(alpha = 0.18f),
-                shape = RoundedCornerShape(12.dp)
+                    .size(34.dp)
+                    .clip(CircleShape)
+                    .background(AccentColor),
+                contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "Explore",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontFamily = FigtreeFontFamily,
-                    fontWeight = FontWeight.Bold,
-                    color = AccentColor,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                    contentDescription = "Open",
+                    tint = TextColor,
+                    modifier = Modifier.size(16.dp)
                 )
             }
         }
@@ -778,9 +768,10 @@ private fun DailyCheckInReviewDialog(
                         .padding(22.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    //sin boton de cerrar arriba: el boton Close de abajo cierra el dialogo
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Surface(
@@ -808,22 +799,6 @@ private fun DailyCheckInReviewDialog(
                                 )
                             }
                         }
-
-                        Box(
-                            modifier = Modifier
-                                .size(34.dp)
-                                .clip(CircleShape)
-                                .background(NeutralSurfaceColor)
-                                .clickable(onClick = onDismiss),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "âœ•",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = TextColor.copy(alpha = 0.75f)
-                            )
-                        }
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
@@ -846,128 +821,7 @@ private fun DailyCheckInReviewDialog(
 
                     Spacer(modifier = Modifier.height(18.dp))
 
-                    val emotions = checkIn?.mood?.getEmotions().orEmpty()
-                    if (emotions.isNotEmpty()) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(vertical = 4.dp)
-                        ) {
-                            emotions.forEach { emotion ->
-                                Surface(
-                                    shape = RoundedCornerShape(14.dp),
-                                    color = getEmotionColor(emotion).copy(alpha = 0.18f),
-                                    border = BorderStroke(1.dp, getEmotionColor(emotion).copy(alpha = 0.35f))
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        Text(
-                                            text = getEmotionEmoji(emotion),
-                                            fontSize = 16.sp
-                                        )
-                                        Text(
-                                            text = emotion.name.lowercase().replaceFirstChar { it.uppercase() },
-                                            style = MaterialTheme.typography.labelMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = TextColor
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        val intensity = checkIn?.mood?.getIntensity()?.toInt() ?: 3
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Text(
-                                text = "Intensity:",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.Medium,
-                                color = TextColor.copy(alpha = 0.65f)
-                            )
-                            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                                for (i in SingleEmotion.MIN_INTENSITY..SingleEmotion.MAX_INTENSITY) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(8.dp)
-                                            .clip(CircleShape)
-                                            .background(
-                                                if (i <= intensity) PrimaryColor
-                                                else TextColor.copy(alpha = 0.15f)
-                                            )
-                                    )
-                                }
-                            }
-                            Text(
-                                text = "$intensity/5",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.Bold,
-                                color = TextColor
-                            )
-                        }
-                    } else {
-                        Text(
-                            text = "Daily check-in completed",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = TextColor.copy(alpha = 0.7f)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(NeutralSurfaceColor)
-                            .border(1.dp, TextColor.copy(alpha = 0.12f), RoundedCornerShape(16.dp))
-                            .padding(14.dp)
-                    ) {
-                        Text(
-                            text = "Note",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = TextColor.copy(alpha = 0.6f)
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = if (!checkIn?.note.isNullOrBlank()) checkIn.note else "No note added for today.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (!checkIn?.note.isNullOrBlank()) TextColor else TextColor.copy(alpha = 0.45f)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(NeutralSurfaceColor)
-                            .padding(horizontal = 12.dp, vertical = 5.dp)
-                    ) {
-                        Text("ðŸ“", fontSize = 12.sp)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        val locationText = if (checkIn?.latitude != null && checkIn.longitude != null) {
-                            String.format(Locale.US, "%.4f, %.4f", checkIn.latitude, checkIn.longitude)
-                        } else {
-                            "Location unavailable"
-                        }
-                        Text(
-                            text = locationText,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TextColor.copy(alpha = 0.75f),
-                            fontSize = 11.5.sp
-                        )
-                    }
+                    CheckInSummaryComponent(checkIn = checkIn)
 
                     Spacer(modifier = Modifier.height(20.dp))
 

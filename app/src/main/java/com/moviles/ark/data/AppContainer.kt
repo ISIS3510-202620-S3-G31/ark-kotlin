@@ -93,7 +93,13 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val locationRepository: LocationRepository by lazy { LocationRepositoryImpl(Location(context)) }
     // check-ins guardados en room al instante; el sync los sube a firestore cuando hay red
     override val moodRepository: MoodRepository by lazy {
-        MoodRepositoryImpl(auth, firestore, database.emotionCheckInDao(), onCheckInSaved = { syncManager.requestSync() })
+        MoodRepositoryImpl(
+            auth,
+            firestore,
+            database.emotionCheckInDao(),
+            onCheckInSaved = { syncManager.requestSync() },
+            resolveCityName = locationRepository::getCityName
+        )
     }
     // catalogo de herramientas en room como unica fuente de verdad, actualizado desde firestore y con copia en filesDir/tools.json
     override val toolRepository: com.moviles.ark.domain.repositories.ToolRepository by lazy {

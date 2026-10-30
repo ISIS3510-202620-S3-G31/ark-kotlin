@@ -2,6 +2,7 @@ package com.moviles.ark.data.repositories
 
 import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.moviles.ark.data.local.daos.EmotionCheckInDao
 import com.moviles.ark.data.local.entities.toDomain
@@ -23,7 +24,9 @@ class MoodRepositoryImpl(
     private val firestore: FirebaseFirestore,
     private val emotionCheckInDao: EmotionCheckInDao,
     //avisa que hay un check-in pendiente para que se suba ya si hay red; no se espera
-    private val onCheckInSaved: () -> Unit = {}
+    private val onCheckInSaved: () -> Unit = {},
+    //nombre de la ciudad para un check-in que se guardo sin red; null si sigue sin red
+    private val resolveCityName: suspend (Double, Double) -> String? = { _, _ -> null }
 ) : MoodRepository {
     override suspend fun saveCheckIn(checkIn: MoodCheckInModel): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
@@ -65,11 +68,10 @@ class MoodRepositoryImpl(
                     .document(currentUserId)
                     .collection("mood_checkins")
                     .whereGreaterThanOrEqualTo("timestamp", todayStartMillis)
-                    .limit(1)
                     .get()
                     .await()
             }
-            snapshot != null && !snapshot.isEmpty
+            snapshot != null && snapshot.documents.dailyCheckIns().isNotEmpty()
         }.recover { false }
     }
 
@@ -81,7 +83,7 @@ class MoodRepositoryImpl(
             .whereGreaterThanOrEqualTo("timestamp", fromMillis)
             .get()
             .await()
-        snapshot.documents.mapNotNull { it.toObject(MoodCheckInDto::class.java)?.timestamp }
+        snapshot.documents.dailyCheckIns().map { it.timestamp }
     }.onFailure { error ->
         CrashlyticsHelper.logNonFatal(
             componentName = "MoodRepository",
@@ -95,7 +97,16 @@ class MoodRepositoryImpl(
         runCatching {
             val currentUserId = auth.currentUser?.uid ?: return@runCatching null
             //primero room, asi la recomendacion del home funciona sin internet
-            emotionCheckInDao.getLatestCheckIn(currentUserId)?.let { return@runCatching it.toDomain() }
+            val local = emotionCheckInDao.getLatestCheckIn(currentUserId)?.toDomain()
+            if (local != null) {
+                val withCity = withCityName(local)
+                //la ciudad se guarda una sola vez; asi no se vuelve a pedir cada vez que se abre el home
+                if (withCity.cityName != null && local.cityName == null) {
+                    emotionCheckInDao.updateCityName(currentUserId, local.timestamp, withCity.cityName)
+                    onCheckInSaved()
+                }
+                return@runCatching withCity
+            }
 
             //room vacio: respaldo en firestore con tiempo maximo
             val snapshot = withTimeoutOrNull(REMOTE_TIMEOUT_MILLIS) {
@@ -103,18 +114,32 @@ class MoodRepositoryImpl(
                     .document(currentUserId)
                     .collection("mood_checkins")
                     .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
-                    .limit(1)
+                    .limit(REMOTE_LATEST_LIMIT)
                     .get()
                     .await()
             }
             if (snapshot == null || snapshot.isEmpty) return@runCatching null
             //firestore arma el dto con los campos del documento y el mapper lo pasa al modelo
-            snapshot.documents.first().toObject(MoodCheckInDto::class.java)?.toDomain()
+            snapshot.documents.dailyCheckIns().firstOrNull()?.toDomain()?.let { withCityName(it) }
         }.recover { null }
     }
+
+    //la vista del check-in muestra la ciudad; si se guardo sin red se pide ahora, sin bloquear si sigue sin red
+    private suspend fun withCityName(checkIn: MoodCheckInModel): MoodCheckInModel {
+        if (!checkIn.cityName.isNullOrBlank()) return checkIn
+        val latitude = checkIn.latitude ?: return checkIn
+        val longitude = checkIn.longitude ?: return checkIn
+        return checkIn.copy(cityName = resolveCityName(latitude, longitude))
+    }
+
+    //documentos de firestore que son check-ins del dia (sin los que guardaba el feedback viejo)
+    private fun List<DocumentSnapshot>.dailyCheckIns(): List<MoodCheckInDto> =
+        mapNotNull { it.toObject(MoodCheckInDto::class.java) }.filterNot { MoodCheckInModel.isPostToolNote(it.note) }
 
     companion object {
         //tiempo maximo para el respaldo en firestore; sin red el home no se queda esperando
         private const val REMOTE_TIMEOUT_MILLIS = 3_000L
+        //se piden varios por si los mas nuevos son check-ins viejos del feedback
+        private const val REMOTE_LATEST_LIMIT = 10L
     }
 }

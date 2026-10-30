@@ -1,6 +1,8 @@
 package com.moviles.ark.data.remote.dtos
 
 import com.moviles.ark.data.local.entities.FeedbackEntity
+import com.moviles.ark.domain.composite.MoodFactory
+import com.moviles.ark.domain.composite.SingleEmotion
 import com.moviles.ark.domain.models.FeedbackModel
 
 //dto del documento users/{uid}/tool_feedback/{id} en firestore
@@ -11,6 +13,8 @@ data class FeedbackDto(
     //de 1 a 5
     val rating: Int = 0,
     val comment: String = "",
+    //emociones que marco al terminar, cada una con su intensidad
+    val emotions: List<EmotionDto> = emptyList(),
     //fecha en milisegundos
     val createdAt: Long = 0L,
     //id local de la interaccion calificada; null si no se guardo la interaccion
@@ -24,6 +28,7 @@ fun FeedbackEntity.toDto(userId: String): FeedbackDto {
         toolId = toolId,
         rating = rating,
         comment = comment,
+        emotions = MoodFactory.decodeParts(emotions, SingleEmotion.DEFAULT_INTENSITY).toEmotionDtos(),
         createdAt = createdAt,
         interactionId = interactionId
     )
@@ -39,6 +44,7 @@ fun FeedbackDto.toEntity(): FeedbackEntity {
         toolId = toolId,
         rating = rating,
         comment = comment,
+        emotions = MoodFactory.encodeParts(emotions.toParts()),
         createdAt = createdAt,
         isSynced = true
     )
@@ -51,6 +57,7 @@ fun FeedbackModel.toDto(userId: String): FeedbackDto {
         toolId = toolId,
         rating = rating,
         comment = comment,
+        emotions = emotions.toEmotionDtos(),
         createdAt = createdAt,
         interactionId = interactionId
     )
@@ -64,6 +71,7 @@ fun FeedbackDto.toDomain(id: Long = 0L, isSynced: Boolean = true): FeedbackModel
         toolId = toolId,
         rating = rating,
         comment = comment,
+        emotions = emotions.toParts(),
         createdAt = createdAt,
         isSynced = isSynced
     )

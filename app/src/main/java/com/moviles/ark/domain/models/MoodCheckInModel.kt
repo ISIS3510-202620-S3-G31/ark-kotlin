@@ -1,8 +1,6 @@
 package com.moviles.ark.domain.models
 
-import com.moviles.ark.domain.composite.Emotion
 import com.moviles.ark.domain.composite.MoodComponent
-import com.moviles.ark.domain.composite.MoodFactory
 
 //modelo de dominio que representa un registro de check-in emocional del usuario con coordenadas gps
 data class MoodCheckInModel(
@@ -10,6 +8,8 @@ data class MoodCheckInModel(
     val note: String = "",
     val latitude: Double? = null,
     val longitude: Double? = null,
+    //ciudad donde se hizo el check-in; null sin ubicacion o si no habia red para pedir el nombre
+    val cityName: String? = null,
     val timestamp: Long = System.currentTimeMillis()
 ) {
     //reglas de negocio
@@ -21,6 +21,16 @@ data class MoodCheckInModel(
     }
     fun hasLocation(): Boolean {
         return latitude != null && longitude != null
+    }
+
+    //antes el feedback de una herramienta tambien guardaba un check-in con esta nota; esos no son el check-in del dia
+    fun isPostToolFeedback(): Boolean = isPostToolNote(note)
+
+    //texto del chip de ubicacion: solo la ciudad, nunca las coordenadas
+    fun locationLabel(): String = when {
+        !cityName.isNullOrBlank() -> cityName
+        hasLocation() -> LOCATION_SAVED_LABEL
+        else -> NO_LOCATION_LABEL
     }
 
     //el primer error del check-in, o null si se puede guardar
@@ -52,11 +62,12 @@ data class MoodCheckInModel(
 
         fun isNoteNearLimit(note: String): Boolean = remainingNoteChars(note) <= NOTE_WARNING_REMAINING
 
-        //check-in que queda al terminar una herramienta con las emociones del feedback
-        fun afterTool(emotions: Set<Emotion>, intensity: Int, comment: String): MoodCheckInModel = MoodCheckInModel(
-            mood = MoodFactory.fromEmotions(emotions, intensity),
-            note = if (comment.isNotBlank()) "Post-tool feedback: $comment" else "Post-tool feedback"
-        )
+        //nota con la que el feedback viejo guardaba su check-in; room y firestore la usan para no contarlos
+        const val POST_TOOL_NOTE_PREFIX = "Post-tool feedback"
+        const val LOCATION_SAVED_LABEL = "Location saved"
+        const val NO_LOCATION_LABEL = "No location"
+
+        fun isPostToolNote(note: String): Boolean = note.startsWith(POST_TOOL_NOTE_PREFIX)
 
         //estandar de 280 caracteres para micro-journaling: evita fatiga cognitiva en el usuario
         //y previene desbordamientos de payload en los documentos de room y firestore

@@ -41,6 +41,8 @@ import androidx.compose.ui.unit.sp
 import com.moviles.ark.domain.composite.Emotion
 import com.moviles.ark.ui.theme.AccentColor
 import com.moviles.ark.ui.theme.AppTheme
+import com.moviles.ark.ui.theme.BackgroundLightColor
+import com.moviles.ark.ui.theme.FigtreeFontFamily
 import com.moviles.ark.ui.theme.PrimaryColor
 import com.moviles.ark.ui.theme.SecondaryColor
 import com.moviles.ark.ui.theme.TextColor
@@ -69,7 +71,20 @@ fun getEmotionColor(emotion: Emotion): Color {
     }
 }
 
+//nombre visible de la emocion ("Happiness")
+fun emotionLabel(emotion: Emotion): String = emotion.name.lowercase().replaceFirstChar { it.uppercase() }
+
+//palabra de cada paso de la escala; 1, 3 y 5 son las mismas que se ven bajo el slider
+fun intensityLabel(intensity: Int): String = when (intensity) {
+    1 -> "Mild"
+    2 -> "Light"
+    3 -> "Moderate"
+    4 -> "Strong"
+    else -> "Intense"
+}
+
 //componente visual de seleccion emocional con halos diferenciados y slider
+//cada emocion tiene su intensidad: el slider ajusta la emocion activa (la del halo fuerte)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MoodSelectorComponent(
@@ -99,7 +114,7 @@ fun MoodSelectorComponent(
             color = MaterialTheme.colorScheme.onBackground
         )
         Text(
-            text = "Select emotions and adjust intensity",
+            text = "Select emotions and adjust each one's intensity",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
         )
@@ -164,7 +179,7 @@ fun MoodSelectorComponent(
                                 when {
                                     isActive -> color.copy(alpha = 0.32f)
                                     isSelected -> color.copy(alpha = 0.15f)
-                                    else -> Color.White.copy(alpha = 0.28f)
+                                    else -> BackgroundLightColor.copy(alpha = 0.6f)
                                 }
                             ),
                         contentAlignment = Alignment.Center
@@ -173,7 +188,7 @@ fun MoodSelectorComponent(
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = emotion.name.lowercase().replaceFirstChar { it.uppercase() },
+                        text = emotionLabel(emotion),
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = if (isActive) FontWeight.Bold else if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
                         color = if (isActive) TextColor else if (isSelected) TextColor.copy(alpha = 0.8f) else TextColor.copy(alpha = 0.5f),
@@ -193,6 +208,15 @@ fun MoodSelectorComponent(
                     .fillMaxWidth()
                     .padding(top = 18.dp)
             ) {
+                //dice que emocion esta ajustando el slider; tocar otra elegida cambia a esa
+                Text(
+                    text = "${emotionLabel(currentActive)} intensity",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontFamily = FigtreeFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    color = TextColor.copy(alpha = 0.8f),
+                    modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)
+                )
                 Slider(
                     value = intensity,
                     onValueChange = onIntensityChange,
@@ -217,8 +241,8 @@ fun MoodSelectorComponent(
                                 }
                                 .shadow(4.dp, CircleShape)
                                 .clip(CircleShape)
-                                .background(Brush.radialGradient(listOf(Color.White, activeColor)))
-                                .border(2.5.dp, Color.White, CircleShape)
+                                .background(Brush.radialGradient(listOf(BackgroundLightColor, activeColor)))
+                                .border(2.5.dp, BackgroundLightColor, CircleShape)
                         )
                     },
                     track = { sliderState ->
@@ -227,10 +251,13 @@ fun MoodSelectorComponent(
                             modifier = Modifier
                                 .height(14.dp)
                                 .shadow(2.dp, RoundedCornerShape(7.dp))
-                                .border(1.dp, Color.White.copy(alpha = 0.7f), RoundedCornerShape(7.dp)),
+                                .border(1.dp, BackgroundLightColor.copy(alpha = 0.7f), RoundedCornerShape(7.dp)),
                             colors = SliderDefaults.colors(
                                 activeTrackColor = activeColor,
-                                inactiveTrackColor = Color.White.copy(alpha = 0.55f)
+                                inactiveTrackColor = BackgroundLightColor.copy(alpha = 0.8f),
+                                //los puntos de cada paso van del color de la emocion para que no queden puntos de otros colores
+                                activeTickColor = BackgroundLightColor.copy(alpha = 0.8f),
+                                inactiveTickColor = activeColor.copy(alpha = 0.5f)
                             ),
                             thumbTrackGapSize = 0.dp
                         )

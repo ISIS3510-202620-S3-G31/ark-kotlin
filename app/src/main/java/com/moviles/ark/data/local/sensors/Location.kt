@@ -203,9 +203,8 @@ class Location(private val context: Context) {
                 }
             }
             val address = addresses?.firstOrNull() ?: return@withContext null
-            val city = address.locality ?: address.subAdminArea ?: address.adminArea
-            val country = address.countryName
-            if (city != null && country != null) "$city, $country" else city ?: country
+            //solo la ciudad; si el lugar no tiene ciudad se usa el municipio o el departamento
+            address.locality ?: address.subAdminArea ?: address.adminArea
         } catch (e: Exception) {
             com.moviles.ark.data.remote.CrashlyticsHelper.logNonFatal(
                 componentName = "LocationSensor",
@@ -225,7 +224,7 @@ class Location(private val context: Context) {
         private const val LOCATION_TIMEOUT_MILLIS = 8_000L
         //una posicion guardada de hace mas de 2 minutos ya no es "donde estoy ahora"
         private const val MAX_LOCATION_AGE_MILLIS = 2 * 60 * 1000L
-        //sin red el geocoder no responde; la pantalla muestra las coordenadas
+        //sin red el geocoder no responde; la pantalla dice que la ubicacion se guardo, sin coordenadas
         private const val GEOCODER_TIMEOUT_MILLIS = 3_000L
     }
 }

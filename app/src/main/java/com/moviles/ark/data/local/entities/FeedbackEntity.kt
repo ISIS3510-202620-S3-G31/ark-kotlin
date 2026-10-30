@@ -1,7 +1,10 @@
 package com.moviles.ark.data.local.entities
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import com.moviles.ark.domain.composite.MoodFactory
+import com.moviles.ark.domain.composite.SingleEmotion
 import com.moviles.ark.domain.models.FeedbackModel
 
 //tabla de calificaciones que deja el usuario al terminar una herramienta
@@ -16,6 +19,10 @@ data class FeedbackEntity(
     val rating: Int,
     //comentario opcional
     val comment: String = "",
+    //emociones del feedback con su intensidad ("HAPPINESS:4"), igual que en mood_checkins
+    //el default es el de la columna que agrega la migracion de la version 8
+    @ColumnInfo(defaultValue = "[]")
+    val emotions: List<String> = emptyList(),
     //fecha en milisegundos
     val createdAt: Long,
     //false mientras no se haya subido a firestore
@@ -34,6 +41,7 @@ fun FeedbackEntity.toDomain(): FeedbackModel {
         toolId = safeToolId,
         rating = safeRating,
         comment = comment,
+        emotions = MoodFactory.decodeParts(emotions, SingleEmotion.DEFAULT_INTENSITY),
         createdAt = safeCreatedAt,
         isSynced = isSynced
     )
@@ -47,6 +55,7 @@ fun FeedbackModel.toEntity(): FeedbackEntity {
         toolId = toolId,
         rating = rating,
         comment = comment,
+        emotions = MoodFactory.encodeParts(emotions),
         createdAt = createdAt,
         isSynced = isSynced
     )
