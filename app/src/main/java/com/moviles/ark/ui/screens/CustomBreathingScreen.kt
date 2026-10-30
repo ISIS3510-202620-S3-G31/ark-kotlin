@@ -6,6 +6,8 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -69,6 +71,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.domain.models.AmbientTrackModel
@@ -150,7 +153,11 @@ fun CustomBreathingScreen(
                 .navigationBarsPadding(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            BreathingTopBar(onBack = onBack)
+            BreathingTopBar(
+                uiState = uiState,
+                onBack = onBack,
+                onToggleTrackSelector = onToggleTrackSelector
+            )
 
             //el circulo queda centrado en todo el espacio libre del medio
             Box(
@@ -162,43 +169,29 @@ fun CustomBreathingScreen(
                 BreathingCircle(uiState = uiState)
             }
 
-            //debajo del circulo, cerca del pulgar: el patron (antes de empezar) o los ciclos (mientras corre), junto a la musica
-            Row(
+            //debajo del circulo y centrado en la pantalla: el patron (antes de empezar) o los ciclos (mientras corre)
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(48.dp)
                     .padding(horizontal = 20.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically
+                contentAlignment = Alignment.Center
             ) {
-                Box(
-                    modifier = Modifier.weight(1f),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (!uiState.isRunning && uiState.phase == BreathingPhase.READY) {
-                        PatternSelector(
-                            uiState = uiState,
-                            onSelectPreset = onSelectPreset,
-                            onSelectCustom = onSelectCustom,
-                            onEditCustom = onEditCustom,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    } else if (uiState.completedCycles > 0) {
-                        Text(
-                            text = if (uiState.completedCycles == 1) "1 cycle" else "${uiState.completedCycles} cycles",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = TextColor
-                        )
-                    }
+                if (!uiState.isRunning && uiState.phase == BreathingPhase.READY) {
+                    PatternSelector(
+                        uiState = uiState,
+                        onSelectPreset = onSelectPreset,
+                        onSelectCustom = onSelectCustom,
+                        onEditCustom = onEditCustom,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else if (uiState.completedCycles > 0) {
+                    Text(
+                        text = if (uiState.completedCycles == 1) "1 cycle" else "${uiState.completedCycles} cycles",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = TextColor
+                    )
                 }
-
-                //borde = musica en pausa; relleno con ondas = sonando. Tocarlo abre la hoja con las pistas
-                RoundIconButton(
-                    icon = if (uiState.isMusicPlaying) Icons.Filled.GraphicEq else Icons.Filled.MusicNote,
-                    contentDescription = if (uiState.isMusicPlaying) "Ambient music playing, choose track" else "Ambient music",
-                    filled = uiState.isMusicPlaying,
-                    onClick = onToggleTrackSelector
-                )
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -232,9 +225,13 @@ fun CustomBreathingScreen(
     }
 }
 
-//boton atras redondo secondary y titulo en H1
+//boton atras redondo secondary, titulo en H1 y la musica arriba a la derecha
 @Composable
-private fun BreathingTopBar(onBack: () -> Unit) {
+private fun BreathingTopBar(
+    uiState: BreathingUiState,
+    onBack: () -> Unit,
+    onToggleTrackSelector: () -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -257,13 +254,25 @@ private fun BreathingTopBar(onBack: () -> Unit) {
                 modifier = Modifier.size(24.dp)
             )
         }
-        Spacer(modifier = Modifier.width(16.dp))
-        Text(
+        Spacer(modifier = Modifier.width(12.dp))
+        //en pantallas angostas el titulo se achica lo justo para caber junto a la musica en vez de cortarse
+        BasicText(
             text = "Custom Breathing",
-            style = MaterialTheme.typography.headlineLarge,
-            color = TextColor,
+            style = MaterialTheme.typography.headlineLarge.copy(color = TextColor),
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            autoSize = TextAutoSize.StepBased(
+                minFontSize = MIN_TITLE_FONT_SIZE,
+                maxFontSize = MaterialTheme.typography.headlineLarge.fontSize
+            ),
+            modifier = Modifier.weight(1f)
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        //borde = musica en pausa; relleno con ondas = sonando. Tocarlo abre la hoja con las pistas
+        RoundIconButton(
+            icon = if (uiState.isMusicPlaying) Icons.Filled.GraphicEq else Icons.Filled.MusicNote,
+            contentDescription = if (uiState.isMusicPlaying) "Ambient music playing, choose track" else "Ambient music",
+            filled = uiState.isMusicPlaying,
+            onClick = onToggleTrackSelector
         )
     }
 }
@@ -698,6 +707,7 @@ private val SELECTOR_PRESETS = listOf(
 )
 
 private val CIRCLE_SIZE = 260.dp
+private val MIN_TITLE_FONT_SIZE = 20.sp
 //en reposo el circulo ocupa la mitad del anillo
 private const val MIN_CIRCLE_SCALE = 0.5f
 
