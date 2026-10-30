@@ -60,6 +60,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.domain.models.ToolModel
 import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.ui.theme.AppTheme
+import com.moviles.ark.ui.theme.ScreenTopPadding
 import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.theme.FigtreeFontFamily
 import com.moviles.ark.ui.theme.PrimaryColor
@@ -154,7 +155,7 @@ private fun ToolsCatalogTopBar(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 14.dp)
+            .padding(start = 20.dp, end = 20.dp, top = ScreenTopPadding, bottom = 14.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),

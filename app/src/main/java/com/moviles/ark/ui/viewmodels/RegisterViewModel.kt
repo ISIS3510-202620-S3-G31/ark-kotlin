@@ -26,7 +26,8 @@ class RegisterViewModel(private val authRepository: AuthRepository) : ViewModel(
     //cada campo le pregunta al modelo UserModel si cumple; el viewmodel solo guarda el resultado en el estado
     //al escribir se borra el mensaje general, los errores de cada campo se recalculan
     fun onNameChange(newName: String) {
-        privateUiState.value = privateUiState.value.copy(name = newName, nameError = UserModel.nameErrorWhileTyping(newName), errorMessage = null)
+        val name = UserModel.limitName(newName)
+        privateUiState.value = privateUiState.value.copy(name = name, nameError = UserModel.nameErrorWhileTyping(name), errorMessage = null)
     }
 
     fun onBirthDateChange(newBirthDate: String) {

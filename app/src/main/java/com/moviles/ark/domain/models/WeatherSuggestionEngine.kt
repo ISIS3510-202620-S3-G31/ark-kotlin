@@ -29,27 +29,31 @@ class WeatherSuggestionEngine(
         WeatherCondition.SUNNY -> SUNNY_TOOL_ID
     }
 
-    //texto corto de la tarjeta del home
+    //texto de la tarjeta del home: el clima de afuera y por que esa herramienta
     private fun reason(condition: WeatherCondition): String {
         val degrees = "${weather.roundedTemperature()}°C"
         return when (condition) {
-            WeatherCondition.RAINY -> "Rainy and $degrees outside"
-            WeatherCondition.COLD -> "Cold day, $degrees outside"
-            WeatherCondition.SUNNY -> "Sunny and $degrees outside"
-            WeatherCondition.NEUTRAL -> "Mild and $degrees outside"
+            WeatherCondition.RAINY -> "Rainy and $degrees outside: a calm breathing break indoors"
+            WeatherCondition.COLD -> "Cold day, $degrees outside: a calm breathing break indoors"
+            WeatherCondition.SUNNY -> "Sunny and $degrees outside: a good moment for today's photo"
+            WeatherCondition.NEUTRAL -> "Mild and $degrees outside: a calm breathing break fits today"
         }
     }
 
     companion object {
         const val CALM_TOOL_ID = "custom_breathing"
         const val SUNNY_TOOL_ID = "photo_of_the_day"
-        const val NEUTRAL_REASON = "Tune your practice to today's climate and rhythm."
+        const val NEUTRAL_REASON = "Weather unavailable right now: a calm breathing break fits any day"
+        const val LOADING_REASON = "Checking today's weather..."
 
-        //tarjeta neutral por defecto: se usa mientras carga, sin ubicacion o sin internet ni cache del clima
-        fun defaultNeutralSuggestion(toolModels: List<ToolModel>): WeatherSuggestion {
+        //tarjeta neutral por defecto: sin ubicacion o sin internet ni cache del clima
+        fun defaultNeutralSuggestion(toolModels: List<ToolModel>, reason: String = NEUTRAL_REASON): WeatherSuggestion {
             val tool = toolModels.firstOrNull { it.id == CALM_TOOL_ID }
                 ?: ToolModel.DEFAULT_CATALOG.first { it.id == CALM_TOOL_ID }
-            return WeatherSuggestion(tool, WeatherCondition.NEUTRAL, NEUTRAL_REASON)
+            return WeatherSuggestion(tool, WeatherCondition.NEUTRAL, reason)
         }
+
+        //la misma tarjeta mientras llega el clima, para que no diga que no hay clima antes de tiempo
+        fun loadingSuggestion(toolModels: List<ToolModel>): WeatherSuggestion = defaultNeutralSuggestion(toolModels, LOADING_REASON)
     }
 }

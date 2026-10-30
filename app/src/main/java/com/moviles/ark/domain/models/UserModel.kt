@@ -117,6 +117,9 @@ data class UserModel(
         //con algo escrito se aplica la regla completa desde la primera letra
         fun nameErrorWhileTyping(name: String): String? = if (name.isBlank()) null else nameError(name)
 
+        //el campo del nombre no deja escribir mas de 50 caracteres (tambien si se pega un texto largo)
+        fun limitName(name: String): String = name.take(MAX_NAME_LENGTH)
+
         //la fecha a medio escribir no marca error si va bien ("2005-0"); si ya no puede ser YYYY-MM-DD, si
         fun birthDateErrorWhileTyping(birthDate: String): String? {
             val trimmed = birthDate.trim()

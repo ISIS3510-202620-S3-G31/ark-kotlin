@@ -16,6 +16,7 @@ import com.moviles.ark.domain.adapters.WeatherServiceAdapter
 import com.moviles.ark.domain.models.CachedRecommendation
 import com.moviles.ark.domain.models.MoodCheckInModel
 import com.moviles.ark.domain.models.RecommendationContextResolver
+import com.moviles.ark.domain.models.RecommendationReason
 import com.moviles.ark.domain.models.RecommendationDecision
 import com.moviles.ark.domain.models.ToolModel
 import com.moviles.ark.domain.models.ToolCategory
@@ -104,7 +105,7 @@ class HomeViewModel(
         //la tarjeta sale de una vez con la sugerencia neutral y se cambia cuando llega el clima
         if (_uiState.value.weatherSuggestion == null) {
             val currentTools = _uiState.value.tools.ifEmpty { ToolModel.DEFAULT_CATALOG }
-            _uiState.update { it.copy(weatherSuggestion = WeatherSuggestionEngine.defaultNeutralSuggestion(currentTools)) }
+            _uiState.update { it.copy(weatherSuggestion = WeatherSuggestionEngine.loadingSuggestion(currentTools)) }
         }
         val adapter = weatherServiceAdapter ?: return
         viewModelScope.launch(Dispatchers.IO) {
@@ -181,7 +182,7 @@ class HomeViewModel(
                 .collect { catalogTools ->
                     //solo se recomiendan y se muestran las herramientas que ya tienen pantalla
                     val rawTools = ToolModel.implemented(catalogTools)
-                    val recommendedTools = recommend(rawTools)
+                    val (recommendedTools, reason) = recommend(rawTools)
                     val selected = _uiState.value.selectedCategory
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
@@ -189,7 +190,8 @@ class HomeViewModel(
                         filteredTools = ToolModel.inCategory(recommendedTools, selected),
                         availableCategories = ToolModel.availableCategories(recommendedTools, selected),
                         //la estrategia deja primero la herramienta que recomienda
-                        recommendedTool = recommendedTools.firstOrNull()
+                        recommendedTool = recommendedTools.firstOrNull(),
+                        recommendationReason = reason
                     )
                 }
         }
@@ -248,12 +250,13 @@ class HomeViewModel(
 
     //online-first: con internet se decide con los datos frescos y el resultado se guarda en disco;
     //sin internet se usa lo guardado hoy y, si no hay, se decide en el telefono con lo que haya guardado
-    private suspend fun recommend(rawTools: List<ToolModel>): List<ToolModel> {
+    //devuelve el orden y por que se eligio, para que la tarjeta lo explique
+    private suspend fun recommend(rawTools: List<ToolModel>): Pair<List<ToolModel>, RecommendationReason> {
         val online = isOnline()
         if (!online) {
             val cached = recommendationRepository?.getLastRecommendation()
             val latestCheckInAt = moodRepository?.getLatestCheckIn()?.getOrNull()?.timestamp
-            if (cached != null && cached.isFresh(now(), latestCheckInAt)) return cached.applyTo(rawTools)
+            if (cached != null && cached.isFresh(now(), latestCheckInAt)) return cached.applyTo(rawTools) to cached.reason
         }
 
         val decision = resolveDecision()
@@ -264,7 +267,7 @@ class HomeViewModel(
                 CachedRecommendation(decision.reason, recommendedTools.map { it.id }, now())
             )
         }
-        return recommendedTools
+        return recommendedTools to decision.reason
     }
 
     //decide la estrategia con el ultimo check-in del usuario y las herramientas que termino

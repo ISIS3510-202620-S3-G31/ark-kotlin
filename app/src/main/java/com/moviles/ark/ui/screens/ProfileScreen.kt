@@ -79,6 +79,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.ui.theme.AppTheme
+import com.moviles.ark.ui.theme.ScreenTopPadding
 import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.theme.FigtreeFontFamily
 import com.moviles.ark.ui.theme.PrimaryColor
@@ -119,7 +120,7 @@ fun ProfileScreen(
                 .fillMaxSize()
                 .statusBarsPadding()
                 .verticalScroll(rememberScrollState())
-                .padding(24.dp),
+                .padding(start = 24.dp, end = 24.dp, top = ScreenTopPadding, bottom = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text("Your profile", style = MaterialTheme.typography.headlineLarge, color = TextColor)

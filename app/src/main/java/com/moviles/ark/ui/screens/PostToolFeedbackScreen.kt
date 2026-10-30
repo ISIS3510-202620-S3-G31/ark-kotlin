@@ -48,21 +48,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.domain.composite.Emotion
+import com.moviles.ark.domain.models.EmotionSelection
 import com.moviles.ark.ui.components.MoodSelectorComponent
 import com.moviles.ark.domain.models.FeedbackModel
 import com.moviles.ark.ui.components.ModernVoiceInputBox
 import com.moviles.ark.ui.theme.AppTheme
+import com.moviles.ark.ui.theme.ScreenTopPadding
 import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.theme.FigtreeFontFamily
 import com.moviles.ark.ui.theme.PrimaryColor
 import com.moviles.ark.ui.theme.SecondaryColor
-import com.moviles.ark.ui.theme.SuccessColor
 import com.moviles.ark.ui.theme.TextColor
 import com.moviles.ark.ui.viewmodels.FeedbackUiState
 import com.moviles.ark.ui.viewmodels.FeedbackViewModel
@@ -126,16 +128,11 @@ fun PostToolFeedbackScreen(
                 .navigationBarsPadding()
                 .imePadding()
                 .verticalScroll(rememberScrollState())
-                .padding(24.dp),
+                .padding(start = 24.dp, end = 24.dp, top = ScreenTopPadding, bottom = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Header
+            //encabezado corto: el feedback no debe sentirse como un formulario largo
             HeaderSection(onDismiss = onDismiss)
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Completion Banner
-            CompletionBannerCard()
 
             Spacer(modifier = Modifier.height(24.dp))
 
@@ -172,7 +169,7 @@ fun PostToolFeedbackScreen(
                 value = uiState.comment,
                 onValueChange = onCommentChange,
                 maxLength = FeedbackModel.MAX_COMMENT_LENGTH,
-                placeholder = "Write any thoughts or insights from this session (optional)...",
+                placeholder = "Anything to add? (optional)",
                 enabled = !uiState.isLoading,
                 minHeight = 84.dp
             )
@@ -261,63 +258,11 @@ private fun HeaderSection(onDismiss: () -> Unit) {
             )
         }
         Spacer(modifier = Modifier.width(16.dp))
-        Column {
-            Text(
-                text = "Session Complete!",
-                style = MaterialTheme.typography.headlineMedium,
-                color = TextColor
-            )
-            Text(
-                text = "How was your experience?",
-                style = MaterialTheme.typography.bodyLarge,
-                color = TextColor.copy(alpha = 0.7f)
-            )
-        }
-    }
-}
-
-@Composable
-private fun CompletionBannerCard() {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = TextColor.copy(alpha = 0.06f)),
-        border = BorderStroke(1.dp, TextColor.copy(alpha = 0.12f))
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(18.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(SuccessColor),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Check,
-                    contentDescription = null,
-                    tint = TextColor,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-            Spacer(modifier = Modifier.width(14.dp))
-            Column {
-                Text(
-                    text = "Great job finishing your exercise!",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = TextColor
-                )
-                Text(
-                    text = "Your feedback helps tailor future suggestions.",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = TextColor.copy(alpha = 0.7f)
-                )
-            }
-        }
+        Text(
+            text = "Session complete",
+            style = MaterialTheme.typography.headlineLarge,
+            color = TextColor
+        )
     }
 }
 
@@ -330,18 +275,15 @@ private fun SatisfactionRatingSection(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        //mismo estilo de titulo de seccion que "How are you feeling?"
         Text(
-            text = "Rate your satisfaction",
-            style = MaterialTheme.typography.headlineSmall,
+            text = "How was it?",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
             color = TextColor
         )
-        Text(
-            text = "Tap a rating from 1 to 5 stars",
-            style = MaterialTheme.typography.bodyLarge,
-            color = TextColor.copy(alpha = 0.7f)
-        )
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         //cinco estrellas: tocar una llena esa y las anteriores; la cantidad es la calificacion
         Row(
@@ -368,14 +310,6 @@ private fun SatisfactionRatingSection(
             }
         }
 
-        if (rating > 0) {
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = "$rating of 5",
-                style = MaterialTheme.typography.labelLarge,
-                color = TextColor
-            )
-        }
     }
 }
 
@@ -388,7 +322,7 @@ fun PostToolFeedbackScreenPreview() {
                 toolId = "custom_breathing",
                 rating = 4,
                 comment = "Felt very relaxed afterwards!",
-                selectedEmotions = setOf(Emotion.HAPPINESS)
+                selection = EmotionSelection(mapOf(Emotion.HAPPINESS to 4), Emotion.HAPPINESS)
             ),
             onRatingChange = {},
             onCommentChange = {},
