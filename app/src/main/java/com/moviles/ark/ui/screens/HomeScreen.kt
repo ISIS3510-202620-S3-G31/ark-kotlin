@@ -28,6 +28,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.AcUnit
 import androidx.compose.material.icons.filled.Casino
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.FavoriteBorder
 import java.util.Locale
 import java.util.Date
@@ -330,8 +331,8 @@ fun HomeScreen(
                 )
             }
 
-            //3. recomendacion basada en el clima: solo aparece cuando el clima sugiere una herramienta,
-            //y Explore la abre; sin internet, sin ubicacion o con clima neutro la tarjeta no se muestra
+            //3. recomendacion basada en el clima: siempre aparece y Explore abre la herramienta sugerida;
+            //sin internet ni cache, sin ubicacion o con clima templado queda la sugerencia neutral
             uiState.weatherSuggestion?.let { suggestion ->
                 item {
                     WeatherRecommendationCard(
@@ -528,7 +529,8 @@ private fun WeatherRecommendationCard(
                         imageVector = when (suggestion.condition) {
                             WeatherCondition.RAINY -> Icons.Default.Umbrella
                             WeatherCondition.COLD -> Icons.Default.AcUnit
-                            else -> Icons.Default.WbSunny
+                            WeatherCondition.SUNNY -> Icons.Default.WbSunny
+                            WeatherCondition.NEUTRAL -> Icons.Default.Cloud
                         },
                         contentDescription = "Weather suggestion",
                         tint = AccentColor,

@@ -99,8 +99,13 @@ class HomeViewModel(
     }
 
     //el clima va aparte del resolver de estrategias: no cambia el orden del catalogo, solo llena su propia tarjeta
-    //se valida la cache en disco (TTL de 1 hora) para tener clima sin red; si no hay clima o no tiene sugerencia la tarjeta no sale
+    //se valida la cache en disco (TTL de 1 hora) para tener clima sin red; si no hay clima la tarjeta queda neutral
     fun loadWeatherSuggestion() {
+        //la tarjeta sale de una vez con la sugerencia neutral y se cambia cuando llega el clima
+        if (_uiState.value.weatherSuggestion == null) {
+            val currentTools = _uiState.value.tools.ifEmpty { ToolModel.DEFAULT_CATALOG }
+            _uiState.update { it.copy(weatherSuggestion = WeatherSuggestionEngine.defaultNeutralSuggestion(currentTools)) }
+        }
         val adapter = weatherServiceAdapter ?: return
         viewModelScope.launch(Dispatchers.IO) {
             val location = locationRepository?.getCurrentLocation()
@@ -116,6 +121,7 @@ class HomeViewModel(
 
             val currentTools = _uiState.value.tools.ifEmpty { ToolModel.DEFAULT_CATALOG }
             val suggestion = weather?.let { WeatherSuggestionEngine(it).suggest(currentTools) }
+                ?: WeatherSuggestionEngine.defaultNeutralSuggestion(currentTools)
 
             _uiState.update { it.copy(weatherSuggestion = suggestion) }
         }
