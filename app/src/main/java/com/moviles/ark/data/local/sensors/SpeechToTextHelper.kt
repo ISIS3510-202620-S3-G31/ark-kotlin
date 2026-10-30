@@ -62,8 +62,9 @@ class SpeechToTextHelper(
     //frases ya reconocidas en esta sesion de dictado; el texto parcial se suma al final
     private var sessionText = ""
     private var preloadRequested = false
+    private var switchedRecognizer = false
     private var userAskedForPack = false
-    //false cuando el reconocedor del telefono no tiene el idioma y se pasa al de google en linea
+    //true sin internet: reconocedor del telefono con su paquete offline; false con internet: reconocedor normal en linea
     private var useOnDevice = true
     //idioma con paquete offline que mas se parece al del telefono (por ejemplo es-US si es-CO no tiene)
     private var recognitionLanguageTag: String = Locale.getDefault().toLanguageTag()
@@ -249,7 +250,9 @@ class SpeechToTextHelper(
             _transcription.value = ""
             sessionText = ""
             keepListening = true
-            useOnDevice = true
+            //con internet se usa el reconocedor normal (en linea, no necesita paquete); sin internet el del telefono
+            useOnDevice = !isOnline()
+            switchedRecognizer = false
             startRecognizer()
         }
     }
@@ -263,7 +266,6 @@ class SpeechToTextHelper(
 
         try {
             //en android 12+ usa el reconocedor en el dispositivo para garantizar funcionamiento offline
-            //si el paquete offline no esta y hay internet, la sesion sigue con el reconocedor en linea
             val recognizer = if (useOnDevice && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) {
                 SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
             } else {
@@ -272,7 +274,7 @@ class SpeechToTextHelper(
 
             recognizer.setRecognitionListener(createRecognitionListener())
             speechRecognizer = recognizer
-            recognizer.startListening(createRecognizerIntent(recognitionLanguageTag))
+            recognizer.startListening(createRecognizerIntent(recognitionLanguageTag, preferOffline = useOnDevice))
         } catch (e: Exception) {
             Log.e("SpeechToTextHelper", "Error starting speech recognition", e)
             CrashlyticsHelper.logNonFatal(
@@ -343,7 +345,8 @@ class SpeechToTextHelper(
         }
     }
 
-    private fun createRecognizerIntent(languageTag: String): Intent {
+    //preferOffline obliga al reconocedor a usar solo el paquete del telefono: con internet y sin paquete fallaba con error 13
+    private fun createRecognizerIntent(languageTag: String, preferOffline: Boolean = true): Intent {
         return Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
@@ -351,7 +354,7 @@ class SpeechToTextHelper(
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, languageTag)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
             //forzar la preferencia de paquetes locales offline sin internet
-            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, preferOffline)
             //pausas largas antes de cortar; si igual corta, el helper vuelve a escuchar solo
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 4000L)
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 3000L)
@@ -401,9 +404,17 @@ class SpeechToTextHelper(
                 val isSilence = error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
                 val packMissing = error == ERROR_LANGUAGE_NOT_SUPPORTED || error == ERROR_LANGUAGE_UNAVAILABLE
                 when {
-                    //sin paquete offline pero con internet: se sigue escuchando con el reconocedor en linea, sin aviso
-                    packMissing && useOnDevice && keepListening && isOnline() -> {
+                    //cada sesion puede cambiar de reconocedor una sola vez, sin aviso, para no rebotar entre los dos
+                    //sin paquete offline pero con internet: sigue con el reconocedor en linea
+                    packMissing && useOnDevice && keepListening && !switchedRecognizer && isOnline() -> {
                         useOnDevice = false
+                        switchedRecognizer = true
+                        restartAfterPause()
+                    }
+                    //el reconocedor en linea perdio la red: sigue con el del telefono por si tiene el paquete
+                    isNetworkError(error) && !useOnDevice && keepListening && !switchedRecognizer -> {
+                        useOnDevice = true
+                        switchedRecognizer = true
                         restartAfterPause()
                     }
                     //una pausa sin palabras: si el usuario no ha tocado parar, se vuelve a escuchar
@@ -445,6 +456,9 @@ class SpeechToTextHelper(
     private fun restartAfterPause() {
         mainHandler.postDelayed({ if (keepListening) startRecognizer() }, RESTART_DELAY_MILLIS)
     }
+
+    private fun isNetworkError(error: Int): Boolean = error == SpeechRecognizer.ERROR_NETWORK ||
+        error == SpeechRecognizer.ERROR_NETWORK_TIMEOUT || error == SpeechRecognizer.ERROR_SERVER
 
     private fun isOnline(): Boolean {
         val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager ?: return false
