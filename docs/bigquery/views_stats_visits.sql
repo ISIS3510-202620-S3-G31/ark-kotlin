@@ -79,3 +79,44 @@ FROM active_users AS a
 LEFT JOIN `ark-mobiles.ark_dashboards.stats_weekly_visits` AS w
   ON w.user_id = a.user_id AND w.week_start = a.week_start AND NOT w.is_synthetic
 GROUP BY a.week_start;
+
+-- ============================================================================
+-- Lo que lee hoy la pagina "Stats" de Data Studio: estas tres vistas, en firestore_export.
+-- Las de arriba (ark_dashboards.stats_*) no estan creadas en BigQuery.
+-- ============================================================================
+
+-- Una fila por usuario y dia.
+CREATE OR REPLACE VIEW `ark-mobiles.firestore_export.vw_stats_daily_parsed` AS
+SELECT
+  -- Parseo de fecha desde formato YYYYMMDD
+  PARSE_DATE('%Y%m%d', JSON_VALUE(data, '$.dateKey')) AS visit_date,
+  -- Identificador de usuario y metricas
+  JSON_VALUE(data, '$.userId') AS user_id,
+  COALESCE(SAFE_CAST(JSON_VALUE(data, '$.count') AS INT64), 1) AS visit_count,
+  -- la app no manda is_synthetic: si falta, el dato es real (false). Con `IS FALSE` en el WHERE
+  -- un campo que no existe (NULL) no pasaba y la pagina quedaba en "No data"
+  COALESCE(SAFE_CAST(JSON_VALUE(data, '$.is_synthetic') AS BOOL), FALSE) AS is_synthetic,
+  timestamp AS updated_at
+FROM `ark-mobiles.firestore_export.stats_daily_visits_raw_latest`
+WHERE SAFE_CAST(JSON_VALUE(data, '$.is_synthetic') AS BOOL) IS NOT TRUE
+  AND JSON_VALUE(data, '$.dateKey') IS NOT NULL;
+
+-- Una fila por usuario y semana.
+CREATE OR REPLACE VIEW `ark-mobiles.firestore_export.vw_stats_weekly_user` AS
+SELECT
+  DATE_TRUNC(visit_date, ISOWEEK) AS week_start,
+  user_id,
+  SUM(visit_count) AS total_visits
+FROM `ark-mobiles.firestore_export.vw_stats_daily_parsed`
+GROUP BY week_start, user_id;
+
+-- La respuesta: una fila por semana.
+CREATE OR REPLACE VIEW `ark-mobiles.firestore_export.vw_stats_weekly_kpis` AS
+SELECT
+  week_start,
+  COUNT(DISTINCT user_id) AS active_users,
+  SUM(total_visits) AS total_visits,
+  ROUND(SAFE_DIVIDE(SUM(total_visits), COUNT(DISTINCT user_id)), 2) AS avg_visits_per_user
+FROM `ark-mobiles.firestore_export.vw_stats_weekly_user`
+GROUP BY week_start
+ORDER BY week_start DESC;

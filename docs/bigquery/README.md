@@ -96,6 +96,8 @@ query*. Una corrida por colección.
    `analytics_556383466` y ya está puesto en el archivo; en otro proyecto hay que cambiarlo por
    el que aparece en BigQuery después de enlazar. Los bloques "PASO 2" del final van después de
    instalar las instancias de `tool_load_latency` y `screen_time`.
+3. Correr `views_bq4_and_age.sql` (BQ4 y edad de los usuarios activos; usa las vistas de los
+   dos pasos anteriores).
 
 Quedan en el dataset `ark_dashboards`:
 
@@ -111,6 +113,9 @@ Quedan en el dataset `ark_dashboards`:
 | `app_screen_time` | tiempo de pantalla, un pedazo por fila (cada minuto con la app abierta y el resto al salir) |
 | `daily_screen_time` | tiempo de pantalla, una fila por usuario, día y tipo de dispositivo: minutos, sesiones, rango, edad |
 | `daily_screen_time_summary` | tiempo de pantalla, por día y tipo de dispositivo: usuarios activos, p25/p50/p75/p90 |
+| `test_accounts` (tabla) | cuentas de prueba creadas a mano en la app; se marcan con `is_test_account`, no se borran |
+| `bq4_tool_formats` | BQ4, sesiones completadas por formato, tipo de dispositivo y cuenta de prueba |
+| `bq_age_distribution` | edad de los usuarios activos en 30 días, por grupo de MinSalud y cuenta de prueba |
 
 Los dos bloques "PASO 2" del final de `views_analytics.sql` ya se corrieron: `tool_load_latency`
 y `app_screen_time` leen de Firestore (llega en segundos) y de Analytics solo lo anterior a la
@@ -165,6 +170,27 @@ Fuentes `daily_screen_time`, `daily_screen_time_summary` y `app_screen_time`:
 
 Para un tercero (tipo 4) solo se muestran agregados, nunca filas por usuario.
 
+### Página BQ4 Tool Interaction Formats
+
+Fuente `bq4_tool_formats`:
+
+1. Controles *Drop-down list* `device_type` (por defecto `Real phone`) e `is_test_account` (por
+   defecto `false`). La respuesta es con esos dos; cambiándolos se ve el emulador o las pruebas.
+2. Anillo `tool_format` × `total_completions` (no `completion_percentage`: con varias filas por
+   formato, sumar porcentajes da números falsos; el anillo calcula el suyo).
+3. Barras `tool_format` × `total_completions` y scorecard con el total.
+4. Texto con la respuesta y la fecha.
+
+`tool_interactions` no guarda el celular, así que la vista lo toma de la apertura de la misma
+herramienta justo antes (BQ1). La foto del día cuenta una vez por usuario y día, aunque se
+retome. En Kotlin ninguna herramienta registra el formato `text`, por eso no aparece.
+
+### Página BQ Age Distribution
+
+Fuente `bq_age_distribution`: control `is_test_account` (por defecto `false`), anillo y barras
+`age_bucket` × `active_users_30d`, scorecard con el total y texto con la respuesta y la fecha.
+Activo = al menos un check-in o una herramienta en los últimos 30 días.
+
 Los campos nuevos (`entry_point`, `first_open`, `app_screen_time`, `user_id`, las colecciones
 `tool_load_latency` y `screen_time`) solo llegan desde la versión de la app que los trae; antes
 de eso `entry_point` sale como `unknown`.
@@ -203,6 +229,12 @@ Para el dashboard:
    - Serie `week_start` × `avg_visits_per_active_user` y `avg_visits_per_stats_user`.
    - Histograma de `stats_weekly_visits.visits` (cuántos usuarios entran 1, 2, 3… veces), con
      desglose `device_type` y filtro `is_synthetic = false`.
+
+Hoy la página "Stats" lee otras vistas: `firestore_export.vw_stats_daily_parsed`,
+`vw_stats_weekly_user` y `vw_stats_weekly_kpis` (al final de `views_stats_visits.sql`). Las
+`ark_dashboards.stats_*` de arriba no están creadas en BigQuery. Ojo con `vw_stats_daily_parsed`:
+la app no manda `is_synthetic`, así que el filtro tiene que ser `IS NOT TRUE`; con `IS FALSE` se
+descartan todas las visitas reales.
 
 Para verlo en tiempo real: con el dashboard abierto, entrar a Stats en un celular con internet;
 la visita llega a Firestore en segundos y el dashboard la muestra en la siguiente relectura
