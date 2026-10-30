@@ -37,15 +37,19 @@ class BreathingRepositoryImpl(
 
     override suspend fun getAmbientTracks(): AmbientTrackCatalog {
         val jamendoTracks = musicServiceAdapter.getAmbientTracks(limit = JAMENDO_TRACK_LIMIT).getOrNull().orEmpty()
+        val cachedTracks = musicServiceAdapter.getCachedTracks()
         return if (jamendoTracks.isNotEmpty()) {
-            //con internet: la pista de la app primero y luego las de jamendo (las ya descargadas van marcadas offline)
-            AmbientTrackCatalog(tracks = (listOf(defaultTrack) + jamendoTracks).distinctBy { it.id }, isOnline = true)
+            //con internet: la pista de la app primero, luego las de jamendo (las ya descargadas van marcadas offline)
+            //y al final las descargadas que ya no estan en el top de jamendo, para que la lista no cambie al perder la red
+            AmbientTrackCatalog(tracks = (listOf(defaultTrack) + jamendoTracks + cachedTracks).distinctBy { it.id }, isOnline = true)
         } else {
             //sin respuesta de jamendo solo se ofrece lo que suena offline: la pista de la app y las guardadas en cache
-            val cachedTracks = musicServiceAdapter.getCachedTracks()
             AmbientTrackCatalog(tracks = (listOf(defaultTrack) + cachedTracks).distinctBy { it.id }, isOnline = false)
         }
     }
+
+    override suspend fun offlineTrackIds(): Set<String> =
+        musicServiceAdapter.getCachedTracks().map { it.id }.toSet() + BUNDLED_TRACK_ID
 
     override suspend fun resolveTrackAudio(track: AmbientTrackModel): String {
         if (track.id == BUNDLED_TRACK_ID) return track.audioUrl

@@ -12,16 +12,34 @@ import com.moviles.ark.domain.exceptions.NetworkUnavailableException
 import com.moviles.ark.domain.models.RegistrationErrors
 import com.moviles.ark.domain.models.UserModel
 import com.moviles.ark.domain.repositories.AuthRepository
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-class RegisterViewModel(private val authRepository: AuthRepository) : ViewModel() {
+class RegisterViewModel(
+    private val authRepository: AuthRepository,
+    //true cuando hay internet; vuelve a emitir cada vez que cambia
+    connectivity: Flow<Boolean> = emptyFlow()
+) : ViewModel() {
     //solo el viewmodel puede modificar el estado privado
     private val privateUiState = MutableStateFlow(RegisterUiState())
     //contenedor reactivo expuesto a la vista de solo lectura
     val uiState: StateFlow<RegisterUiState> = privateUiState.asStateFlow()
+
+    //el aviso de "sin internet" se quita solo cuando vuelve la red; antes se quedaba hasta que el usuario escribiera
+    init {
+        viewModelScope.launch {
+            connectivity.collect { isOnline ->
+                val noInternet = setOf(UserModel.noInternetError(true), UserModel.noInternetError(false))
+                if (isOnline && privateUiState.value.errorMessage in noInternet) {
+                    privateUiState.value = privateUiState.value.copy(errorMessage = null)
+                }
+            }
+        }
+    }
 
     //cada campo le pregunta al modelo UserModel si cumple; el viewmodel solo guarda el resultado en el estado
     //al escribir se borra el mensaje general, los errores de cada campo se recalculan
@@ -83,7 +101,8 @@ class RegisterViewModel(private val authRepository: AuthRepository) : ViewModel(
     //hacer el registro cuando el usuario presiona el boton en la screen
     //las reglas de negocio pertenecen al modelo UserModel; el toque nunca se ignora:
     //si algun campo no cumple se muestra por que y la cuenta solo se crea cuando todos cumplen
-    fun register(onSuccess: () -> Unit) {
+    //onSuccess recibe un aviso para mostrar al salir de la pantalla, o null si todo quedo en la nube
+    fun register(onSuccess: (notice: String?) -> Unit) {
         val state = privateUiState.value
         if (state.isLoading) return
 
@@ -101,11 +120,12 @@ class RegisterViewModel(private val authRepository: AuthRepository) : ViewModel(
             val result = authRepository.registerUser(userModel)
             privateUiState.value = privateUiState.value.copy(isLoading = false)
 
-            result.onSuccess {
+            result.onSuccess { profileUploaded ->
                 privateUiState.value = privateUiState.value.copy(
                     successMessage = "Account created successfully! Welcome to Ark"
                 )
-                onSuccess()
+                //la cuenta existe pero la red se cayo antes de guardar el perfil: se dice que termina solo al volver la red
+                onSuccess(if (profileUploaded) null else PROFILE_PENDING_NOTICE)
             }
             result.onFailure { error ->
                 //el repositorio ya traduce los errores de firebase a excepciones del dominio
@@ -123,10 +143,12 @@ class RegisterViewModel(private val authRepository: AuthRepository) : ViewModel(
 
     //factory para que el viewmodel reciba el authRepository del AppContainer
     companion object {
+        const val PROFILE_PENDING_NOTICE = "Account created. Your profile will finish saving when you're back online"
+
         val Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as ArkApplication
-                RegisterViewModel(app.container.authRepository)
+                RegisterViewModel(app.container.authRepository, app.container.networkConnectivityObserver.observe())
             }
         }
     }

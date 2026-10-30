@@ -18,6 +18,8 @@ data class MoodCheckInUiState(
     val isLoading: Boolean = false,
     val isSaved: Boolean = false,
     val errorMessage: String? = null,
+    //aviso al guardar: subido o guardado en el telefono hasta que vuelva la red
+    val savedNotice: String? = null,
     //dialogo amable cuando el gps esta apagado o no hay permiso
     val showLocationDisabledDialog: Boolean = false,
     //indica si el usuario ya completo su unico check-in diario para bloquear nuevas entradas

@@ -18,9 +18,19 @@ data class UserProfile(
     val streakDays: Int = 0,
     //fecha en milisegundos del ultimo check-in contado en la racha
     val lastCheckInAt: Long? = null,
-    //ruta del avatar en el telefono; null si el usuario no ha elegido foto
-    val avatarPath: String? = null
+    //ruta de la foto de perfil subida, guardada en el telefono; null si el usuario nunca subio una
+    val avatarPath: String? = null,
+    //avatar de la lista que eligio; se muestra cuando no eligio su foto
+    val avatarId: String = Avatar.DEFAULT_ID,
+    //true si eligio mostrar su foto en vez del avatar (puede cambiar entre los dos cuando quiera)
+    val usesPhoto: Boolean = false
 ) {
+    //la foto solo se muestra si la eligio y ya esta en el telefono; si no, se ve el avatar
+    fun showsPhoto(): Boolean = usesPhoto && avatarPath != null
+
+    //ruta de la imagen a mostrar en el home y el perfil; null significa mostrar el avatar
+    fun visiblePhotoPath(): String? = avatarPath.takeIf { showsPhoto() }
+
     //reglas de negocio para editar el perfil: las mismas del registro (UserModel)
     fun isValidName(): Boolean = UserModel.nameError(name) == null
 

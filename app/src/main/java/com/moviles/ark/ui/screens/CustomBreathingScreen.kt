@@ -540,7 +540,7 @@ private fun MusicControl(
     val track = uiState.selectedTrack
     val label = when {
         track == null -> "Ambient music"
-        track.id == uiState.unplayableTrackId -> "Couldn't play, choose another track"
+        track.id == uiState.unplayableTrackId -> UNPLAYABLE_TRACK_MESSAGE
         else -> track.title
     }
     Row(
@@ -730,7 +730,7 @@ private fun TrackRow(track: AmbientTrackModel, uiState: BreathingUiState, onClic
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = if (isUnplayable) "Couldn't play. Check your connection" else details,
+                text = if (isUnplayable) UNPLAYABLE_TRACK_MESSAGE else details,
                 style = SecondaryTextStyle,
                 color = if (isUnplayable) ErrorColor else TextColor.copy(alpha = 0.7f),
                 maxLines = 1,
@@ -909,6 +909,9 @@ private const val MIN_CIRCLE_SCALE = 0.5f
 
 //botones que todavia no se pueden usar (Finish antes del primer ciclo)
 private const val DISABLED_ALPHA = 0.4f
+
+//la pastilla y la fila de la pista dicen lo mismo: casi siempre falla porque se perdio la conexion en pleno streaming
+private const val UNPLAYABLE_TRACK_MESSAGE = "Couldn't play. Check your connection"
 
 @Preview(showBackground = true, name = "Ready")
 @Composable

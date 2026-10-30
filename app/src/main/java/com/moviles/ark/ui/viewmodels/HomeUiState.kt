@@ -31,7 +31,7 @@ data class HomeUiState(
     //tarjeta aparte segun el clima de afuera; sin clima trae la sugerencia neutral
     val weatherSuggestion: WeatherSuggestion? = null,
     val avatarId: String = Avatar.DEFAULT_ID,
-    //foto de perfil subida (archivo en el telefono); si existe se muestra en vez del avatar, igual que en perfil
+    //foto de perfil (archivo en el telefono) cuando el usuario eligio mostrarla; null muestra el avatar
     val avatarPhotoPath: String? = null,
     //nombre guardado en el telefono para el saludo del home
     val userName: String = ""

@@ -110,6 +110,11 @@ interface EmotionCheckInDao {
     @Query("UPDATE mood_checkins SET cityName = :cityName, isSynced = 0 WHERE userId = :userId AND timestamp = :timestamp")
     suspend fun updateCityName(userId: String, timestamp: Long, cityName: String)
 
+    //despues de subir un check-in: solo queda sincronizado si la ciudad no cambio mientras subia;
+    //si llego la ciudad en ese momento, la fila sigue pendiente y el siguiente sync la sube
+    @Query("UPDATE mood_checkins SET isSynced = 1 WHERE id = :id AND cityName IS :uploadedCityName")
+    suspend fun markAsSyncedIfUnchanged(id: Long, uploadedCityName: String?)
+
     @Query("UPDATE mood_checkins SET isSynced = 1 WHERE id IN (:ids)")
     suspend fun markAsSyncedRaw(ids: List<Long>)
 

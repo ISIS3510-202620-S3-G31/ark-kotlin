@@ -105,6 +105,98 @@ CROSS JOIN UNNEST(JSON_QUERY_ARRAY(c.data, '$.emotions')) AS e
 LEFT JOIN `ark-mobiles.ark_dashboards.users` AS u
   ON u.user_id = JSON_VALUE(c.path_params, '$.uid');
 
+-- Emotion By Location: una fila por emocion de cada check-in, con su localidad.
+-- Lee mood_checkins, donde escriben Kotlin y Flutter. Reemplaza el CSV de
+-- process_checkins_locality.js.
+-- La localidad sale del poligono oficial de las 20 localidades (tabla bogota_localities, se
+-- crea con bogota_localities.sql). Sin coordenadas: 'Ubicación no especificada'; con
+-- coordenadas fuera de Bogota (otro municipio, el emulador): 'Otra localidad'.
+CREATE OR REPLACE VIEW `ark-mobiles.ark_dashboards.mood_emotions_by_locality` AS
+WITH checkins AS (
+  SELECT
+    c.*,
+    SAFE_CAST(JSON_VALUE(c.data, '$.latitude') AS FLOAT64) AS latitude,
+    SAFE_CAST(JSON_VALUE(c.data, '$.longitude') AS FLOAT64) AS longitude
+  FROM `ark-mobiles.firestore_export.mood_checkins_raw_latest` AS c
+),
+-- cruce espacial aparte: BigQuery no acepta un LEFT JOIN cuya unica condicion es geografica.
+-- Las localidades no se cruzan, asi que cada punto cae en una sola (o en ninguna).
+located AS (
+  SELECT c.document_name, l.name
+  FROM checkins AS c
+  JOIN `ark-mobiles.ark_dashboards.bogota_localities` AS l
+    -- SAFE: una coordenada fuera de rango da NULL (sin localidad) en vez de romper la vista
+    ON ST_CONTAINS(l.geom, SAFE.ST_GEOGPOINT(c.longitude, c.latitude))
+)
+SELECT
+  CONCAT(JSON_VALUE(c.path_params, '$.uid'), '/', c.document_id) AS checkin_key,
+  JSON_VALUE(c.path_params, '$.uid') AS user_id,
+  CASE
+    WHEN c.latitude IS NULL OR c.longitude IS NULL THEN 'Ubicación no especificada'
+    ELSE COALESCE(l.name, 'Otra localidad')
+  END AS locality,
+  c.latitude,
+  c.longitude,
+  -- Kotlin guarda el nombre del enum (HAPPINESS); en minuscula queda igual venga de la app que venga
+  LOWER(JSON_VALUE(e, '$.name')) AS emotion,
+  SAFE_CAST(JSON_VALUE(e, '$.intensity') AS INT64) AS intensity,
+  `ark-mobiles.ark_dashboards.to_ts`(JSON_QUERY(c.data, '$.timestamp')) AS happened_at,
+  u.age_bucket,
+  -- COALESCE en los dos lados: FALSE OR NULL da NULL, y el resumen agrupa y une por esta columna
+  COALESCE(u.is_synthetic, FALSE)
+    OR COALESCE(JSON_VALUE(c.data, '$.demo') = 'true', FALSE) AS is_synthetic
+FROM checkins AS c
+CROSS JOIN UNNEST(JSON_QUERY_ARRAY(c.data, '$.emotions')) AS e
+LEFT JOIN located AS l
+  ON l.document_name = c.document_name
+LEFT JOIN `ark-mobiles.ark_dashboards.users` AS u
+  ON u.user_id = JSON_VALUE(c.path_params, '$.uid');
+
+-- Emotion By Location: una fila por localidad, con las mismas columnas que tenia el CSV
+-- (asi las graficas de Data Studio no se rompen al cambiar la fuente), separada por
+-- is_synthetic para filtrar en el dashboard. Diferencia con el CSV: total_checkins ahora
+-- cuenta check-ins; lo que antes contaba (emociones) queda en emotion_entries.
+CREATE OR REPLACE VIEW `ark-mobiles.ark_dashboards.locality_emotion_summary` AS
+WITH per_emotion AS (
+  SELECT
+    is_synthetic, locality, emotion,
+    COUNT(*) AS emotion_count,
+    ROUND(AVG(intensity), 2) AS avg_intensity
+  FROM `ark-mobiles.ark_dashboards.mood_emotions_by_locality`
+  GROUP BY is_synthetic, locality, emotion
+),
+per_locality AS (
+  SELECT
+    is_synthetic, locality,
+    COUNT(DISTINCT checkin_key) AS total_checkins,
+    COUNT(*) AS emotion_entries,
+    MAX(happened_at) AS last_checkin_at
+  FROM `ark-mobiles.ark_dashboards.mood_emotions_by_locality`
+  GROUP BY is_synthetic, locality
+),
+top_emotions AS (
+  SELECT
+    is_synthetic, locality,
+    ARRAY_AGG(emotion IGNORE NULLS ORDER BY emotion_count DESC, emotion LIMIT 1)[SAFE_OFFSET(0)] AS most_frequent_emotion,
+    MAX(emotion_count) AS most_frequent_count,
+    ARRAY_AGG(emotion IGNORE NULLS ORDER BY avg_intensity DESC, emotion LIMIT 1)[SAFE_OFFSET(0)] AS highest_intensity_emotion,
+    MAX(avg_intensity) AS highest_avg_intensity
+  FROM per_emotion
+  GROUP BY is_synthetic, locality
+)
+SELECT
+  l.locality,
+  l.total_checkins,
+  t.most_frequent_emotion,
+  t.most_frequent_count,
+  t.highest_intensity_emotion,
+  t.highest_avg_intensity,
+  l.emotion_entries,
+  l.last_checkin_at,
+  l.is_synthetic
+FROM per_locality AS l
+JOIN top_emotions AS t USING (is_synthetic, locality);
+
 -- Calificaciones que deja el usuario al terminar una herramienta.
 -- La app Kotlin guarda la fecha en createdAt; seed.js la guarda en startedAt (texto ISO).
 CREATE OR REPLACE VIEW `ark-mobiles.ark_dashboards.tool_feedback` AS

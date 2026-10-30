@@ -44,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import android.widget.Toast
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -228,7 +229,13 @@ fun RegisterScreen(
 
                     //el boton siempre responde: si falta algo el viewmodel marca los campos; solo se apaga mientras carga
                     Button(
-                        onClick = { viewModel.register(onSuccess = onRegisterSuccess) },
+                        onClick = {
+                            viewModel.register(onSuccess = { notice ->
+                                //el aviso se ve aunque la pantalla cambie al home
+                                notice?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+                                onRegisterSuccess()
+                            })
+                        },
                         enabled = !uiState.isLoading,
                         shape = AuthButtonShape,
                         colors = ButtonDefaults.buttonColors(
@@ -278,7 +285,7 @@ fun RegisterScreenPreview() {
     val fakeRepository = object : AuthRepository {
         override fun isLoggedIn() = false
         override suspend fun login(email: String, password: String) = Result.success(Unit)
-        override suspend fun registerUser(user: UserModel) = Result.success(Unit)
+        override suspend fun registerUser(user: UserModel) = Result.success(true)
         override fun logout() {}
     }
     AppTheme {

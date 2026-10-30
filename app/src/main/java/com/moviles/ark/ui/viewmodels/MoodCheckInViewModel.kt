@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.AP
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.moviles.ark.domain.exceptions.AlreadyCheckedInTodayException
 import com.moviles.ark.ArkApplication
 import com.moviles.ark.domain.models.LocationStatus
 import com.moviles.ark.domain.composite.Emotion
@@ -22,7 +23,9 @@ import kotlin.math.roundToInt
 
 class MoodCheckInViewModel(
     private val locationRepository: LocationRepository? = null,
-    private val moodRepository: MoodRepository? = null
+    private val moodRepository: MoodRepository? = null,
+    //true si hay internet al guardar, para el aviso
+    private val isOnline: () -> Boolean = { true }
 ) : ViewModel() {
     private val privateUiState = MutableStateFlow(MoodCheckInUiState())
     val uiState: StateFlow<MoodCheckInUiState> = privateUiState.asStateFlow()
@@ -40,11 +43,10 @@ class MoodCheckInViewModel(
         viewModelScope.launch {
             val hasChecked = repository.hasCheckedInToday().getOrDefault(false)
             if (hasChecked) {
+                //se bloquea de una vez; el resumen (que puede esperar la ciudad) llega despues
+                privateUiState.value = privateUiState.value.copy(isAlreadyCheckedInToday = true)
                 val latest = repository.getLatestCheckIn().getOrNull()
-                privateUiState.value = privateUiState.value.copy(
-                    isAlreadyCheckedInToday = true,
-                    existingCheckIn = latest
-                )
+                privateUiState.value = privateUiState.value.copy(existingCheckIn = latest)
             }
         }
     }
@@ -169,14 +171,25 @@ class MoodCheckInViewModel(
                         isSaved = true,
                         isAlreadyCheckedInToday = true,
                         existingCheckIn = checkIn,
-                        errorMessage = null
+                        errorMessage = null,
+                        //se dice que paso: subido o guardado en el telefono hasta que vuelva la red
+                        savedNotice = if (isOnline()) SAVED_ONLINE_NOTICE else SAVED_OFFLINE_NOTICE
                     )
                     //el contador de estadisticas solo se actualiza tras la insercion exitosa en base de datos
                     onSavedCallback()
                 } else {
-                    val errorMsg = result.exceptionOrNull()?.localizedMessage ?: "Could not save check-in"
-                    Log.e("MoodCheckIn", "Save error: $errorMsg")
-                    privateUiState.value = state.copy(isLoading = false, errorMessage = errorMsg)
+                    val error = result.exceptionOrNull()
+                    Log.e("MoodCheckIn", "Save error", error)
+                    //mensajes para el usuario, sin el texto tecnico de la excepcion
+                    if (error is AlreadyCheckedInTodayException) {
+                        privateUiState.value = state.copy(
+                            isLoading = false,
+                            isAlreadyCheckedInToday = true,
+                            errorMessage = MoodCheckInModel.ALREADY_CHECKED_IN_ERROR
+                        )
+                    } else {
+                        privateUiState.value = state.copy(isLoading = false, errorMessage = "Could not save your check-in, try again")
+                    }
                 }
             }
         } else {
@@ -188,12 +201,16 @@ class MoodCheckInViewModel(
     }
 
     companion object {
+        const val SAVED_ONLINE_NOTICE = "Check-in saved"
+        const val SAVED_OFFLINE_NOTICE = "Check-in saved on this phone. It will upload when you're back online"
+
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as ArkApplication
                 MoodCheckInViewModel(
                     locationRepository = app.container.locationRepository,
-                    moodRepository = app.container.moodRepository
+                    moodRepository = app.container.moodRepository,
+                    isOnline = app.container.networkConnectivityObserver::isConnected
                 )
             }
         }

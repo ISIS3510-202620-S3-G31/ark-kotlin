@@ -4,6 +4,7 @@ import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
+import com.moviles.ark.domain.exceptions.AlreadyCheckedInTodayException
 import com.moviles.ark.data.local.daos.EmotionCheckInDao
 import com.moviles.ark.data.local.entities.toDomain
 import com.moviles.ark.data.local.entities.toEntity
@@ -26,11 +27,18 @@ class MoodRepositoryImpl(
     //avisa que hay un check-in pendiente para que se suba ya si hay red; no se espera
     private val onCheckInSaved: () -> Unit = {},
     //nombre de la ciudad para un check-in que se guardo sin red; null si sigue sin red
-    private val resolveCityName: suspend (Double, Double) -> String? = { _, _ -> null }
+    private val resolveCityName: suspend (Double, Double) -> String? = { _, _ -> null },
+    //true si hay internet: sin red no se le pide la ciudad al geocoder (solo hacia esperar hasta 3 s para nada)
+    private val isOnline: () -> Boolean = { true }
 ) : MoodRepository {
     override suspend fun saveCheckIn(checkIn: MoodCheckInModel): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val currentUserId = auth.currentUser?.uid ?: "anonymous"
+            //un solo check-in diario: la pantalla lo bloquea, pero sin red tardaba en saberlo y se podia guardar otro;
+            //room es la ultima palabra porque ahi estan tambien los que aun no se suben
+            if (emotionCheckInDao.countCheckInsSince(currentUserId, MoodCheckInModel.startOfToday()) > 0) {
+                throw AlreadyCheckedInTodayException()
+            }
             //queda con isSynced = false; guardar no depende de la red, asi el check-in es instantaneo
             emotionCheckInDao.insertCheckIn(checkIn.toEntity(currentUserId))
             Log.d("MoodCheckIn", "Check-in saved in Room for $currentUserId, pending sync")
@@ -136,6 +144,7 @@ class MoodRepositoryImpl(
     //la vista del check-in muestra la ciudad; si se guardo sin red se pide ahora, sin bloquear si sigue sin red
     private suspend fun withCityName(checkIn: MoodCheckInModel): MoodCheckInModel {
         if (!checkIn.cityName.isNullOrBlank()) return checkIn
+        if (!isOnline()) return checkIn
         val latitude = checkIn.latitude ?: return checkIn
         val longitude = checkIn.longitude ?: return checkIn
         return checkIn.copy(cityName = resolveCityName(latitude, longitude))

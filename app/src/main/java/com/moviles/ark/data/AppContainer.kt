@@ -10,6 +10,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.firestore
 import com.google.firebase.storage.FirebaseStorage
 import com.google.firebase.storage.storage
+import com.moviles.ark.data.workers.RemotePhotoDeleteWorker
 import com.moviles.ark.R
 import com.moviles.ark.data.local.ArkDatabase
 import com.moviles.ark.data.local.daos.FeedbackDao
@@ -56,7 +57,6 @@ interface AppContainer {
     val toolInteractionRepository: ToolInteractionRepository
     val statsRepository: StatsRepository
     val photoRepository: PhotoEntryRepository
-    val avatarRepository: com.moviles.ark.domain.repositories.AvatarRepository
     val analyticsRepository: AnalyticsRepository
     val toolLatencyTracker: ToolLatencyTracker
     val screenTimeTracker: com.moviles.ark.domain.models.ScreenTimeTracker
@@ -90,8 +90,8 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val authRepository: AuthRepository by lazy {
         AuthRepositoryImpl(authServiceAdapter, firestore, networkConnectivityObserver, onSignedIn = { syncManager.requestSync() })
     }
-    // perfil guardado en room para verlo sin internet, con nombre y fecha sincronizados con firestore
-    override val userRepository: UserRepository by lazy { UserRepositoryImpl(context, auth, firestore, database.userDao()) }
+    // perfil guardado en room para verlo sin internet, con nombre, fecha y foto de perfil sincronizados con firestore y storage
+    override val userRepository: UserRepository by lazy { UserRepositoryImpl(context, auth, firestore, storage, database.userDao(), isOnline = networkConnectivityObserver::isConnected) }
     override val locationRepository: LocationRepository by lazy { LocationRepositoryImpl(Location(context)) }
     // check-ins guardados en room al instante; el sync los sube a firestore cuando hay red
     override val moodRepository: MoodRepository by lazy {
@@ -100,7 +100,8 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             firestore,
             database.emotionCheckInDao(),
             onCheckInSaved = { syncManager.requestSync() },
-            resolveCityName = locationRepository::getCityName
+            resolveCityName = locationRepository::getCityName,
+            isOnline = networkConnectivityObserver::isConnected
         )
     }
     // catalogo de herramientas en room como unica fuente de verdad, actualizado desde firestore y con copia en filesDir/tools.json
@@ -125,10 +126,12 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     // real photo repository with Room persistence and the public gallery (MediaStore) for the jpg files
     override val photoRepository: PhotoEntryRepository by lazy {
         //cada usuario solo ve sus fotos; sus archivos van en Pictures/Ark/User_<uid>
-        PhotoEntryRepositoryImpl(context, auth, database.photoEntryDao(), firestore, storage, onPhotoSaved = { syncManager.requestSync() })
+        PhotoEntryRepositoryImpl(
+            context, auth, database.photoEntryDao(), firestore, storage,
+            onPhotoSaved = { syncManager.requestSync() },
+            onRemoteDeleteNeeded = { userId, takenAt -> RemotePhotoDeleteWorker.enqueue(context, userId, takenAt) }
+        )
     }
-    // avatar elegido, guardado en SharedPreferences
-    override val avatarRepository: com.moviles.ark.domain.repositories.AvatarRepository by lazy { com.moviles.ark.data.repositories.AvatarRepositoryImpl() }
     override val analyticsRepository: AnalyticsRepository by lazy { AnalyticsRepositoryImpl(Firebase.analytics, auth, firestore) }
     // one tracker for the whole app: the tap on a tool and its screen live in different places
     override val toolLatencyTracker: ToolLatencyTracker by lazy { ToolLatencyTracker(analyticsRepository) }
@@ -195,11 +198,14 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             emotionCheckInDao = database.emotionCheckInDao(),
             feedbackDao = database.feedbackDao(),
             statsDailyVisitDao = database.statsDailyVisitDao(),
-            userDao = database.userDao()
+            syncPendingProfile = { userRepository.syncPendingProfile() },
+            hasPendingProfile = { userRepository.hasPendingProfileChanges() }
         )
     }
     override val syncManager: SyncManager by lazy {
-        SyncManager(context, networkConnectivityObserver, syncRepository)
+        //al arrancar con red y cada vez que vuelve la conexion se trae el catalogo de herramientas: antes solo
+        //llegaba por push (FCM) y si el push no llegaba el catalogo quedaba viejo hasta el siguiente
+        SyncManager(context, networkConnectivityObserver, syncRepository, onOnline = { toolRepository.refreshTools().isSuccess })
     }
     // sensor de luz + hora del dia para recomendaciones segun el entorno; uno para toda la app
     override val environmentalSensorManager: EnvironmentalSensorManager by lazy { EnvironmentalSensorManager(context) }

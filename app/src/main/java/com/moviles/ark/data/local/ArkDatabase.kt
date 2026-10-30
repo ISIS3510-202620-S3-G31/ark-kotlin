@@ -43,7 +43,7 @@ import com.moviles.ark.data.local.entities.UserEntity
         UserEntity::class,
         StatsDailyVisitEntity::class,
     ],
-    version = 9,
+    version = 11,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -75,6 +75,29 @@ abstract class ArkDatabase : RoomDatabase() {
             }
         }
 
+        //foto de perfil sincronizada: avatar elegido, si se muestra la foto, su url en storage y si falta subirla
+        //quien ya tenia foto la sigue viendo (antes la foto siempre ganaba sobre el avatar)
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE users ADD COLUMN avatarId TEXT NOT NULL DEFAULT 'avatar_1'")
+                db.execSQL("ALTER TABLE users ADD COLUMN usesPhoto INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE users ADD COLUMN photoUrl TEXT")
+                db.execSQL("ALTER TABLE users ADD COLUMN isAvatarSynced INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("UPDATE users SET usesPhoto = 1 WHERE avatarPath IS NOT NULL")
+            }
+        }
+
+        //hora de la ultima edicion del perfil y de la foto en este telefono, y la version de la nube que vio por ultima vez,
+        //para no pisar al subir un cambio hecho en otro telefono (sin version vista se sube como antes)
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE users ADD COLUMN profileEditedAt INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE users ADD COLUMN avatarEditedAt INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE users ADD COLUMN profileBase TEXT")
+                db.execSQL("ALTER TABLE users ADD COLUMN avatarBase TEXT")
+            }
+        }
+
         //singleton con doble comprobacion para que toda la app comparta un unico pool de conexiones
         fun getInstance(context: Context): ArkDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -83,7 +106,7 @@ abstract class ArkDatabase : RoomDatabase() {
                     ArkDatabase::class.java,
                     "ark.db"
                 )
-                .addMigrations(MIGRATION_7_8, MIGRATION_8_9)
+                .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
                 .also { INSTANCE = it }

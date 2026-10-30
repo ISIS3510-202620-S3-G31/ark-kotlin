@@ -1,5 +1,7 @@
 package com.moviles.ark.ui.screens
 
+import android.widget.Toast
+import androidx.compose.material.icons.filled.CloudOff
 import android.Manifest
 import android.content.Context
 import android.net.Uri
@@ -182,6 +184,7 @@ fun PhotoOfTheDayScreen(
                         PhotoCarousel(
                             photoDays = photoDays,
                             pagerState = pagerState,
+                            isOnline = uiState.isOnline,
                             modifier = Modifier.bringIntoViewRequester(carouselRequester)
                         )
                         //solo la foto de hoy se puede retomar; las de dias pasados solo se miran
@@ -310,7 +313,7 @@ private fun DayDot(day: PhotoDay, isShown: Boolean, onClick: () -> Unit) {
 
 //carrusel con las fotos de los ultimos 7 dias que existen; debajo dice de que dia es y en que pagina va
 @Composable
-private fun PhotoCarousel(photoDays: List<PhotoDay>, pagerState: PagerState, modifier: Modifier = Modifier) {
+private fun PhotoCarousel(photoDays: List<PhotoDay>, pagerState: PagerState, isOnline: Boolean = true, modifier: Modifier = Modifier) {
     Column(modifier = modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         HorizontalPager(
             state = pagerState,
@@ -322,6 +325,7 @@ private fun PhotoCarousel(photoDays: List<PhotoDay>, pagerState: PagerState, mod
                 PhotoThumbnail(
                     path = photo.localFilePath,
                     remoteUrl = photo.remoteUrl,
+                    isOnline = isOnline,
                     description = if (day.isToday) "Today's photo" else "Photo from ${day.name}",
                     modifier = Modifier.fillMaxWidth().aspectRatio(3f / 4f)
                 )
@@ -563,12 +567,14 @@ private fun PhotoThumbnail(
     path: String,
     modifier: Modifier = Modifier,
     description: String = "Photo of the day",
-    remoteUrl: String? = null
+    remoteUrl: String? = null,
+    isOnline: Boolean = true
 ) {
     val context = LocalContext.current
     //null mientras carga; despues trae la imagen o el error
     //primero el archivo del telefono; si no esta (otro telefono, la borraron de la galeria) la copia de storage
-    val result by produceState<Result<ImageBitmap>?>(initialValue = null, path, remoteUrl) {
+    //tambien depende de la red: una foto que solo esta en la nube y fallo sin internet se vuelve a pedir cuando vuelve
+    val result by produceState<Result<ImageBitmap>?>(initialValue = null, path, remoteUrl, isOnline) {
         value = withContext(Dispatchers.IO) {
             runCatching { if (path.isBlank() && remoteUrl != null) decodeRemote(context, remoteUrl) else decodeThumbnail(context, path) }
                 .recoverCatching { error -> if (remoteUrl != null) decodeRemote(context, remoteUrl) else throw error }
@@ -582,6 +588,17 @@ private fun PhotoThumbnail(
         when {
             bitmap != null -> Image(bitmap, contentDescription = description, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
             result == null -> CircularProgressIndicator(color = SecondaryColor)
+            //sin red y sin copia en el telefono se dice por que no se ve, en vez de solo un icono roto
+            !isOnline && path.isBlank() -> Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
+                Icon(Icons.Filled.CloudOff, contentDescription = null, tint = TextColor.copy(alpha = 0.5f), modifier = Modifier.size(48.dp))
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "Connect to the internet to see this photo",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = TextColor.copy(alpha = 0.7f),
+                    textAlign = TextAlign.Center
+                )
+            }
             else -> Icon(Icons.Filled.BrokenImage, contentDescription = "The photo could not be opened", tint = TextColor.copy(alpha = 0.5f), modifier = Modifier.size(48.dp))
         }
     }
@@ -622,8 +639,11 @@ fun PhotoOfTheDayRoute(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
+    val context = LocalContext.current
     LaunchedEffect(uiState.isPhotoSaved) {
         if (uiState.isPhotoSaved) {
+            //el aviso va en un toast para que se alcance a leer en la pantalla de feedback
+            uiState.savedNotice?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
             val duration = viewModel.getSessionDurationSeconds()
             viewModel.onNavigatedToFeedback()
             onPhotoSaved(duration)

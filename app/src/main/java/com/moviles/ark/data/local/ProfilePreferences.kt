@@ -2,96 +2,47 @@ package com.moviles.ark.data.local
 
 import android.content.Context
 import android.content.SharedPreferences
-import com.moviles.ark.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 
-data class AvatarPreset(
-    val id: String,
-    val drawableRes: Int,
-    val name: String
-)
-
 data class ScalarUserProfile(
     val name: String = "",
     val email: String = "",
-    val age: Int = 0,
-    val avatarId: String = ProfilePreferences.DEFAULT_AVATAR_ID
+    val age: Int = 0
 )
 
-//administrador de sharedpreferences para datos escalares del perfil de usuario y avatar
+//administrador de sharedpreferences para datos escalares del perfil de usuario
 //permite persistir y cargar al instante en el arranque de la app sin bloquear el hilo principal
+//la foto de perfil (avatar o foto) ya no vive aqui: esta en room por cuenta y en firestore (UserRepositoryImpl)
 object ProfilePreferences {
     private const val PREFS_NAME = "ark_profile_prefs"
     const val KEY_USER_NAME = "user_name"
     const val KEY_USER_EMAIL = "user_email"
     const val KEY_USER_AGE = "user_age"
     const val KEY_AVATAR_ID = "avatar_id"
-    const val DEFAULT_AVATAR_ID = "avatar_1"
-
-    val PRESET_AVATARS: List<AvatarPreset> = listOf(
-        AvatarPreset("avatar_1", R.drawable.avatar_1, "Fox"),
-        AvatarPreset("avatar_2", R.drawable.avatar_2, "Owl"),
-        AvatarPreset("avatar_3", R.drawable.avatar_3, "Spark"),
-        AvatarPreset("avatar_4", R.drawable.avatar_4, "Panda"),
-        AvatarPreset("avatar_5", R.drawable.avatar_5, "Cat"),
-        AvatarPreset("avatar_6", R.drawable.avatar_6, "Sprout")
-    )
-
-    private val _currentAvatarId = MutableStateFlow(DEFAULT_AVATAR_ID)
-    val currentAvatarId: StateFlow<String> = _currentAvatarId.asStateFlow()
+    private const val KEY_SYNC_NOTICE = "sync_notice"
 
     private val _userProfile = MutableStateFlow(ScalarUserProfile())
     val userProfile: StateFlow<ScalarUserProfile> = _userProfile.asStateFlow()
 
     private var prefs: SharedPreferences? = null
 
-    //cuenta con sesion abierta; el avatar se guarda tambien por cuenta ("avatar_id_<uid>") para que
-    //cerrar sesion no lo borre: al volver a entrar esa cuenta recupera el avatar que eligio (con o sin red)
-    private var boundUid: String? = null
-
-    private fun avatarKey(uid: String) = "${KEY_AVATAR_ID}_$uid"
-
-    //lo llama el listener de sesion de ArkApplication cada vez que entra o sale una cuenta
-    fun bindUser(uid: String?) {
-        boundUid = uid
-        val store = prefs ?: return
-        if (uid == null) return
-        val saved = store.getString(avatarKey(uid), null)
-            //perfiles de antes de guardar por cuenta: el avatar global era el de esta misma cuenta
-            ?: store.getString(KEY_AVATAR_ID, null)
-            ?: DEFAULT_AVATAR_ID
-        store.edit().putString(avatarKey(uid), saved).putString(KEY_AVATAR_ID, saved).apply()
-        _currentAvatarId.value = saved
-        _userProfile.value = _userProfile.value.copy(avatarId = saved)
-    }
-
-    //guarda el avatar global y el de la cuenta abierta
-    private fun SharedPreferences.Editor.putAvatar(avatarId: String): SharedPreferences.Editor {
-        putString(KEY_AVATAR_ID, avatarId)
-        boundUid?.let { putString(avatarKey(it), avatarId) }
-        return this
-    }
-
     //inicializa las preferencias en el arranque de la aplicacion
     fun init(context: Context) {
         if (prefs == null) {
             val appCtx = context.applicationContext
             prefs = appCtx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val savedAvatar = prefs?.getString(KEY_AVATAR_ID, DEFAULT_AVATAR_ID) ?: DEFAULT_AVATAR_ID
             val savedName = prefs?.getString(KEY_USER_NAME, "").orEmpty()
             val savedEmail = prefs?.getString(KEY_USER_EMAIL, "").orEmpty()
             val savedAge = prefs?.getInt(KEY_USER_AGE, 0) ?: 0
 
-            _currentAvatarId.value = savedAvatar
             _userProfile.value = ScalarUserProfile(
                 name = savedName,
                 email = savedEmail,
-                age = savedAge,
-                avatarId = savedAvatar
+                age = savedAge
             )
         }
     }
@@ -99,56 +50,47 @@ object ProfilePreferences {
     //lectura directa de memoria o cache local
     fun getScalarProfile(): ScalarUserProfile = _userProfile.value
 
-    fun getAvatarId(context: Context? = null): String {
-        if (context != null) init(context)
-        return _currentAvatarId.value
+    //avatar que la cuenta eligio en versiones anteriores de la app, cuando se guardaba aqui ("avatar_id_<uid>");
+    //el repositorio lo lee una sola vez para subirlo a firestore y no perderlo; null si no hay
+    fun savedAvatarFor(uid: String): String? {
+        return prefs?.getString("${KEY_AVATAR_ID}_$uid", null)
+    }
+
+    //aviso para la pantalla de perfil cuando el sync dejo la version de otro telefono; queda por cuenta
+    //porque el sync corre en segundo plano y el usuario lo ve la proxima vez que abra su perfil
+    fun saveSyncNotice(uid: String, notice: String) {
+        prefs?.edit()?.putString("${KEY_SYNC_NOTICE}_$uid", notice)?.apply()
+    }
+
+    //entrega el aviso una sola vez
+    fun takeSyncNotice(uid: String): String? {
+        val key = "${KEY_SYNC_NOTICE}_$uid"
+        val notice = prefs?.getString(key, null) ?: return null
+        prefs?.edit()?.remove(key)?.apply()
+        return notice
     }
 
     //persiste datos escalares del perfil de usuario en segundo plano usando dispatchers.io
     suspend fun saveProfile(
         name: String,
         email: String,
-        age: Int,
-        avatarId: String? = null
+        age: Int
     ) = withContext(Dispatchers.IO) {
-        val targetAvatar = avatarId ?: _currentAvatarId.value
         prefs?.edit()?.apply {
             putString(KEY_USER_NAME, name)
             putString(KEY_USER_EMAIL, email)
             putInt(KEY_USER_AGE, age)
-            putAvatar(targetAvatar)
             apply()
         }
-        _currentAvatarId.value = targetAvatar
         _userProfile.value = ScalarUserProfile(
             name = name,
             email = email,
-            age = age,
-            avatarId = targetAvatar
+            age = age
         )
     }
 
-    //guarda solo el avatar seleccionado en segundo plano con dispatchers.io
-    suspend fun saveAvatarId(avatarId: String) = withContext(Dispatchers.IO) {
-        prefs?.edit()?.putAvatar(avatarId)?.apply()
-        _currentAvatarId.value = avatarId
-        _userProfile.value = _userProfile.value.copy(avatarId = avatarId)
-    }
-
-    //modificacion sincronica de respaldo para llamadas directas
-    fun setAvatarId(avatarId: String) {
-        prefs?.edit()?.putAvatar(avatarId)?.apply()
-        _currentAvatarId.value = avatarId
-        _userProfile.value = _userProfile.value.copy(avatarId = avatarId)
-    }
-
-    fun setAvatarId(context: Context, avatarId: String) {
-        init(context)
-        setAvatarId(avatarId)
-    }
-
-    //limpia los datos escalares en caso de cerrar sesion; el avatar de cada cuenta ("avatar_id_<uid>") se queda
-    //(antes se borraba todo y al volver a entrar el avatar elegido regresaba al de defecto)
+    //limpia los datos escalares en caso de cerrar sesion; los avatares viejos de cada cuenta ("avatar_id_<uid>")
+    //se quedan hasta que el repositorio los sube a firestore
     suspend fun clear() = withContext(Dispatchers.IO) {
         prefs?.edit()
             ?.remove(KEY_USER_NAME)
@@ -156,11 +98,6 @@ object ProfilePreferences {
             ?.remove(KEY_USER_AGE)
             ?.remove(KEY_AVATAR_ID)
             ?.apply()
-        _currentAvatarId.value = DEFAULT_AVATAR_ID
         _userProfile.value = ScalarUserProfile()
-    }
-
-    fun getDrawableRes(avatarId: String?): Int {
-        return PRESET_AVATARS.firstOrNull { it.id == avatarId }?.drawableRes ?: R.drawable.avatar_1
     }
 }

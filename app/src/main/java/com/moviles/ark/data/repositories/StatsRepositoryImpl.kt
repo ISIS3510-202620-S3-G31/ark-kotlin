@@ -130,17 +130,15 @@ class StatsRepositoryImpl(
         saveUserStatsInternal(currentUserId, stats, toolsSnapshot.documents.size, todayKey)
     }
 
-    private suspend fun saveUserStatsInternal(userId: String, stats: StatsModel, totalTools: Int, dayKey: String) {
-        try {
-            firestore.collection("users")
-                .document(userId)
-                .collection("stats_summary")
-                .document("latest")
-                .set(stats.toDto(totalTools, dayKey))
-                .await()
-        } catch (e: Exception) {
-            Log.e("StatsRepository", "Error saving stats summary to firestore", e)
-        }
+    //no se espera: una escritura de firestore solo termina cuando el servidor responde, y si la red se caia justo
+    //despues de leer las stats la pantalla se quedaba cargando aunque ya las tenia; firestore la manda cuando pueda
+    private fun saveUserStatsInternal(userId: String, stats: StatsModel, totalTools: Int, dayKey: String) {
+        firestore.collection("users")
+            .document(userId)
+            .collection("stats_summary")
+            .document("latest")
+            .set(stats.toDto(totalTools, dayKey))
+            .addOnFailureListener { e -> Log.e("StatsRepository", "Error saving stats summary to firestore", e) }
     }
 
     //registra la entrada del usuario a la pantalla de estadisticas e incrementa el contador del dia

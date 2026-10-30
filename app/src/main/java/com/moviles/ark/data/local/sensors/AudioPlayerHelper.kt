@@ -4,6 +4,8 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import com.moviles.ark.domain.adapters.AmbientAudioPlayer
 
 //helper para reproducir audio ambiental de jamendo con el mediaplayer de android
@@ -17,6 +19,11 @@ class AudioPlayerHelper(
     private var playWhenReady = false
     //aviso de la ultima pista pedida; resume tambien lo usa para decir que volvio a sonar
     private var onStateChanged: (isPlaying: Boolean) -> Unit = {}
+    //vigila que una pista de internet no se quede cargando para siempre si se cae la red: el mediaplayer puede tardar
+    //mucho en avisar el error y mientras tanto la pantalla seguia mostrando que cargaba o que sonaba
+    private val watchdog = Handler(Looper.getMainLooper())
+    private var onStalled: () -> Unit = {}
+    private val stallCheck = Runnable { onStalled() }
 
     //inicia la reproduccion de una url de audio; las remotas suenan por streaming mientras cargan
     //onError avisa si no se pudo reproducir (por ejemplo una pista de internet sin conexion)
@@ -53,6 +60,7 @@ class AudioPlayerHelper(
                 }
                 isLooping = true //musica ambiental: al terminar vuelve a empezar hasta que el usuario la pause
                 setOnPreparedListener { mp ->
+                    watchdog.removeCallbacks(stallCheck)
                     isPrepared = true
                     if (playWhenReady) startPlayback(mp)
                 }
@@ -63,12 +71,29 @@ class AudioPlayerHelper(
                     onError()
                     true
                 }
+                //en pleno streaming se acabo lo descargado y no llega mas (sin red): si no vuelve a sonar pronto, es un error
+                setOnInfoListener { _, what, _ ->
+                    when (what) {
+                        MediaPlayer.MEDIA_INFO_BUFFERING_START -> watchdog.postDelayed(stallCheck, STALL_TIMEOUT_MILLIS)
+                        MediaPlayer.MEDIA_INFO_BUFFERING_END -> watchdog.removeCallbacks(stallCheck)
+                    }
+                    false
+                }
                 setOnCompletionListener {
                     onPlaybackStateChanged(false)
                 }
                 prepareAsync()
             }
             mediaPlayer = player
+            //la pista no termino de cargar (o se quedo sin datos) a tiempo: se suelta y se avisa como cualquier error
+            onStalled = {
+                if (mediaPlayer === player) {
+                    stop()
+                    onPlaybackStateChanged(false)
+                    onError()
+                }
+            }
+            if (!url.startsWith(LOCAL_RESOURCE_SCHEME)) watchdog.postDelayed(stallCheck, STALL_TIMEOUT_MILLIS)
         } catch (e: Exception) {
             e.printStackTrace()
             stop()
@@ -109,6 +134,7 @@ class AudioPlayerHelper(
 
     //detiene por completo la reproduccion; release sirve en cualquier estado, tambien mientras carga
     fun stop() {
+        watchdog.removeCallbacks(stallCheck)
         try {
             mediaPlayer?.release()
         } catch (e: Exception) {
@@ -138,5 +164,7 @@ class AudioPlayerHelper(
 
     companion object {
         private const val LOCAL_RESOURCE_SCHEME = "android.resource://"
+        //cuanto se espera a que una pista de internet cargue o vuelva a tener datos antes de darla por fallida
+        private const val STALL_TIMEOUT_MILLIS = 20_000L
     }
 }

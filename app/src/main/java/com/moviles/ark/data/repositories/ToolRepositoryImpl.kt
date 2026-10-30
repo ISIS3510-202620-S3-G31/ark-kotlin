@@ -1,5 +1,6 @@
 package com.moviles.ark.data.repositories
 
+import android.util.Log
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Source
 import com.moviles.ark.data.local.ToolCatalogFileStore
@@ -64,6 +65,8 @@ class ToolRepositoryImpl(
             }
             //solo se reemplaza el catalogo si llego algo: una coleccion vacia no borra el del telefono
             if (remoteTools.isNotEmpty()) storeCatalog(remoteTools)
+            Log.d("ToolRepository", "Catalog checked in Firestore: ${remoteTools.size} tools")
+            Unit
         }.onFailure { error ->
             CrashlyticsHelper.logNonFatal(
                 componentName = "ToolRepository",

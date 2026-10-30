@@ -23,5 +23,9 @@ data class PhotoOfTheDayUiState(
     val isPhotoSaved: Boolean = false,
     val errorMessage: String? = null,
     //archivo donde la camara esta dejando la foto; se guarda aqui para no perderlo si la pantalla se recrea
-    val captureUri: String? = null
+    val captureUri: String? = null,
+    //aviso al guardar: si la copia de la nube ya se hizo o queda para cuando vuelva la red
+    val savedNotice: String? = null,
+    //true con internet: las fotos que solo estan en la nube se vuelven a intentar cuando vuelve
+    val isOnline: Boolean = true
 )

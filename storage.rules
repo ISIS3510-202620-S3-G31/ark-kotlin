@@ -21,6 +21,15 @@ service firebase.storage {
       allow delete: if isOwner(userId);
     }
 
+    // Profile picture uploaded in Kotlin: only the current one is kept (the app deletes the previous files)
+    match /users/{userId}/avatar/{fileName} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId)
+                    && request.resource.size < 5 * 1024 * 1024
+                    && request.resource.contentType.matches('image/.*');
+      allow delete: if isOwner(userId);
+    }
+
     // Deny all other access
     match /{allPaths=**} {
       allow read, write: if false;

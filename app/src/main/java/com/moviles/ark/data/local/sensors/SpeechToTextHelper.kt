@@ -61,6 +61,8 @@ class SpeechToTextHelper(
     private var keepListening = false
     //frases ya reconocidas en esta sesion de dictado; el texto parcial se suma al final
     private var sessionText = ""
+    //ultimo texto parcial que se ve en la caja y todavia no llega como resultado final
+    private var lastPartial = ""
     //caja de texto que abrio el dictado: el helper es uno para toda la app y solo ella recibe lo dictado
     private var sessionOwner: Any? = null
     private var preloadRequested = false
@@ -254,6 +256,7 @@ class SpeechToTextHelper(
             _errorMessage.value = null
             _transcription.value = ""
             sessionText = ""
+            lastPartial = ""
             keepListening = true
             //con internet se usa el reconocedor normal (en linea, no necesita paquete); sin internet el del telefono
             useOnDevice = !isOnline()
@@ -323,6 +326,7 @@ class SpeechToTextHelper(
         mainHandler.post {
             keepListening = false
             sessionText = ""
+            lastPartial = ""
             _transcription.value = ""
             _errorMessage.value = null
             try {
@@ -428,7 +432,11 @@ class SpeechToTextHelper(
                         restartAfterPause()
                     }
                     //el reconocedor en linea perdio la red: sigue con el del telefono por si tiene el paquete
+                    //lo que ya se veia escrito se guarda antes de cambiar; si no, el primer parcial del nuevo lo borraba
                     isNetworkError(error) && !useOnDevice && keepListening && !switchedRecognizer -> {
+                        sessionText = joinText(sessionText, lastPartial)
+                        lastPartial = ""
+                        _transcription.value = sessionText
                         useOnDevice = true
                         switchedRecognizer = true
                         restartAfterPause()
@@ -450,6 +458,7 @@ class SpeechToTextHelper(
                 _soundLevel.value = 0f
                 val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 val text = matches?.firstOrNull()?.trim().orEmpty()
+                lastPartial = ""
                 sessionText = joinText(sessionText, text)
                 _transcription.value = sessionText
                 destroyInternal()
@@ -460,6 +469,7 @@ class SpeechToTextHelper(
                 val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 val text = matches?.firstOrNull()?.trim() ?: return
                 if (text.isNotBlank()) {
+                    lastPartial = text
                     _transcription.value = joinText(sessionText, text)
                 }
             }
