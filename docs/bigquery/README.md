@@ -91,12 +91,15 @@ query*. Una corrida por colección.
 
 ## 4. Crear las vistas limpias
 
-1. Pegar todo `views.sql` en el editor de consultas de BigQuery y correrlo (vistas de Firestore).
-2. Correr `views_analytics.sql` (vistas de Analytics). El dataset de Ark es
+1. Correr `bogota_localities.sql` (tabla con el polígono oficial de las 20 localidades; la
+   necesita `mood_emotions_by_locality`). Se regenera con `build_localities_sql.py`, que
+   explica de dónde bajar el GeoJSON de Planeación.
+2. Pegar todo `views.sql` en el editor de consultas de BigQuery y correrlo (vistas de Firestore).
+3. Correr `views_analytics.sql` (vistas de Analytics). El dataset de Ark es
    `analytics_556383466` y ya está puesto en el archivo; en otro proyecto hay que cambiarlo por
    el que aparece en BigQuery después de enlazar. Los bloques "PASO 2" del final van después de
    instalar las instancias de `tool_load_latency` y `screen_time`.
-3. Correr `views_bq4_and_age.sql` (BQ4 y edad de los usuarios activos; usa las vistas de los
+4. Correr `views_bq4_and_age.sql` (BQ4 y edad de los usuarios activos; usa las vistas de los
    dos pasos anteriores).
 
 Quedan en el dataset `ark_dashboards`:
@@ -105,6 +108,9 @@ Quedan en el dataset `ark_dashboards`:
 |---|---|
 | `tool_interactions` | uso de herramientas por tipo, duración, intensidad (BQ4 y similares) |
 | `mood_checkins`, `mood_emotions` | check-ins y emociones por semana y edad |
+| `bogota_localities` (tabla) | polígono oficial de las 20 localidades (Planeación, CC BY 4.0) |
+| `mood_emotions_by_locality` | Emotion By Location, una fila por emoción de cada check-in con su localidad de Bogotá, latitud y longitud |
+| `locality_emotion_summary` | Emotion By Location, una fila por localidad: check-ins, emoción más frecuente y de mayor intensidad |
 | `tool_feedback` | calificaciones por herramienta |
 | `users` | edad y rango de edad (sin nombre ni correo) |
 | `tool_load_latency` | BQ1, una fila por apertura: latencia, herramienta, entrada, frío/caliente, rango |
@@ -155,6 +161,26 @@ Fuentes `tool_load_latency` y `tool_load_latency_summary`:
 
 Pendiente cuando haya datos de la versión nueva: comparar `open_type` (primera apertura vs
 siguientes) y `entry_point`.
+
+### Página Emotion By Location
+
+Antes leía el CSV de `bq-location/process_checkins_locality.js` (a mano, y de `check_ins`).
+Ahora la fuente es `locality_emotion_summary`, que tiene las mismas columnas del CSV, así que
+las gráficas se conservan al cambiar la fuente. Lee `mood_checkins`, donde escriben Kotlin y
+Flutter.
+
+1. Tabla: `locality`, `most_frequent_emotion`, `highest_intensity_emotion`,
+   `highest_avg_intensity`, `total_checkins`, `most_frequent_count`. `highest_avg_intensity`
+   va con agregación **Max** (con *Count* la tabla muestra 1 en todas las localidades).
+2. Control de filtro `is_synthetic` (en `false` por defecto) y control `locality`.
+3. Para gráficas por emoción o por fecha, usar `mood_emotions_by_locality`.
+
+`total_checkins` cuenta check-ins; el CSV contaba emociones (eso queda en `emotion_entries`).
+La localidad sale de cruzar el punto con el polígono oficial de cada una de las 20 localidades
+(tabla `bogota_localities`). Un punto fuera de Bogotá (otro municipio, el emulador) sale como
+`Otra localidad`, y un check-in sin permiso de ubicación como `Ubicación no especificada`.
+La función `bogota_locality` que quedó en BigQuery es la versión vieja con rectángulos (cubría
+10 localidades); ya no la usa ninguna vista.
 
 ### Página BQ Screen Time (tiempo de pantalla diario por usuario, tipo 4)
 
