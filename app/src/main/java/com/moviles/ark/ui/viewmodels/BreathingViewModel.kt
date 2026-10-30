@@ -142,12 +142,14 @@ class BreathingViewModel(
         val repository = breathingRepository ?: return
         if (offlineCacheJob?.isActive == true) return
         offlineCacheJob = viewModelScope.launch {
-            val savedTrack = repository.saveTrackForOffline(track) ?: return@launch
-            //la pista ya suena sin internet: se marca en la lista
+            repository.saveTrackForOffline(track) ?: return@launch
+            //la pista ya suena sin internet; para hacerle espacio la cache pudo borrar otras mas viejas,
+            //asi que se vuelven a marcar todas segun lo que de verdad quedo guardado
+            val offlineIds = repository.offlineTrackIds()
             _uiState.update { current ->
                 current.copy(
-                    ambientTracks = current.ambientTracks.map { if (it.id == savedTrack.id) it.copy(isAvailableOffline = true) else it },
-                    selectedTrack = current.selectedTrack?.let { if (it.id == savedTrack.id) it.copy(isAvailableOffline = true) else it }
+                    ambientTracks = current.ambientTracks.map { it.copy(isAvailableOffline = it.id in offlineIds) },
+                    selectedTrack = current.selectedTrack?.let { it.copy(isAvailableOffline = it.id in offlineIds) }
                 )
             }
         }

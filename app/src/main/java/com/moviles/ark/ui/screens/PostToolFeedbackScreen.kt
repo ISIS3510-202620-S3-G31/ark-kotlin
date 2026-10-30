@@ -1,5 +1,7 @@
 package com.moviles.ark.ui.screens
 
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -88,8 +90,12 @@ fun PostToolFeedbackRoute(
         }
     }
 
+    //una sola salida al guardar (antes tambien la pedia el boton y se navegaba dos veces)
+    //el aviso es un toast para que se alcance a leer aunque la pantalla cambie al home
+    val context = LocalContext.current
     LaunchedEffect(uiState.isSaved) {
         if (uiState.isSaved) {
+            uiState.savedNotice?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
             onFeedbackSubmitted()
         }
     }
@@ -100,7 +106,7 @@ fun PostToolFeedbackRoute(
         onCommentChange = viewModel::onCommentChange,
         onEmotionToggle = viewModel::onEmotionToggle,
         onIntensityChange = viewModel::onIntensityChange,
-        onSubmitClick = { viewModel.saveFeedback(onSavedCallback = onFeedbackSubmitted) },
+        onSubmitClick = { viewModel.saveFeedback() },
         onDismiss = onDismiss
     )
 }

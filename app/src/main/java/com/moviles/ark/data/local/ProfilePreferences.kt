@@ -23,6 +23,7 @@ object ProfilePreferences {
     const val KEY_USER_EMAIL = "user_email"
     const val KEY_USER_AGE = "user_age"
     const val KEY_AVATAR_ID = "avatar_id"
+    private const val KEY_SYNC_NOTICE = "sync_notice"
 
     private val _userProfile = MutableStateFlow(ScalarUserProfile())
     val userProfile: StateFlow<ScalarUserProfile> = _userProfile.asStateFlow()
@@ -53,6 +54,20 @@ object ProfilePreferences {
     //el repositorio lo lee una sola vez para subirlo a firestore y no perderlo; null si no hay
     fun savedAvatarFor(uid: String): String? {
         return prefs?.getString("${KEY_AVATAR_ID}_$uid", null)
+    }
+
+    //aviso para la pantalla de perfil cuando el sync dejo la version de otro telefono; queda por cuenta
+    //porque el sync corre en segundo plano y el usuario lo ve la proxima vez que abra su perfil
+    fun saveSyncNotice(uid: String, notice: String) {
+        prefs?.edit()?.putString("${KEY_SYNC_NOTICE}_$uid", notice)?.apply()
+    }
+
+    //entrega el aviso una sola vez
+    fun takeSyncNotice(uid: String): String? {
+        val key = "${KEY_SYNC_NOTICE}_$uid"
+        val notice = prefs?.getString(key, null) ?: return null
+        prefs?.edit()?.remove(key)?.apply()
+        return notice
     }
 
     //persiste datos escalares del perfil de usuario en segundo plano usando dispatchers.io

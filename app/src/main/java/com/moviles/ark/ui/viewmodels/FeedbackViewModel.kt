@@ -26,7 +26,9 @@ class FeedbackViewModel(
     savedStateHandle: SavedStateHandle? = null,
     initialToolId: String = "",
     initialDuration: Int = 0,
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    //true si hay internet al guardar: el aviso dice si ya subio o si queda en el telefono hasta que vuelva la red
+    private val isOnline: () -> Boolean = { true }
 ) : ViewModel() {
 
     private val privateUiState = MutableStateFlow(
@@ -98,7 +100,7 @@ class FeedbackViewModel(
 
                 //la interaccion ya la guardo la herramienta al terminar (o al abandonarla); aqui va la calificacion
                 //las emociones se guardan con el feedback: el check-in del dia solo lo hace el usuario y no cambia
-                feedbackRepository?.saveFeedback(
+                val result = feedbackRepository?.saveFeedback(
                     FeedbackModel(
                         toolId = state.toolId,
                         rating = state.rating,
@@ -107,30 +109,39 @@ class FeedbackViewModel(
                         createdAt = nowMillis
                     )
                 )
+                //antes el resultado se ignoraba: si no se guardaba en el telefono igual salia como si se hubiera guardado
+                result?.exceptionOrNull()?.let { throw it }
                 privateUiState.value = privateUiState.value.copy(
                     isLoading = false,
                     isSaved = true,
-                    errorMessage = null
+                    errorMessage = null,
+                    //se le dice al usuario que paso con su feedback (antes volvia al home sin ningun aviso)
+                    savedNotice = if (isOnline()) SAVED_ONLINE_NOTICE else SAVED_OFFLINE_NOTICE
                 )
                 withContext(Dispatchers.Main) {
                     onSavedCallback()
                 }
             } catch (e: Exception) {
                 Log.e("FeedbackViewModel", "Error saving feedback", e)
+                //sin detalles tecnicos: es un error del telefono, no de la red
                 privateUiState.value = privateUiState.value.copy(
                     isLoading = false,
-                    errorMessage = e.localizedMessage ?: "Failed to save feedback"
+                    errorMessage = "Could not save your feedback, try again"
                 )
             }
         }
     }
 
     companion object {
+        const val SAVED_ONLINE_NOTICE = "Thanks! Your feedback was saved"
+        const val SAVED_OFFLINE_NOTICE = "Thanks! Your feedback is saved on this phone and will upload when you're back online"
+
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as ArkApplication
                 FeedbackViewModel(
-                    feedbackRepository = app.container.feedbackRepository
+                    feedbackRepository = app.container.feedbackRepository,
+                    isOnline = app.container.networkConnectivityObserver::isConnected
                 )
             }
         }

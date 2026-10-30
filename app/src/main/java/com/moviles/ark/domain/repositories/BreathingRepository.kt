@@ -19,6 +19,9 @@ interface BreathingRepository {
     //guarda la pista en la cache del disco para que quede disponible sin internet; null si no hacia falta o fallo
     suspend fun saveTrackForOffline(track: AmbientTrackModel): AmbientTrackModel? = null
 
+    //ids de las pistas que hoy suenan sin internet (la de la app y las que siguen en la cache del disco)
+    suspend fun offlineTrackIds(): Set<String> = emptySet()
+
     //guarda en el telefono una sesion terminada y su ToolInteractionModel; funciona sin internet
     suspend fun saveSession(session: BreathingSession): Result<Unit>
 }

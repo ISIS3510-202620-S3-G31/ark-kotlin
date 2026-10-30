@@ -76,8 +76,9 @@ class OpenMeteoAdapterImpl(
         }
     }
 
-    //sirve el clima de la cache si aun es valido (TTL < 1 hora), sin requerir red ni coordenadas
-    override fun getCachedWeather(): WeatherModel? = getCachedWeatherIfValid()
+    //sirve el clima de la cache si aun es valido (TTL < 1 hora), sin requerir red; con coordenadas, del mismo lugar
+    override fun getCachedWeather(latitude: Double?, longitude: Double?): WeatherModel? =
+        getCachedWeatherIfValid(latitude = latitude, longitude = longitude)
 
     //con coordenadas, ademas la cache tiene que ser del mismo lugar (cache vieja sin coordenadas no sirve)
     fun getCachedWeatherIfValid(

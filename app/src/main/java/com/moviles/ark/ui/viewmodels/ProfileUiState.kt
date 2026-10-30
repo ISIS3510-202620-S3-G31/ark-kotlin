@@ -35,5 +35,7 @@ data class ProfileUiState(
     val editError: String? = null,
     val isSaving: Boolean = false,
     //mensaje corto despues de guardar o si la foto no se pudo usar
-    val message: String? = null
+    val message: String? = null,
+    //cosas guardadas solo en el telefono al tocar "Sign out"; mas de 0 abre el aviso antes de cerrar sesion
+    val pendingBeforeSignOut: Int = 0
 )

@@ -10,14 +10,32 @@ import com.moviles.ark.domain.exceptions.InvalidCredentialsException
 import com.moviles.ark.domain.exceptions.NetworkUnavailableException
 import com.moviles.ark.domain.models.LoginCredentials
 import com.moviles.ark.domain.repositories.AuthRepository
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-class LoginViewModel(private val authRepository: AuthRepository) : ViewModel() {
+class LoginViewModel(
+    private val authRepository: AuthRepository,
+    //true cuando hay internet; vuelve a emitir cada vez que cambia
+    connectivity: Flow<Boolean> = emptyFlow()
+) : ViewModel() {
     private val _uiState = MutableStateFlow(LoginUiState())
     val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()
+
+    //el aviso de "sin internet" se quita solo cuando vuelve la red; antes se quedaba hasta que el usuario escribiera
+    init {
+        viewModelScope.launch {
+            connectivity.collect { isOnline ->
+                val noInternet = setOf(LoginCredentials.noInternetError(true), LoginCredentials.noInternetError(false))
+                if (isOnline && _uiState.value.errorMessage in noInternet) {
+                    _uiState.value = _uiState.value.copy(errorMessage = null)
+                }
+            }
+        }
+    }
 
     //las reglas de cada campo estan en el modelo LoginCredentials; aqui solo se guarda el resultado
     fun onEmailChange(newEmail: String) {
@@ -61,7 +79,7 @@ class LoginViewModel(private val authRepository: AuthRepository) : ViewModel() {
         val Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as ArkApplication
-                LoginViewModel(app.container.authRepository)
+                LoginViewModel(app.container.authRepository, app.container.networkConnectivityObserver.observe())
             }
         }
     }

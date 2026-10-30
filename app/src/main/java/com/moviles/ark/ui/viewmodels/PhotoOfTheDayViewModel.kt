@@ -11,6 +11,8 @@ import com.moviles.ark.domain.models.PhotoWeek
 import com.moviles.ark.domain.models.ToolLatencyTracker
 import com.moviles.ark.domain.repositories.PhotoEntryRepository
 import com.moviles.ark.domain.repositories.ToolInteractionRepository
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -30,7 +32,10 @@ class PhotoOfTheDayViewModel(
     //mide cuanto tardo en abrirse la herramienta; null en previews
     private val toolLatencyTracker: ToolLatencyTracker? = null,
     //cada foto guardada cuenta como un uso de la herramienta; null en previews
-    private val toolInteractionRepository: ToolInteractionRepository? = null
+    private val toolInteractionRepository: ToolInteractionRepository? = null,
+    //true cuando hay internet; vuelve a emitir cada vez que cambia
+    private val connectivity: Flow<Boolean> = emptyFlow(),
+    private val isOnline: () -> Boolean = { true }
 ) : ViewModel() {
     //privado: solo el viewmodel lo modifica
     private val _uiState = MutableStateFlow(PhotoOfTheDayUiState())
@@ -50,6 +55,16 @@ class PhotoOfTheDayViewModel(
         //hoy no se trae: la de hoy se puede borrar o repetir y la nube podria devolver una ya borrada
         viewModelScope.launch {
             photoRepository.refreshFromCloud(starts.first(), starts[starts.size - 2])
+        }
+        //sin red esa consulta no trae nada (telefono nuevo o app reinstalada): cuando vuelve la red se pide otra vez
+        //y las fotos de la nube llegan solas; antes los dias pasados se quedaban con la X hasta volver a abrir la pantalla
+        viewModelScope.launch {
+            var wasOnline = true
+            connectivity.collect { isConnected ->
+                _uiState.update { it.copy(isOnline = isConnected) }
+                if (isConnected && !wasOnline) photoRepository.refreshFromCloud(starts.first(), starts[starts.size - 2])
+                wasOnline = isConnected
+            }
         }
         viewModelScope.launch {
             photoRepository.getPhotosBetween(starts.first(), starts.last())
@@ -102,7 +117,9 @@ class PhotoOfTheDayViewModel(
             result.onSuccess {
                 recordInteraction()
                 //la foto nueva llega sola por observeWeek; aqui solo se limpia lo pendiente y avisa que se guardo
-                _uiState.update { it.copy(isSaving = false, pendingPhotoUri = null, caption = "", isPhotoSaved = true) }
+                _uiState.update {
+                    it.copy(isSaving = false, pendingPhotoUri = null, caption = "", isPhotoSaved = true, savedNotice = savedNotice())
+                }
             }
             result.onFailure {
                 _uiState.update { it.copy(isSaving = false, errorMessage = "Could not save your photo, try again") }
@@ -135,7 +152,9 @@ class PhotoOfTheDayViewModel(
             result.onSuccess {
                 recordInteraction()
                 //la foto nueva llega sola por observeWeek; aqui solo se limpia lo pendiente y avisa que se guardo
-                _uiState.update { it.copy(isSaving = false, pendingPhotoUri = null, caption = "", isPhotoSaved = true) }
+                _uiState.update {
+                    it.copy(isSaving = false, pendingPhotoUri = null, caption = "", isPhotoSaved = true, savedNotice = savedNotice())
+                }
             }
             result.onFailure {
                 _uiState.update { it.copy(isSaving = false, errorMessage = "Could not save your photo, try again") }
@@ -165,8 +184,11 @@ class PhotoOfTheDayViewModel(
     }
 
     fun onNavigatedToFeedback() {
-        _uiState.update { it.copy(isPhotoSaved = false) }
+        _uiState.update { it.copy(isPhotoSaved = false, savedNotice = null) }
     }
+
+    //se dice que paso con la foto: la copia de la nube se hace sola cuando hay red
+    private fun savedNotice(): String = if (isOnline()) SAVED_ONLINE_NOTICE else SAVED_OFFLINE_NOTICE
 
     private val sessionStartTime = System.currentTimeMillis()
 
@@ -182,6 +204,8 @@ class PhotoOfTheDayViewModel(
 
     //factory para que el viewmodel reciba el photoRepository del AppContainer
     companion object {
+        const val SAVED_ONLINE_NOTICE = "Photo saved"
+        const val SAVED_OFFLINE_NOTICE = "Photo saved on this phone. It will back up to the cloud when you're back online"
         //id de la herramienta en el catalogo
         const val TOOL_ID = "photo_of_the_day"
         //formato de la herramienta en el catalogo
@@ -193,7 +217,9 @@ class PhotoOfTheDayViewModel(
                 PhotoOfTheDayViewModel(
                     photoRepository = app.container.photoRepository,
                     toolLatencyTracker = app.container.toolLatencyTracker,
-                    toolInteractionRepository = app.container.toolInteractionRepository
+                    toolInteractionRepository = app.container.toolInteractionRepository,
+                    connectivity = app.container.networkConnectivityObserver.observe(),
+                    isOnline = app.container.networkConnectivityObserver::isConnected
                 )
             }
         }

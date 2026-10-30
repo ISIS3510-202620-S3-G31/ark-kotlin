@@ -9,6 +9,7 @@ import android.provider.MediaStore
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
+import com.google.firebase.storage.StorageException
 import com.moviles.ark.data.local.daos.PhotoEntryDao
 import com.moviles.ark.data.local.entities.PhotoEntryEntity
 import com.moviles.ark.data.local.sensors.CameraHelper
@@ -17,14 +18,12 @@ import com.moviles.ark.data.remote.dtos.PhotoEntryDto
 import com.moviles.ark.domain.models.PhotoEntryModel
 import com.moviles.ark.domain.repositories.PhotoEntryRepository
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.withTimeout
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -41,7 +40,9 @@ class PhotoEntryRepositoryImpl(
     private val firestore: FirebaseFirestore? = null,
     private val storage: FirebaseStorage? = null,
     //avisa al SyncManager que hay una foto por subir; no se espera
-    private val onPhotoSaved: () -> Unit = {}
+    private val onPhotoSaved: () -> Unit = {},
+    //pide borrar la copia de la nube de una foto borrada (RemotePhotoDeleteWorker); no se espera
+    private val onRemoteDeleteNeeded: (userId: String, takenAt: Long) -> Unit = { _, _ -> }
 ) : PhotoEntryRepository {
 
     override fun getPhotosBetween(fromMillis: Long, toMillis: Long): Flow<List<PhotoEntryModel>> {
@@ -148,30 +149,10 @@ class PhotoEntryRepositoryImpl(
                 }
                 //elimina el registro en room
                 photoEntryDao.deletePhoto(photoId, userId)
-                //y la copia en la nube si ya se habia subido; sin red queda alla, pero solo se borra la de hoy
-                //y la descarga solo trae dias pasados, asi que no vuelve a aparecer
-                //sin internet esas esperas no terminaban y el borrado (o el retake) se quedaba cargando:
-                //firestore deja el borrado en su cola hasta que vuelva la red; storage se intenta un rato y se deja
-                //las dos esperas van a la vez para que el usuario espere solo una
-                if (entity.isSynced) {
-                    coroutineScope {
-                        launch {
-                            runCatching {
-                                withTimeoutOrNull(REMOTE_DELETE_TIMEOUT_MS) {
-                                    storage?.reference?.child(storagePath(userId, entity.takenAt))?.delete()?.await()
-                                }
-                            }
-                        }
-                        launch {
-                            runCatching {
-                                withTimeoutOrNull(REMOTE_DELETE_TIMEOUT_MS) {
-                                    firestore?.collection("users")?.document(userId)?.collection("photos")
-                                        ?.document(entity.takenAt.toString())?.delete()?.await()
-                                }
-                            }
-                        }
-                    }
-                }
+                //la copia de la nube se borra en segundo plano con workmanager: el borrado (o el retake) no espera a la red
+                //y si no hay internet se hace cuando vuelva, aunque la app se cierre; tambien se pide si la foto
+                //todavia no se habia subido, por si su subida ya iba en camino (el sync revisa y la deshace)
+                onRemoteDeleteNeeded(userId, entity.takenAt)
             }
             Unit
         }.onFailure { error ->
@@ -181,6 +162,24 @@ class PhotoEntryRepositoryImpl(
                 throwable = error,
                 extraKeys = mapOf("photo_id" to photoId)
             )
+        }
+    }
+
+    override suspend fun deleteRemoteCopy(userId: String, takenAt: Long): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            if (auth.currentUser?.uid != userId) error("The photo belongs to another account")
+            //si el jpg nunca llego a storage (o ya se borro) no hay nada que borrar
+            val reference = storage?.reference?.child(storagePath(userId, takenAt))
+            try {
+                withTimeout(REMOTE_DELETE_TIMEOUT_MS) { reference?.delete()?.await() }
+            } catch (e: StorageException) {
+                if (e.errorCode != StorageException.ERROR_OBJECT_NOT_FOUND) throw e
+            }
+            withTimeout(REMOTE_DELETE_TIMEOUT_MS) {
+                firestore?.collection("users")?.document(userId)?.collection("photos")
+                    ?.document(takenAt.toString())?.delete()?.await()
+            }
+            Unit
         }
     }
 
@@ -243,7 +242,8 @@ class PhotoEntryRepositoryImpl(
         const val PHOTOS_DIR = "photos"
 
         //cuanto se espera a la nube al borrar una foto antes de seguir
-        private const val REMOTE_DELETE_TIMEOUT_MS = 4_000L
+        //el worker corre con red: si firestore no confirma en este tiempo se reintenta despues
+        private const val REMOTE_DELETE_TIMEOUT_MS = 20_000L
 
         //carpeta privada de un usuario: filesDir/photos/{userId}/
         //el uid no puede traer separadores ni ser "." o "..", para no salirse de su carpeta

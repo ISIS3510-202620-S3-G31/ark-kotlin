@@ -12,7 +12,9 @@ data class FeedbackUiState(
     val selection: EmotionSelection = EmotionSelection(),
     val isLoading: Boolean = false,
     val isSaved: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    //aviso al guardar: si ya subio o si queda en el telefono hasta que vuelva la red
+    val savedNotice: String? = null
 ) {
     val selectedEmotions: Set<Emotion> get() = selection.emotions
     val activeEmotion: Emotion? get() = selection.active

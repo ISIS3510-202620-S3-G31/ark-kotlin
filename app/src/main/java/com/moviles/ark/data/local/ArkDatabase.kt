@@ -43,7 +43,7 @@ import com.moviles.ark.data.local.entities.UserEntity
         UserEntity::class,
         StatsDailyVisitEntity::class,
     ],
-    version = 10,
+    version = 11,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -87,6 +87,17 @@ abstract class ArkDatabase : RoomDatabase() {
             }
         }
 
+        //hora de la ultima edicion del perfil y de la foto en este telefono, y la version de la nube que vio por ultima vez,
+        //para no pisar al subir un cambio hecho en otro telefono (sin version vista se sube como antes)
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE users ADD COLUMN profileEditedAt INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE users ADD COLUMN avatarEditedAt INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE users ADD COLUMN profileBase TEXT")
+                db.execSQL("ALTER TABLE users ADD COLUMN avatarBase TEXT")
+            }
+        }
+
         //singleton con doble comprobacion para que toda la app comparta un unico pool de conexiones
         fun getInstance(context: Context): ArkDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -95,7 +106,7 @@ abstract class ArkDatabase : RoomDatabase() {
                     ArkDatabase::class.java,
                     "ark.db"
                 )
-                .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+                .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
                 .also { INSTANCE = it }

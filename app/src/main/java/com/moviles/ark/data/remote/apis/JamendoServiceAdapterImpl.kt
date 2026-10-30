@@ -91,7 +91,6 @@ class JamendoServiceAdapterImpl(
                 val expectedBytes = connection.contentLengthLong
                 //un archivo mas grande que toda la cache borraria las demas pistas: no se guarda
                 if (expectedBytes > MAX_CACHE_SIZE_BYTES) return@withContext null
-                pruneDiskCacheIfNeeded(incomingBytes = expectedBytes.coerceAtLeast(0L))
 
                 //se copia por bloques sin retener el audio en ram; si se sale de la pantalla la descarga se corta aqui
                 connection.inputStream.use { input ->
@@ -108,6 +107,9 @@ class JamendoServiceAdapterImpl(
 
                 //un archivo cortado sonaria unos segundos y se detendria: solo entra a la cache si llego completo
                 val isComplete = partFile.length() > 0L && (expectedBytes <= 0L || partFile.length() == expectedBytes)
+                //se hace espacio solo cuando la pista nueva ya llego entera: si la red se cae a mitad de la descarga
+                //no se pierden pistas que ya sonaban sin internet a cambio de nada
+                if (isComplete) pruneDiskCacheIfNeeded(incomingBytes = partFile.length())
                 if (isComplete && partFile.renameTo(cachedFile)) {
                     saveTrackMetadata(track)
                     track.copy(isAvailableOffline = true)

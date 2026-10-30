@@ -105,7 +105,9 @@ fun ProfileScreen(
     onEditNameChange: (String) -> Unit = {},
     onEditBirthDateChange: (String) -> Unit = {},
     onEditDismiss: () -> Unit = {},
-    onSaveProfileClick: () -> Unit = {}
+    onSaveProfileClick: () -> Unit = {},
+    onConfirmSignOut: () -> Unit = {},
+    onDismissSignOut: () -> Unit = {}
 ) {
     //los avatares solo se ven al tocar la foto o dentro de "Edit profile"; el resto del tiempo no ocupan la pantalla
     var showAvatarPicker by remember { mutableStateOf(false) }
@@ -210,6 +212,34 @@ fun ProfileScreen(
                 onUploadPhotoClick()
             },
             onDismiss = { showAvatarPicker = false }
+        )
+    }
+
+    //quedan cosas sin subir: al cerrar sesion se quedan en este telefono hasta que esta cuenta vuelva a entrar
+    if (uiState.pendingBeforeSignOut > 0) {
+        val count = uiState.pendingBeforeSignOut
+        AlertDialog(
+            onDismissRequest = onDismissSignOut,
+            containerColor = BackgroundColor,
+            title = { Text("Not uploaded yet", style = MaterialTheme.typography.headlineSmall, color = TextColor) },
+            text = {
+                Text(
+                    "${if (count == 1) "1 change is" else "$count changes are"} saved only on this phone. " +
+                        "Connect to the internet before signing out, or they will upload the next time you sign in on this phone.",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = TextColor
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = onDismissSignOut) {
+                    Text("Stay signed in", style = MaterialTheme.typography.labelLarge, color = TextColor)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onConfirmSignOut) {
+                    Text("Sign out anyway", style = MaterialTheme.typography.labelLarge, color = TextColor)
+                }
+            }
         )
     }
 
@@ -565,6 +595,8 @@ fun ProfileRoute(
     ProfileScreen(
         uiState = uiState,
         onSignOutClick = viewModel::onSignOutClick,
+        onConfirmSignOut = viewModel::onConfirmSignOut,
+        onDismissSignOut = viewModel::onDismissSignOut,
         onRetryClick = viewModel::loadProfile,
         onUploadPhotoClick = { avatarPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
         onAvatarSelect = viewModel::onAvatarSelected,
@@ -577,7 +609,8 @@ fun ProfileRoute(
     )
 }
 
-private const val MESSAGE_MILLIS = 2_500L
+//los avisos de "guardado en el telefono" son mas largos: se dejan un poco mas para alcanzar a leerlos
+private const val MESSAGE_MILLIS = 4_000L
 
 @Preview(showBackground = true, name = "Profile with streak")
 @Composable

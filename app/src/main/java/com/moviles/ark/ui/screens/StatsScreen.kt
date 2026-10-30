@@ -1,5 +1,7 @@
 package com.moviles.ark.ui.screens
 
+import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.ui.graphics.vector.ImageVector
 import android.app.Activity
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
@@ -136,6 +138,7 @@ fun StatsScreen(
         isRefreshing = uiState.isRefreshing,
         isUpdating = uiState.isUpdating,
         isOffline = uiState.isOffline,
+        pendingUploads = uiState.pendingUploads,
         updateCount = uiState.updateCount,
         onRefresh = { viewModel.refresh() },
         onNavigateToToolsCatalog = onNavigateToToolsCatalog
@@ -152,6 +155,7 @@ fun StatsScreenContent(
     isRefreshing: Boolean = false,
     isUpdating: Boolean = false,
     isOffline: Boolean = false,
+    pendingUploads: Int = 0,
     updateCount: Int = 0,
     onRefresh: () -> Unit = {},
     onNavigateToToolsCatalog: (ToolCategory?) -> Unit = {}
@@ -206,7 +210,13 @@ fun StatsScreenContent(
 
             //sin internet se ve lo ultimo que llego de firestore; se dice para que no parezca dato nuevo
             if (isOffline && stats != null) {
-                OfflineSavedStatsBanner()
+                StatsInfoBanner(icon = Icons.Default.WifiOff, text = "Offline · showing your last saved stats")
+            } else if (pendingUploads > 0 && stats != null) {
+                //con red pero algo hecho en este telefono no alcanzo a subir: estas stats todavia no lo cuentan
+                StatsInfoBanner(
+                    icon = Icons.Default.CloudUpload,
+                    text = "${if (pendingUploads == 1) "1 item" else "$pendingUploads items"} from this phone still uploading · pull to refresh"
+                )
             }
 
             //deslizar hacia abajo pide datos nuevos al backend en firestore
@@ -556,9 +566,9 @@ private fun LastUpdatedLabel(stats: StatsModel?, isUpdating: Boolean, updateCoun
     )
 }
 
-//franja corta bajo el titulo: lo que se ve son las ultimas stats guardadas, no datos nuevos
+//franja corta bajo el titulo: dice si lo que se ve son las stats guardadas o si falta algo por subir
 @Composable
-private fun OfflineSavedStatsBanner() {
+private fun StatsInfoBanner(icon: ImageVector, text: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -570,13 +580,13 @@ private fun OfflineSavedStatsBanner() {
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Icon(
-            imageVector = Icons.Default.WifiOff,
+            imageVector = icon,
             contentDescription = null,
             tint = TextColor.copy(alpha = 0.7f),
             modifier = Modifier.size(16.dp)
         )
         Text(
-            text = "Offline · showing your last saved stats",
+            text = text,
             style = MaterialTheme.typography.bodySmall,
             color = TextColor.copy(alpha = 0.75f)
         )

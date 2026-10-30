@@ -7,6 +7,7 @@ import com.moviles.ark.domain.models.WeatherModel
 interface WeatherServiceAdapter {
     suspend fun getCurrentWeather(latitude: Double, longitude: Double): Result<WeatherModel>
 
-    //ultimo clima guardado si todavia vale; sirve cuando no hay ubicacion. null si no hay o ya vencio
-    fun getCachedWeather(): WeatherModel? = null
+    //ultimo clima guardado si todavia vale; null si no hay o ya vencio
+    //con coordenadas solo sirve el del mismo lugar (antes, sin red, se mostraba el de otra ciudad); sin ubicacion, el ultimo
+    fun getCachedWeather(latitude: Double? = null, longitude: Double? = null): WeatherModel? = null
 }

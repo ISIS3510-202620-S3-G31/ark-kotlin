@@ -1,5 +1,6 @@
 package com.moviles.ark.ui.screens
 
+import android.widget.Toast
 import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -372,6 +373,8 @@ fun HomeScreen(
                     },
                     onCheckInSaved = {
                         showCheckInPopup = false
+                        //el dialogo se cierra de una vez: el aviso va en un toast para que se alcance a leer
+                        checkInViewModel.uiState.value.savedNotice?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
                         onCheckInSaved()
                     }
                 )

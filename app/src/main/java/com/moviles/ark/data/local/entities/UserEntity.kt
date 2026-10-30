@@ -37,6 +37,15 @@ data class UserEntity(
     val photoUrl: String? = null,
     //false si cambio el avatar o la foto y todavia no se subio a firestore y storage
     val isAvatarSynced: Boolean = true,
+    //cuando edito nombre o fecha en este telefono (milisegundos): marca cual edicion es la que se subio
+    val profileEditedAt: Long = 0L,
+    //lo mismo para el avatar o la foto de perfil
+    val avatarEditedAt: Long = 0L,
+    //nombre, fecha y edad que este telefono vio en la nube la ultima vez; al subir un cambio pendiente se compara
+    //con la nube: si ya no coincide, otro telefono lo cambio mientras este estaba sin internet y gana ese cambio
+    val profileBase: String? = null,
+    //lo mismo para el avatar o la foto de perfil (avatarId, avatarSource y la foto)
+    val avatarBase: String? = null,
 )
 
 //de fila de la tabla a modelo de dominio

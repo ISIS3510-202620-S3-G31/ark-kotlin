@@ -12,7 +12,9 @@ import com.moviles.ark.domain.models.StatsModel
 import com.moviles.ark.domain.repositories.StatsRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
@@ -33,7 +35,9 @@ data class StatsUiState(
     //sube cada vez que llegan stats nuevas de firestore; la pantalla parpadea para que se note
     val updateCount: Int = 0,
     //cantidad de veces que el usuario ha visitado la pantalla de estadisticas hoy (dato de la pregunta de negocio, no se muestra)
-    val todayVisitsCount: Int = 0
+    val todayVisitsCount: Int = 0,
+    //cosas hechas en este telefono que todavia no llegan a la nube: las stats de firestore aun no las cuentan
+    val pendingUploads: Int = 0
 )
 
 //por que no hay stats en pantalla
@@ -47,10 +51,27 @@ enum class StatsEmptyReason {
 class StatsViewModel(
     private val statsRepository: StatsRepository? = null,
     //para avisar de inmediato si no hay red en vez de esperar a que firestore falle
-    private val isOnline: () -> Boolean = { true }
+    private val isOnline: () -> Boolean = { true },
+    //true cuando hay internet; vuelve a emitir cada vez que cambia
+    connectivity: Flow<Boolean> = emptyFlow(),
+    //cuantas cosas siguen guardadas solo en el telefono (SyncRepository.pendingCount)
+    private val pendingUploads: suspend () -> Int = { 0 }
 ) : ViewModel() {
     private val privateUiState = MutableStateFlow(StatsUiState())
     val uiState: StateFlow<StatsUiState> = privateUiState.asStateFlow()
+
+    //vuelve la red con la pantalla abierta: si se estaban viendo las stats guardadas se piden las nuevas
+    //(antes el aviso de "offline" y los datos viejos se quedaban hasta refrescar a mano o volver a entrar)
+    init {
+        viewModelScope.launch {
+            connectivity.collect { isConnected ->
+                if (isConnected && privateUiState.value.isOffline && statsRepository != null) {
+                    loadJob?.cancel()
+                    loadJob = viewModelScope.launch { fetchFromFirestore(showNotice = false) }
+                }
+            }
+        }
+    }
 
     //se cancela la carga anterior para que una respuesta vieja no pise a una nueva
     private var loadJob: Job? = null
@@ -149,7 +170,9 @@ class StatsViewModel(
                 isUpdating = false,
                 stats = data,
                 emptyReason = null,
-                updateCount = privateUiState.value.updateCount + 1
+                updateCount = privateUiState.value.updateCount + 1,
+                //el sync espera maximo 10 s antes de calcular: si algo no alcanzo a subir, se dice
+                pendingUploads = pendingUploads()
             )
             Log.d("StatsViewModel", "Stats loaded from Firestore: total=${data.totalCheckIns}")
         } else {
@@ -184,7 +207,9 @@ class StatsViewModel(
                 val app = this[APPLICATION_KEY] as ArkApplication
                 StatsViewModel(
                     statsRepository = app.container.statsRepository,
-                    isOnline = { app.container.networkConnectivityObserver.isConnected() }
+                    isOnline = { app.container.networkConnectivityObserver.isConnected() },
+                    connectivity = app.container.networkConnectivityObserver.observe(),
+                    pendingUploads = { app.container.syncRepository.pendingCount() }
                 )
             }
         }

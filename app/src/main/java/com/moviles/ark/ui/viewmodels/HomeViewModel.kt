@@ -31,7 +31,9 @@ import com.moviles.ark.domain.strategies.DefaultRecommendationStrategy
 import com.moviles.ark.domain.strategies.RecommendationStrategy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
@@ -56,6 +58,8 @@ class HomeViewModel(
     //clima de afuera para la tarjeta de clima; necesita la ubicacion del telefono
     private val weatherServiceAdapter: WeatherServiceAdapter? = null,
     private val locationRepository: LocationRepository? = null,
+    //true cuando hay internet; vuelve a emitir cada vez que cambia
+    private val connectivity: Flow<Boolean> = emptyFlow(),
     //nombre guardado en el telefono para el saludo y foto de perfil; null en previews
     private val userRepository: UserRepository? = null,
     private val now: () -> Long = { System.currentTimeMillis() },
@@ -89,17 +93,37 @@ class HomeViewModel(
     //arranca con el orden por defecto mientras llegan el check-in y el historial
     private var activeStrategy: RecommendationStrategy = DefaultRecommendationStrategy()
 
+    //van antes del init: kotlin inicializa en orden y, declaradas despues, volvian a 0 lo que el init ya habia puesto
+    private var lastWeatherLoadAt = 0L
+    //true si la tarjeta muestra el clima recien pedido a la api (no el guardado ni la neutral)
+    private var hasLiveWeather = false
+
     init {
         checkTodayStatus()
         loadTools()
         loadWeatherSuggestion()
         observeAvatar()
         observeUserName()
+        observeReconnection()
+    }
+
+    //vuelve la red con el home abierto: lo que fallo sin internet se pide otra vez
+    //(antes el clima esperaba 15 minutos y salir y volver al home, y el saludo sin nombre esperaba a abrir el perfil)
+    private fun observeReconnection() {
+        viewModelScope.launch {
+            var wasOnline = true
+            connectivity.collect { isConnected ->
+                if (isConnected && !wasOnline) {
+                    if (!hasLiveWeather) loadWeatherSuggestion()
+                    if (_uiState.value.userName.isBlank()) userRepository?.let { launch(Dispatchers.IO) { it.refreshProfile() } }
+                }
+                wasOnline = isConnected
+            }
+        }
     }
 
     //el clima va aparte del resolver de estrategias: no cambia el orden del catalogo, solo llena su propia tarjeta
     //se valida la cache en disco (TTL de 1 hora) para tener clima sin red; si no hay clima la tarjeta queda neutral
-    private var lastWeatherLoadAt = 0L
 
     fun loadWeatherSuggestion() {
         //la tarjeta sale de una vez con la sugerencia neutral y se cambia cuando llega el clima
@@ -114,12 +138,10 @@ class HomeViewModel(
             val latitude = location?.latitude
             val longitude = location?.longitude
 
-            //sin internet la consulta falla: se usa el ultimo clima guardado si aun vale
-            val weather = if (latitude != null && longitude != null) {
-                adapter.getCurrentWeather(latitude, longitude).getOrNull() ?: adapter.getCachedWeather()
-            } else {
-                adapter.getCachedWeather()
-            }
+            //sin internet la consulta falla: se usa el ultimo clima guardado si aun vale y es del mismo lugar
+            val liveWeather = if (latitude != null && longitude != null) adapter.getCurrentWeather(latitude, longitude).getOrNull() else null
+            hasLiveWeather = liveWeather != null
+            val weather = liveWeather ?: adapter.getCachedWeather(latitude, longitude)
 
             val currentTools = _uiState.value.tools.ifEmpty { ToolModel.DEFAULT_CATALOG }
             val suggestion = weather?.let { WeatherSuggestionEngine(it).suggest(currentTools) }
@@ -253,12 +275,12 @@ class HomeViewModel(
     }
 
     fun onCheckInSaved() {
+        //el home cambia a "Checked-in Today" de una vez; antes esperaba a leer el check-in (y su ciudad) y por unos
+        //segundos seguia ofreciendo el check-in del dia
+        _uiState.update { it.copy(isCheckInCompleted = true) }
         viewModelScope.launch(Dispatchers.IO) {
             val checkIn = moodRepository?.getLatestCheckIn()?.getOrNull()
-            _uiState.value = _uiState.value.copy(
-                isCheckInCompleted = true,
-                todayCheckIn = checkIn
-            )
+            _uiState.update { it.copy(isCheckInCompleted = true, todayCheckIn = checkIn) }
         }
         loadTools()
     }
@@ -317,6 +339,7 @@ class HomeViewModel(
                     isOnline = app.container.networkConnectivityObserver::isConnected,
                     weatherServiceAdapter = app.container.weatherServiceAdapter,
                     locationRepository = app.container.locationRepository,
+                    connectivity = app.container.networkConnectivityObserver.observe(),
                     userRepository = app.container.userRepository
                 )
             }
