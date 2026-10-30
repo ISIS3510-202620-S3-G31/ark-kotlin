@@ -32,17 +32,6 @@ class FeedbackRepositoryImpl(
     //sin internet esa espera no terminaba nunca y la pantalla de feedback se quedaba cargando
     override suspend fun saveFeedback(feedback: FeedbackModel): Result<FeedbackModel> = withContext(ioDispatcher) {
         runCatching {
-            val currentUserId = auth.currentUser?.uid ?: "anonymous"
-
-            // 1. Guardar primero en Room SQLite (offline-first) con isSynced = false
-            val entityToInsert = feedback.toEntity().copy(isSynced = false)
-            val insertedId = feedbackDao.insertFeedback(entityToInsert)
-            val localSavedModel = feedback.copy(id = insertedId, isSynced = false)
-
-            // 2. Notificar a SyncManager para sincronizar en segundo plano cuando haya red
-            onFeedbackSaved()
-            Log.d("FeedbackRepository", "Feedback id=$insertedId guardado en Room, pendiente de sincronizacion")
-            localSavedModel
             val insertedId = feedbackDao.insertFeedback(feedback.toEntity().copy(isSynced = false))
             onFeedbackSaved()
             feedback.copy(id = insertedId, isSynced = false)

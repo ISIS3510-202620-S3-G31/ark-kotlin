@@ -98,7 +98,7 @@ fun PostToolFeedbackRoute(
         onCommentChange = viewModel::onCommentChange,
         onEmotionToggle = viewModel::onEmotionToggle,
         onSubmitClick = { viewModel.saveFeedback(onSavedCallback = onFeedbackSubmitted) },
-        onDismiss = { viewModel.skipFeedback(onDismissCallback = onDismiss) }
+        onDismiss = onDismiss
     )
 }
 
