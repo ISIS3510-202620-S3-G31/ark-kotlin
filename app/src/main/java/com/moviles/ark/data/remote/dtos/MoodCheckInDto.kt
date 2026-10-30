@@ -67,11 +67,15 @@ fun MoodCheckInModel.toDto(userId: String): MoodCheckInDto {
 
 //de dto a modelo de dominio: una emocion es SingleEmotion, varias son CompoundMood
 //si llega un nombre que ya no existe en el enum, se ignora en vez de cerrar la app
-private fun MoodCheckInDto.parts(): List<SingleEmotion> = emotions.toParts()
+private fun MoodCheckInDto.parts(): List<SingleEmotion> = MoodFactory.readableParts(emotions.toParts(), moodName)
+
+//false si el documento no trae ninguna emocion que se pueda leer; stats lo cuenta como check-in pero no inventa su emocion
+fun MoodCheckInDto.hasReadableEmotions(): Boolean = parts().isNotEmpty()
 
 fun MoodCheckInDto.toDomain(): MoodCheckInModel {
     val parsedEmotions = parts()
-    val mood = if (parsedEmotions.isEmpty()) MoodFactory.default() else MoodFactory.fromParts(parsedEmotions, moodName)
+    //sin emociones legibles el animo queda vacio (isValidMood = false) en vez de inventar felicidad
+    val mood = MoodFactory.fromParts(parsedEmotions, moodName)
     return MoodCheckInModel(
         mood = mood,
         note = note,

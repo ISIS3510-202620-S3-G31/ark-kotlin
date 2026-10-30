@@ -6,21 +6,19 @@ import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Source
 import com.moviles.ark.data.local.StatsDiskCache
-import com.moviles.ark.data.local.daos.EmotionCheckInDao
 import com.moviles.ark.data.local.daos.StatsDailyVisitDao
 import com.moviles.ark.data.local.entities.StatsDailyVisitEntity
-import com.moviles.ark.data.local.entities.toDomain
 import com.moviles.ark.data.remote.CrashlyticsHelper
 import com.moviles.ark.data.remote.dtos.MoodCheckInDto
+import com.moviles.ark.data.remote.dtos.hasReadableEmotions
 import com.moviles.ark.data.remote.dtos.ToolInteractionDto
 import com.moviles.ark.data.remote.dtos.toDomain
 import com.moviles.ark.data.remote.dtos.toDto
+import com.moviles.ark.domain.models.MoodCheckInModel
 import com.moviles.ark.domain.models.StatsCalculator
 import com.moviles.ark.domain.models.StatsModel
 import com.moviles.ark.domain.repositories.StatsRepository
-import com.moviles.ark.domain.repositories.ToolInteractionRepository
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -30,11 +28,7 @@ import java.util.Locale
 class StatsRepositoryImpl(
     private val auth: FirebaseAuth,
     private val firestore: FirebaseFirestore,
-    //los daos de room se quedan en el repositorio: el viewmodel nunca toca la base directo
-    private val emotionCheckInDao: EmotionCheckInDao,
-    //interacciones: las de firestore (o su cache sin internet) + las que siguen pendientes en room
-    private val toolInteractionRepository: ToolInteractionRepository,
-    //cache en disco de las stats que llegaron de firestore
+    //cache en disco (cacheDir) de las ultimas stats que llegaron de firestore: es lo unico que se muestra sin red
     private val statsDiskCache: StatsDiskCache? = null,
     private val statsCalculator: StatsCalculator = StatsCalculator(),
     private val statsDailyVisitDao: StatsDailyVisitDao? = null,
@@ -45,22 +39,6 @@ class StatsRepositoryImpl(
     override suspend fun getCachedStats(): StatsModel? {
         val currentUserId = auth.currentUser?.uid ?: "anonymous"
         return statsDiskCache?.read(currentUserId)
-    }
-
-    //lee check-ins de room e interacciones del repositorio en IO y calcula en Default; sin datos devuelve stats en cero
-    //sin internet incluye las interacciones hechas offline: asi la frecuencia de herramientas se actualiza sin red
-    override suspend fun getLocalStats(): Result<StatsModel> = runCatching {
-        val currentUserId = auth.currentUser?.uid ?: "anonymous"
-        val (checkInEntities, interactions) = withContext(Dispatchers.IO) {
-            emotionCheckInDao.getDailyCheckIns(currentUserId).first() to toolInteractionRepository.getInteractionsSince(0L).getOrThrow()
-        }
-        withContext(Dispatchers.Default) {
-            statsCalculator.calculateStats(
-                checkIns = checkInEntities.map { it.toDomain() },
-                interactions = interactions,
-                toolPercentages = StatsCalculator.toolUsagePercentages(interactions.map { it.toolId }.filter { it.isNotBlank() })
-            )
-        }
     }
 
     //pide a firestore en IO (Source.SERVER: sin red falla en vez de devolver datos viejos) y actualiza el cache
@@ -78,12 +56,13 @@ class StatsRepositoryImpl(
             .get(Source.SERVER)
             .await()
         //solo los check-ins diarios; los que guardaba el feedback viejo no cuentan
-        val checkInModels = checkInsSnapshot.documents
+        val dailyDtos = checkInsSnapshot.documents
             .mapNotNull { it.toDtoOrNull<MoodCheckInDto>() }
-            .filter { it.timestamp > 0L }
-            .map { it.toDomain() }
-            .filterNot { it.isPostToolFeedback() }
-        val totalCheckIns = checkInModels.size
+            .filter { it.timestamp > 0L && !MoodCheckInModel.isPostToolNote(it.note) }
+        //un documento sin emociones legibles cuenta como check-in, pero no suma a ninguna emocion
+        val checkInModels = dailyDtos.filter { it.hasReadableEmotions() }.map { it.toDomain() }
+        val totalCheckIns = dailyDtos.size
+        Log.d("StatsRepository", "Daily check-ins: $totalCheckIns, without readable emotions: ${totalCheckIns - checkInModels.size}")
 
         //consulta las interacciones de herramientas de firestore
         val toolsSnapshot = firestore.collection("users")
@@ -119,7 +98,8 @@ class StatsRepositoryImpl(
             interactions = toolInteractions,
             toolPercentages = toolPercentages
         )
-        val computedStats = calculated.copy(lastUpdated = System.currentTimeMillis())
+        //lastUpdated es el momento en que estas stats salieron de firestore; la pantalla lo muestra tal cual
+        val computedStats = calculated.copy(totalCheckIns = totalCheckIns, lastUpdated = System.currentTimeMillis())
 
         //guarda el resumen en el disco del telefono para pintarlo al instante la proxima vez
         statsDiskCache?.write(currentUserId, computedStats)

@@ -17,14 +17,16 @@ object MoodFactory {
         return CompoundMood(customName = name).apply { parts.forEach { add(it) } }
     }
 
-    //animo que se usa cuando un registro viejo no trae ninguna emocion valida
-    fun default(): MoodComponent = SingleEmotion(Emotion.HAPPINESS, SingleEmotion.DEFAULT_INTENSITY)
+    //emociones de un registro guardado; si la lista no trae ninguna valida se intenta con el nombre del animo
+    //("Sadness" -> tristeza). si tampoco sirve queda vacio: nunca se inventa una emocion (antes salia felicidad)
+    fun readableParts(parts: List<SingleEmotion>, moodName: String, intensity: Int = SingleEmotion.DEFAULT_INTENSITY): List<SingleEmotion> {
+        if (parts.isNotEmpty()) return parts
+        val emotion = emotionFromName(moodName) ?: return emptyList()
+        return listOf(SingleEmotion(emotion, intensity.coerceIn(SingleEmotion.MIN_INTENSITY, SingleEmotion.MAX_INTENSITY)))
+    }
 
     //nombre guardado -> emocion; si ya no existe en el enum se ignora en vez de cerrar la app
     fun emotionFromName(name: String): Emotion? = Emotion.entries.find { it.name.equals(name, ignoreCase = true) }
-
-    //igual que emotionFromName pero con felicidad cuando el nombre no se reconoce (resumenes viejos de estadisticas)
-    fun emotionOrDefault(name: String): Emotion = emotionFromName(name) ?: Emotion.HAPPINESS
 
     //cada emocion con su propia intensidad, recorriendo el composite hasta las hojas
     fun partsOf(mood: MoodComponent): List<SingleEmotion> =

@@ -32,21 +32,6 @@ interface EmotionCheckInDao {
         }
     }
 
-    //check-ins diarios del usuario, del mas nuevo al mas viejo
-    @Query("SELECT * FROM mood_checkins WHERE userId = :userId AND $DAILY_ONLY ORDER BY timestamp DESC")
-    fun getDailyCheckInsRaw(userId: String): Flow<List<CheckInEntity>>
-
-    fun getDailyCheckIns(userId: String): Flow<List<CheckInEntity>> {
-        return getDailyCheckInsRaw(userId).catch { e ->
-            CrashlyticsHelper.logNonFatal(
-                componentName = "EmotionCheckInDao",
-                action = "getDailyCheckIns",
-                throwable = e
-            )
-            throw e
-        }
-    }
-
     //historial desde una fecha, por ejemplo la ultima semana para las estadisticas
     @Query("SELECT * FROM mood_checkins WHERE timestamp >= :fromMillis ORDER BY timestamp ASC")
     fun getCheckInsSinceRaw(fromMillis: Long): Flow<List<CheckInEntity>>

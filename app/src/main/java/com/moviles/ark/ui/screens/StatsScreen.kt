@@ -3,6 +3,12 @@ package com.moviles.ark.ui.screens
 import android.app.Activity
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
+import com.moviles.ark.ui.viewmodels.StatsEmptyReason
+import com.moviles.ark.ui.components.emotionLabel
+import kotlinx.coroutines.delay
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -86,7 +92,6 @@ import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.theme.FigtreeFontFamily
 import com.moviles.ark.ui.theme.PrimaryColor
 import com.moviles.ark.ui.theme.SecondaryColor
-import com.moviles.ark.ui.theme.SoreanFontFamily
 import com.moviles.ark.ui.theme.TextColor
 import com.moviles.ark.ui.viewmodels.StatsViewModel
 import java.text.SimpleDateFormat
@@ -127,9 +132,11 @@ fun StatsScreen(
     StatsScreenContent(
         stats = uiState.stats,
         isLoading = uiState.isLoading,
-        errorMessage = uiState.errorMessage,
+        emptyReason = uiState.emptyReason,
         isRefreshing = uiState.isRefreshing,
+        isUpdating = uiState.isUpdating,
         isOffline = uiState.isOffline,
+        updateCount = uiState.updateCount,
         onRefresh = { viewModel.refresh() },
         onNavigateToToolsCatalog = onNavigateToToolsCatalog
     )
@@ -141,9 +148,11 @@ fun StatsScreen(
 fun StatsScreenContent(
     stats: StatsModel?,
     isLoading: Boolean,
-    errorMessage: String? = null,
+    emptyReason: StatsEmptyReason? = null,
     isRefreshing: Boolean = false,
+    isUpdating: Boolean = false,
     isOffline: Boolean = false,
+    updateCount: Int = 0,
     onRefresh: () -> Unit = {},
     onNavigateToToolsCatalog: (ToolCategory?) -> Unit = {}
 ) {
@@ -172,12 +181,7 @@ fun StatsScreenContent(
                         color = TextColor
                     )
                     Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = "Last updated: ${getLastUpdatedLabel()}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextColor.copy(alpha = 0.55f),
-                        fontSize = 12.sp
-                    )
+                    LastUpdatedLabel(stats = stats, isUpdating = isUpdating, updateCount = updateCount)
                 }
 
                 Box(
@@ -198,6 +202,11 @@ fun StatsScreenContent(
                         modifier = Modifier.size(20.dp)
                     )
                 }
+            }
+
+            //sin internet se ve lo ultimo que llego de firestore; se dice para que no parezca dato nuevo
+            if (isOffline && stats != null) {
+                OfflineSavedStatsBanner()
             }
 
             //deslizar hacia abajo pide datos nuevos al backend en firestore
@@ -226,18 +235,11 @@ fun StatsScreenContent(
                     }
                 } else if (stats == null) {
                     PullableContent {
-                        if (isOffline) {
-                            //cuando no hay nada en disco y no hay internet: fallback ilustrado amigable
+                        if (emptyReason == StatsEmptyReason.OFFLINE_NO_SAVED) {
+                            //sin internet y sin stats guardadas: se explica por que no hay nada que mostrar
                             StatsOfflineView(onRetry = onRefresh)
-                        } else if (errorMessage != null) {
-                            StatsErrorView(
-                                message = errorMessage,
-                                onRetry = onRefresh
-                            )
                         } else {
-                            StatsEmptyView(
-                                onExploreTools = { onNavigateToToolsCatalog(null) }
-                            )
+                            StatsErrorView(onRetry = onRefresh)
                         }
                     }
                 } else if (stats.isEmpty()) {
@@ -247,7 +249,7 @@ fun StatsScreenContent(
                         )
                     }
                 } else {
-                    StatsMainView(stats = stats, onNavigateToToolsCatalog = onNavigateToToolsCatalog)
+                    StatsMainView(stats = stats, updateCount = updateCount, onNavigateToToolsCatalog = onNavigateToToolsCatalog)
                 }
             }
         }
@@ -269,7 +271,6 @@ private fun PullableContent(content: @Composable () -> Unit) {
 //vista cuando ocurre un error de servidor al cargar estadisticas
 @Composable
 private fun StatsErrorView(
-    message: String,
     onRetry: () -> Unit
 ) {
     Box(
@@ -294,28 +295,27 @@ private fun StatsErrorView(
                     modifier = Modifier
                         .size(56.dp)
                         .clip(CircleShape)
-                        .background(Color(0xFFE57373).copy(alpha = 0.18f))
+                        .background(AccentColor.copy(alpha = 0.18f))
                         .border(1.2.dp, Color(0xFFE8D3B9), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.Refresh,
                         contentDescription = null,
-                        tint = Color(0xFFD32F2F),
+                        tint = AccentColor,
                         modifier = Modifier.size(28.dp)
                     )
                 }
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    text = "Unable to load stats",
+                    text = "Couldn't load your stats",
                     style = MaterialTheme.typography.titleLarge,
-                    fontFamily = SoreanFontFamily,
                     fontWeight = FontWeight.Bold,
                     color = TextColor
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = message,
+                    text = "Ark couldn't reach the server and there are no saved stats on this phone yet. Your check-ins are safe; try again in a moment.",
                     style = MaterialTheme.typography.bodyLarge,
                     fontFamily = FigtreeFontFamily,
                     color = TextColor.copy(alpha = 0.7f),
@@ -396,9 +396,8 @@ private fun StatsOfflineView(
                 Spacer(modifier = Modifier.height(18.dp))
 
                 Text(
-                    text = "You're Currently Offline",
+                    text = "No stats on this phone yet",
                     style = MaterialTheme.typography.titleLarge,
-                    fontFamily = SoreanFontFamily,
                     fontWeight = FontWeight.Bold,
                     color = TextColor,
                     textAlign = TextAlign.Center
@@ -407,7 +406,7 @@ private fun StatsOfflineView(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 Text(
-                    text = "Ark needs an internet connection to fetch your latest cloud analytics for the first time. Check your Wi-Fi or data, and swipe down or tap retry to connect!",
+                    text = "You're offline and your stats haven't been loaded on this phone yet (or the app cache was cleared). Connect to the internet once and Ark keeps them saved to show you offline.",
                     style = MaterialTheme.typography.bodyMedium,
                     fontFamily = FigtreeFontFamily,
                     color = TextColor.copy(alpha = 0.75f),
@@ -427,7 +426,7 @@ private fun StatsOfflineView(
                     colors = ButtonDefaults.buttonColors(containerColor = PrimaryColor)
                 ) {
                     Text(
-                        text = "Retry Connection",
+                        text = "Try again",
                         fontFamily = FigtreeFontFamily,
                         fontWeight = FontWeight.Bold,
                         color = TextColor,
@@ -489,9 +488,8 @@ private fun StatsEmptyView(
                 Spacer(modifier = Modifier.height(18.dp))
 
                 Text(
-                    text = "Your Wellbeing Journey Awaits",
+                    text = "No stats yet",
                     style = MaterialTheme.typography.titleLarge,
-                    fontFamily = SoreanFontFamily,
                     fontWeight = FontWeight.Bold,
                     color = TextColor,
                     textAlign = TextAlign.Center
@@ -500,7 +498,7 @@ private fun StatsEmptyView(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 Text(
-                    text = "Track your daily emotional check-ins and explore guided wellbeing tools to unlock personalized analytics and healthy habit insights.",
+                    text = "Your stats appear after your first daily check-in or tool session. Everything here comes from what you record.",
                     style = MaterialTheme.typography.bodyMedium,
                     fontFamily = FigtreeFontFamily,
                     color = TextColor.copy(alpha = 0.75f),
@@ -532,22 +530,84 @@ private fun StatsEmptyView(
     }
 }
 
-private fun getLastUpdatedLabel(): String {
-    val format = java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault())
-    return "Today at " + format.format(java.util.Date())
+//fecha de las stats que se ven; al llegar stats nuevas dice "Updated just now" en naranja un momento
+@Composable
+private fun LastUpdatedLabel(stats: StatsModel?, isUpdating: Boolean, updateCount: Int) {
+    var justUpdated by remember { mutableStateOf(false) }
+    LaunchedEffect(updateCount) {
+        if (updateCount > 0) {
+            justUpdated = true
+            delay(JUST_UPDATED_MILLIS)
+            justUpdated = false
+        }
+    }
+    val text = when {
+        justUpdated -> "Updated just now"
+        isUpdating -> "Updating..."
+        stats != null -> "Last updated: ${StatsModel.lastUpdatedLabel(stats.lastUpdated)}"
+        else -> ""
+    }
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodySmall,
+        fontWeight = if (justUpdated) FontWeight.Bold else FontWeight.Normal,
+        color = if (justUpdated || isUpdating) PrimaryColor else TextColor.copy(alpha = 0.55f),
+        fontSize = 12.sp
+    )
 }
+
+//franja corta bajo el titulo: lo que se ve son las ultimas stats guardadas, no datos nuevos
+@Composable
+private fun OfflineSavedStatsBanner() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(TextColor.copy(alpha = 0.06f))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Default.WifiOff,
+            contentDescription = null,
+            tint = TextColor.copy(alpha = 0.7f),
+            modifier = Modifier.size(16.dp)
+        )
+        Text(
+            text = "Offline · showing your last saved stats",
+            style = MaterialTheme.typography.bodySmall,
+            color = TextColor.copy(alpha = 0.75f)
+        )
+    }
+}
+
+private const val JUST_UPDATED_MILLIS = 2_500L
 
 data class TooltipInfo(val title: String, val message: String)
 
 @Composable
 private fun StatsMainView(
     stats: StatsModel,
+    updateCount: Int = 0,
     onNavigateToToolsCatalog: (ToolCategory?) -> Unit = {}
 ) {
     var activeTooltip by remember { mutableStateOf<TooltipInfo?>(null) }
 
+    //parpadeo corto cuando llegan stats nuevas de firestore, para que se note que cambiaron
+    val flash = remember { Animatable(0f) }
+    LaunchedEffect(updateCount) {
+        if (updateCount > 0) {
+            flash.snapTo(1f)
+            flash.animateTo(0f, animationSpec = tween(durationMillis = 700))
+        }
+    }
+
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer { alpha = 1f - 0.6f * flash.value },
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 6.dp, bottom = 36.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -566,10 +626,11 @@ private fun StatsMainView(
                     color = CardSurfaceColor,
                     border = BorderStroke(1.dp, CardBorderColor)
                 ) {
-                    val emotion = stats.topEmotion ?: Emotion.HAPPINESS
-                    val color = getEmotionColor(emotion)
-                    val emoji = getEmotionEmoji(emotion)
-                    val emotionName = emotion.name.lowercase().replaceFirstChar { it.uppercase() }
+                    //sin check-ins no hay emocion principal: se dice, no se inventa una
+                    val emotion = stats.topEmotion
+                    val color = emotion?.let { getEmotionColor(it) } ?: TextColor.copy(alpha = 0.3f)
+                    val emoji = emotion?.let { getEmotionEmoji(it) } ?: "—"
+                    val emotionName = emotion?.let { emotionLabel(it) } ?: "No check-ins yet"
 
                     Row(
                         modifier = Modifier
@@ -1039,8 +1100,9 @@ private fun EmotionDistributionCard(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
+                                //emoji y color de la emocion, los mismos del check-in
                                 Text(
-                                    text = emotion.name.lowercase().replaceFirstChar { it.uppercase() },
+                                    text = "${getEmotionEmoji(emotion)}  ${emotionLabel(emotion)}",
                                     style = MaterialTheme.typography.bodyLarge,
                                     fontWeight = FontWeight.Medium,
                                     color = TextColor,
@@ -1113,7 +1175,6 @@ private fun ToolsUsagePieChartCard(
                         Text(
                             text = "Tools Frequency",
                             style = MaterialTheme.typography.headlineSmall,
-                            fontFamily = SoreanFontFamily,
                             fontWeight = FontWeight.Bold,
                             color = TextColor
                         )

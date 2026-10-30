@@ -114,8 +114,6 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         StatsRepositoryImpl(
             auth = auth,
             firestore = firestore,
-            emotionCheckInDao = database.emotionCheckInDao(),
-            toolInteractionRepository = toolInteractionRepository,
             statsDiskCache = com.moviles.ark.data.local.StatsDiskCache(context.cacheDir),
             statsDailyVisitDao = database.statsDailyVisitDao(),
             onVisitRecorded = { syncManager.requestSync() }

@@ -54,8 +54,9 @@ fun MoodCheckInModel.toEntity(userId: String = ""): CheckInEntity {
 //de fila de la tabla a modelo de dominio: una emocion es SingleEmotion, varias son CompoundMood
 fun CheckInEntity.toDomain(): MoodCheckInModel {
     //si llega un nombre que ya no existe en el enum, se ignora en vez de cerrar la app
-    val parts = MoodFactory.decodeParts(emotions, intensity)
-    val mood = if (parts.isEmpty()) MoodFactory.default() else MoodFactory.fromParts(parts, moodName)
+    val parts = MoodFactory.readableParts(MoodFactory.decodeParts(emotions, intensity), moodName, intensity)
+    //sin emociones legibles el animo queda vacio (isValidMood = false) en vez de inventar felicidad
+    val mood = MoodFactory.fromParts(parts, moodName)
     return MoodCheckInModel(
         mood = mood,
         note = note,
