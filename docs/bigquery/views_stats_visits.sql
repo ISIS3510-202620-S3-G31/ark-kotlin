@@ -96,27 +96,36 @@ SELECT
   -- la app no manda is_synthetic: si falta, el dato es real (false). Con `IS FALSE` en el WHERE
   -- un campo que no existe (NULL) no pasaba y la pagina quedaba en "No data"
   COALESCE(SAFE_CAST(JSON_VALUE(data, '$.is_synthetic') AS BOOL), FALSE) AS is_synthetic,
-  timestamp AS updated_at
+  timestamp AS updated_at,
+  -- el emulador corre en el Mac y no es un usuario: se separa por el modelo que manda la app
+  CASE
+    WHEN JSON_VALUE(data, '$.deviceModel') IS NULL THEN 'Unknown'
+    WHEN LOWER(JSON_VALUE(data, '$.deviceModel')) LIKE 'sdk_gphone%'
+      OR LOWER(JSON_VALUE(data, '$.deviceModel')) LIKE '%emulator%'
+      OR LOWER(JSON_VALUE(data, '$.deviceModel')) LIKE 'generic%' THEN 'Emulator'
+    ELSE 'Real phone'
+  END AS device_type
 FROM `ark-mobiles.firestore_export.stats_daily_visits_raw_latest`
 WHERE SAFE_CAST(JSON_VALUE(data, '$.is_synthetic') AS BOOL) IS NOT TRUE
   AND JSON_VALUE(data, '$.dateKey') IS NOT NULL;
 
--- Una fila por usuario y semana.
+-- Una fila por usuario, semana y tipo de dispositivo.
 CREATE OR REPLACE VIEW `ark-mobiles.firestore_export.vw_stats_weekly_user` AS
 SELECT
   DATE_TRUNC(visit_date, ISOWEEK) AS week_start,
   user_id,
-  SUM(visit_count) AS total_visits
+  SUM(visit_count) AS total_visits,
+  device_type
 FROM `ark-mobiles.firestore_export.vw_stats_daily_parsed`
-GROUP BY week_start, user_id;
+GROUP BY week_start, user_id, device_type;
 
--- La respuesta: una fila por semana.
+-- La respuesta: una fila por semana y tipo de dispositivo (se lee con device_type = 'Real phone').
 CREATE OR REPLACE VIEW `ark-mobiles.firestore_export.vw_stats_weekly_kpis` AS
 SELECT
   week_start,
   COUNT(DISTINCT user_id) AS active_users,
   SUM(total_visits) AS total_visits,
-  ROUND(SAFE_DIVIDE(SUM(total_visits), COUNT(DISTINCT user_id)), 2) AS avg_visits_per_user
+  ROUND(SAFE_DIVIDE(SUM(total_visits), COUNT(DISTINCT user_id)), 2) AS avg_visits_per_user,
+  device_type
 FROM `ark-mobiles.firestore_export.vw_stats_weekly_user`
-GROUP BY week_start
-ORDER BY week_start DESC;
+GROUP BY week_start, device_type;

@@ -260,7 +260,10 @@ Hoy la página "Stats" lee otras vistas: `firestore_export.vw_stats_daily_parsed
 `vw_stats_weekly_user` y `vw_stats_weekly_kpis` (al final de `views_stats_visits.sql`). Las
 `ark_dashboards.stats_*` de arriba no están creadas en BigQuery. Ojo con `vw_stats_daily_parsed`:
 la app no manda `is_synthetic`, así que el filtro tiene que ser `IS NOT TRUE`; con `IS FALSE` se
-descartan todas las visitas reales.
+descartan todas las visitas reales. Las tres traen `device_type` (sale del `deviceModel` que manda la app; los documentos
+viejos sin modelo quedan como `Unknown`) y la página tiene un control `device_type` en
+`Real phone`: sin él, la tarjeta "Avg per user" suma el promedio del emulador y el de los
+celulares.
 
 Para verlo en tiempo real: con el dashboard abierto, entrar a Stats en un celular con internet;
 la visita llega a Firestore en segundos y el dashboard la muestra en la siguiente relectura
