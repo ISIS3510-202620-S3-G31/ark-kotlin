@@ -14,8 +14,12 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -112,14 +116,31 @@ class Location(private val context: Context) {
         }
     }
 
-    //pide una posicion nueva al hardware; si el timeout la cancela, se cancela tambien la peticion
-    private suspend fun requestCurrentLocation(manager: LocationManager): AndroidLocation? {
-        val provider = enabledProviders(manager).firstOrNull()
-        if (provider != null) {
-            requestFromProvider(manager, provider)?.let { return it }
+    //pide una posicion nueva a todos los proveedores a la vez y usa la primera que llegue:
+    //bajo techo el gps no fija nunca y se comeria todo el timeout antes de preguntarle a la red
+    //si el timeout la cancela, se cancelan tambien todas las peticiones
+    private suspend fun requestCurrentLocation(manager: LocationManager): AndroidLocation? = coroutineScope {
+        val requests = enabledProviders(manager).map { provider ->
+            async { requestFromProvider(manager, provider) }
+        } + async { requestFromFused() }
+        try {
+            firstNonNull(requests)
+        } finally {
+            requests.forEach { it.cancel() }
         }
-        //respaldo con play services (por ejemplo si el proveedor no respondio)
-        return requestFromFused()
+    }
+
+    //espera hasta que alguna peticion traiga posicion; null solo si todas respondieron sin posicion
+    private suspend fun firstNonNull(requests: List<Deferred<AndroidLocation?>>): AndroidLocation? {
+        val pending = requests.toMutableList()
+        while (pending.isNotEmpty()) {
+            val (finished, location) = select {
+                pending.forEach { request -> request.onAwait { request to it } }
+            }
+            if (location != null) return location
+            pending.remove(finished)
+        }
+        return null
     }
 
     private suspend fun requestFromProvider(manager: LocationManager, provider: String): AndroidLocation? =
