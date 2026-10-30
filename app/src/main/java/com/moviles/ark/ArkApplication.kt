@@ -40,8 +40,6 @@ class ArkApplication : Application() {
         //programar sincronizacion en segundo plano con workmanager sujeta a conectividad de red
         SyncWorker.enqueue(this)
         SyncWorker.schedulePeriodic(this)
-        //precargar y verificar el soporte del modelo de reconocimiento de voz offline
-        container.speechToTextHelper.preloadOfflineModel()
         //escuchar los avisos push de cambios en el catalogo de herramientas
         ToolsCatalogMessagingService.subscribeToCatalogUpdates()
         //los eventos de analitica llevan el uid de la cuenta para poder sumar el tiempo de pantalla por usuario
