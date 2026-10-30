@@ -101,6 +101,8 @@ class HomeViewModel(
 
     //el clima va aparte del resolver de estrategias: no cambia el orden del catalogo, solo llena su propia tarjeta
     //se valida la cache en disco (TTL de 1 hora) para tener clima sin red; si no hay clima la tarjeta queda neutral
+    private var lastWeatherLoadAt = 0L
+
     fun loadWeatherSuggestion() {
         //la tarjeta sale de una vez con la sugerencia neutral y se cambia cuando llega el clima
         if (_uiState.value.weatherSuggestion == null) {
@@ -108,6 +110,7 @@ class HomeViewModel(
             _uiState.update { it.copy(weatherSuggestion = WeatherSuggestionEngine.loadingSuggestion(currentTools)) }
         }
         val adapter = weatherServiceAdapter ?: return
+        lastWeatherLoadAt = now()
         viewModelScope.launch(Dispatchers.IO) {
             val location = locationRepository?.getCurrentLocation()
             val latitude = location?.latitude
@@ -237,6 +240,9 @@ class HomeViewModel(
     //el home se vuelve a mostrar: valida el estado del check-in diario y si venia de una herramienta recalcula recomendaciones
     fun onHomeShown() {
         checkTodayStatus()
+        //el home vive toda la sesion: al volver se pide el clima otra vez si ya paso lo que dura su cache
+        //(antes la tarjeta se quedaba con el clima de cuando se abrio la app, por ejemplo "Sunny" de noche)
+        if (now() - lastWeatherLoadAt >= WEATHER_REFRESH_MILLIS) loadWeatherSuggestion()
         if (!isAwayInTool) return
         isAwayInTool = false
         loadTools()
@@ -292,6 +298,8 @@ class HomeViewModel(
     companion object {
         private const val DAY_MILLIS = 24 * 60 * 60 * 1000L
         private const val CHECK_IN_PROMPT_DELAY_MILLIS = 1500L
+        //igual al tiempo que la cache del clima sirve para el mismo lugar (OpenMeteoAdapterImpl.FRESH_TTL_MILLIS)
+        private const val WEATHER_REFRESH_MILLIS = 15 * 60 * 1000L
 
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
