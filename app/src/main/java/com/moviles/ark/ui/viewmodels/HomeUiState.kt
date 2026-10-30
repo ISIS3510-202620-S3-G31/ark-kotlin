@@ -2,6 +2,7 @@ package com.moviles.ark.ui.viewmodels
 
 import com.moviles.ark.domain.models.Avatar
 import com.moviles.ark.domain.models.MoodCheckInModel
+import com.moviles.ark.domain.models.RecommendationReason
 import com.moviles.ark.domain.models.ToolModel
 import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.domain.models.WeatherSuggestion
@@ -18,6 +19,8 @@ data class HomeUiState(
     val availableCategories: List<ToolCategory> = emptyList(),
     //la herramienta que eligio la estrategia de recomendacion; null mientras carga
     val recommendedTool: ToolModel? = null,
+    //por que se recomendo; la tarjeta lo explica
+    val recommendationReason: RecommendationReason = RecommendationReason.DEFAULT,
     val navigateToToolId: String? = null,
     val isCheckInCompleted: Boolean = false,
     //true una sola vez al abrir el home sin check-in de hoy: la pantalla abre el check-in
@@ -25,9 +28,11 @@ data class HomeUiState(
     //ultimo check-in registrado hoy para la vista de revision no editable
     val todayCheckIn: MoodCheckInModel? = null,
     val errorMessage: String? = null,
-    //tarjeta aparte segun el clima de afuera; null sin internet, sin ubicacion o si el clima no sugiere nada
+    //tarjeta aparte segun el clima de afuera; sin clima trae la sugerencia neutral
     val weatherSuggestion: WeatherSuggestion? = null,
     val avatarId: String = Avatar.DEFAULT_ID,
+    //foto de perfil subida (archivo en el telefono); si existe se muestra en vez del avatar, igual que en perfil
+    val avatarPhotoPath: String? = null,
     //nombre guardado en el telefono para el saludo del home
     val userName: String = ""
 )

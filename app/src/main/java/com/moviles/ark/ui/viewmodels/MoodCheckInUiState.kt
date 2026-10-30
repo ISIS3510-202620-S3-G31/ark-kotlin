@@ -2,15 +2,13 @@ package com.moviles.ark.ui.viewmodels
 
 import com.moviles.ark.domain.models.LocationStatus
 import com.moviles.ark.domain.composite.Emotion
-import com.moviles.ark.domain.composite.SingleEmotion
+import com.moviles.ark.domain.models.EmotionSelection
 import com.moviles.ark.domain.models.MoodCheckInModel
-import java.util.Locale
 
 //estado inmutable de la pantalla de check-in con soporte para coordenadas gps y nombre de la ciudad
 data class MoodCheckInUiState(
-    val selectedEmotions: Set<Emotion> = emptySet(),
-    val activeEmotion: Emotion? = null,
-    val intensity: Float = SingleEmotion.DEFAULT_INTENSITY.toFloat(),
+    //emociones elegidas, cada una con su intensidad, y la que ajusta el slider
+    val selection: EmotionSelection = EmotionSelection(),
     val note: String = "",
     val latitude: Double? = null,
     val longitude: Double? = null,
@@ -27,6 +25,10 @@ data class MoodCheckInUiState(
     //check-in guardado del dia para desplegar en modo revision no editable
     val existingCheckIn: MoodCheckInModel? = null
 ) {
+    val selectedEmotions: Set<Emotion> get() = selection.emotions
+    val activeEmotion: Emotion? get() = selection.active
+    val intensity: Float get() = selection.activeIntensity.toFloat()
+
     //contador de la nota: el limite y el aviso los define el modelo MoodCheckInModel
     val remainingNoteChars: Int
         get() = MoodCheckInModel.remainingNoteChars(note)
@@ -35,16 +37,12 @@ data class MoodCheckInUiState(
     val isNoteAtLimit: Boolean
         get() = remainingNoteChars == 0
 
-    //texto del chip de ubicacion; sin red no hay ciudad y se muestran las coordenadas
+    //texto del chip de ubicacion: solo la ciudad; sin red no hay ciudad y se dice que la ubicacion se guarda
     val locationLabel: String
         get() = when (locationStatus) {
             null -> "Detecting location..."
-            LocationStatus.DISABLED -> "Location Disabled"
-            LocationStatus.UNAVAILABLE -> "Location unavailable"
-            LocationStatus.CAPTURED -> cityName ?: if (latitude != null && longitude != null) {
-                String.format(Locale.US, "%.4f, %.4f", latitude, longitude)
-            } else {
-                "Location unavailable"
-            }
+            LocationStatus.DISABLED -> "Location off"
+            LocationStatus.UNAVAILABLE -> MoodCheckInModel.NO_LOCATION_LABEL
+            LocationStatus.CAPTURED -> cityName ?: MoodCheckInModel.LOCATION_SAVED_LABEL
         }
 }

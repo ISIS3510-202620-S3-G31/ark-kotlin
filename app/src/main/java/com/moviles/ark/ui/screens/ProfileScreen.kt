@@ -2,7 +2,6 @@ package com.moviles.ark.ui.screens
 
 import android.app.DatePickerDialog
 import android.content.Context
-import android.graphics.BitmapFactory
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyRow
@@ -12,6 +11,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
+import com.moviles.ark.ui.components.UserAvatarImage
 import com.moviles.ark.ui.components.avatarDrawable
 import com.moviles.ark.ui.components.presetAvatars
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -64,12 +64,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -79,6 +76,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.ui.theme.AppTheme
+import com.moviles.ark.ui.theme.ScreenTopPadding
 import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.theme.FigtreeFontFamily
 import com.moviles.ark.ui.theme.PrimaryColor
@@ -86,9 +84,7 @@ import com.moviles.ark.ui.theme.SecondaryColor
 import com.moviles.ark.ui.theme.TextColor
 import com.moviles.ark.ui.viewmodels.ProfileUiState
 import com.moviles.ark.ui.viewmodels.ProfileViewModel
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -119,7 +115,7 @@ fun ProfileScreen(
                 .fillMaxSize()
                 .statusBarsPadding()
                 .verticalScroll(rememberScrollState())
-                .padding(24.dp),
+                .padding(start = 24.dp, end = 24.dp, top = ScreenTopPadding, bottom = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text("Your profile", style = MaterialTheme.typography.headlineLarge, color = TextColor)
@@ -230,7 +226,6 @@ private fun Avatar(
     avatarId: String,
     onClick: () -> Unit
 ) {
-    val avatar = rememberAvatar(path)
     Box(modifier = Modifier.size(96.dp).clickable(onClick = onClick)) {
         Box(
             modifier = Modifier
@@ -240,16 +235,7 @@ private fun Avatar(
                 .background(SecondaryColor, CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            if (avatar != null) {
-                Image(bitmap = avatar, contentDescription = "Profile photo", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-            } else {
-                Image(
-                    painter = painterResource(avatarDrawable(avatarId)),
-                    contentDescription = "Profile avatar",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
+            UserAvatarImage(photoPath = path, avatarId = avatarId, modifier = Modifier.fillMaxSize())
         }
         Box(
             modifier = Modifier
@@ -378,17 +364,6 @@ private fun AvatarSelectionCarousel(
             }
         }
     }
-}
-
-//el repositorio ya guarda el avatar pequeno y derecho, asi que aqui solo se lee el archivo fuera del hilo principal
-@Composable
-private fun rememberAvatar(path: String?): ImageBitmap? {
-    val avatar by produceState<ImageBitmap?>(initialValue = null, path) {
-        value = if (path == null) null else withContext(Dispatchers.IO) {
-            runCatching { BitmapFactory.decodeFile(path)?.asImageBitmap() }.getOrNull()
-        }
-    }
-    return avatar
 }
 
 //dialogo para cambiar nombre, fecha de nacimiento y avatar; el correo no se edita porque es el de la cuenta

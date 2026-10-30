@@ -1,6 +1,8 @@
 package com.moviles.ark.domain.models
 
 import com.moviles.ark.domain.composite.Emotion
+import com.moviles.ark.domain.composite.MoodFactory
+import com.moviles.ark.domain.composite.SingleEmotion
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -10,67 +12,46 @@ import java.util.Locale
 class StatsCalculator {
 
     //calcula el modelo completo de estadisticas a partir de check-ins e interacciones
+    //solo cuentan los check-ins diarios: los que guardaba el feedback viejo se ignoran
     fun calculateStats(
         checkIns: List<MoodCheckInModel>,
         interactions: List<ToolInteractionModel>,
         toolPercentages: Map<String, Float> = emptyMap(),
         lastUpdated: Long = System.currentTimeMillis()
     ): StatsModel {
-        val dateFormat = SimpleDateFormat("yyyyMMdd", Locale.getDefault())
+        val dailyCheckIns = checkIns.filterNot { it.isPostToolFeedback() }
+        val dateFormat = SimpleDateFormat(DATE_KEY_PATTERN, Locale.getDefault())
+        val weekKeys = lastSevenDays().map { it.key }
 
-        //ultimos 7 dias desde hace 6 dias hasta hoy
-        val weekDateKeys = mutableListOf<String>()
-        for (i in 0..6) {
-            val daysAgo = 6 - i
-            val tempCal = Calendar.getInstance()
-            tempCal.add(Calendar.DAY_OF_YEAR, -daysAgo)
-            weekDateKeys.add(dateFormat.format(tempCal.time))
-        }
-        val dayLabels = lastSevenDayLabels()
-
-        val dayEmotionsList = Array(7) { mutableListOf<Emotion>() }
-        val dayIntensitiesList = Array(7) { mutableListOf<Int>() }
+        //por dia de la semana: cada emocion registrada con su propia intensidad
+        val dayParts = weekKeys.associateWith { mutableListOf<SingleEmotion>() }
         val allEmotionsCount = mutableMapOf<Emotion, Int>()
 
-        for (checkIn in checkIns) {
-            val dateKey = dateFormat.format(Date(checkIn.timestamp))
-            val indexInWeek = weekDateKeys.indexOf(dateKey)
-            val emotions = checkIn.mood.getEmotions()
-            val intensity = checkIn.mood.getIntensity().toInt().coerceIn(1, 5)
-
-            for (em in emotions) {
-                if (indexInWeek in 0..6) {
-                    dayEmotionsList[indexInWeek].add(em)
-                    dayIntensitiesList[indexInWeek].add(intensity)
-                }
-                allEmotionsCount[em] = allEmotionsCount.getOrDefault(em, 0) + 1
+        for (checkIn in dailyCheckIns) {
+            val parts = MoodFactory.partsOf(checkIn.mood)
+            dayParts[dateFormat.format(Date(checkIn.timestamp))]?.addAll(parts)
+            for (part in parts) {
+                allEmotionsCount[part.emotion] = allEmotionsCount.getOrDefault(part.emotion, 0) + 1
             }
         }
 
+        //la llave de cada dia es su fecha (yyyyMMdd): un resumen de otro dia nunca cae en el dia equivocado
         val weeklyIntensities = LinkedHashMap<String, Float>()
         val weeklyEmotions = LinkedHashMap<String, Emotion>()
-
-        for (i in 0..6) {
-            val dayLabel = dayLabels[i]
-            if (dayEmotionsList[i].isNotEmpty()) {
-                val dominant = dayEmotionsList[i].groupingBy { it }.eachCount().maxByOrNull { it.value }?.key
-                if (dominant != null) {
-                    weeklyEmotions[dayLabel] = dominant
-                }
-                //usamos la intensidad dominante del dia en lugar de un promedio plano
-                val dominantIntensity = dayIntensitiesList[i].groupingBy { it }.eachCount().maxByOrNull { it.value }?.key?.toFloat()
-                    ?: (dayIntensitiesList[i].maxOrNull()?.toFloat() ?: 0f)
-                weeklyIntensities[dayLabel] = dominantIntensity
+        for ((dayKey, parts) in dayParts) {
+            //emocion que mas se registro ese dia y la intensidad mas alta que tuvo
+            val dominant = parts.groupingBy { it.emotion }.eachCount().maxByOrNull { it.value }?.key
+            if (dominant == null) {
+                weeklyIntensities[dayKey] = 0f
             } else {
-                weeklyIntensities[dayLabel] = 0f
+                weeklyEmotions[dayKey] = dominant
+                weeklyIntensities[dayKey] = parts.filter { it.emotion == dominant }.maxOf { it.intensity }.toFloat()
             }
         }
 
-        val topEmotion = allEmotionsCount.maxByOrNull { it.value }?.key
-
         return StatsModel(
-            totalCheckIns = checkIns.size,
-            topEmotion = topEmotion,
+            totalCheckIns = dailyCheckIns.size,
+            topEmotion = allEmotionsCount.maxByOrNull { it.value }?.key,
             weeklyIntensities = weeklyIntensities,
             weeklyEmotions = weeklyEmotions,
             toolUsagePercentages = toolPercentages,
@@ -101,15 +82,23 @@ class StatsCalculator {
             }
         }
 
-        //nombres cortos de los ultimos 7 dias, de hace 6 dias hasta hoy; la grafica semanal los recorre en este orden
-        //porque el mapa que vuelve de firestore no conserva el orden en que se guardaron los dias
-        fun lastSevenDayLabels(): List<String> {
-            val dayNameFormat = SimpleDateFormat("EEE", Locale.ENGLISH)
+        //hoy y los 6 dias anteriores, sin importar que dia de la semana sea hoy; la grafica los recorre en este orden
+        //key es la fecha (yyyyMMdd) con la que se guardan los datos y label el nombre corto que se ve ("Mon")
+        fun lastSevenDays(now: Long = System.currentTimeMillis()): List<WeekDay> {
+            val keyFormat = SimpleDateFormat(DATE_KEY_PATTERN, Locale.getDefault())
+            val labelFormat = SimpleDateFormat("EEE", Locale.ENGLISH)
             return (6 downTo 0).map { daysAgo ->
-                val tempCal = Calendar.getInstance()
-                tempCal.add(Calendar.DAY_OF_YEAR, -daysAgo)
-                dayNameFormat.format(tempCal.time)
+                val day = Calendar.getInstance().apply {
+                    timeInMillis = now
+                    add(Calendar.DAY_OF_YEAR, -daysAgo)
+                }.time
+                WeekDay(keyFormat.format(day), labelFormat.format(day))
             }
         }
+
+        private const val DATE_KEY_PATTERN = "yyyyMMdd"
     }
 }
+
+//un dia de la grafica semanal: la fecha con la que se buscan los datos y el nombre que se muestra
+data class WeekDay(val key: String, val label: String)

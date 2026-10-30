@@ -12,6 +12,8 @@ val SecondaryColor = Color(0xFF2BA79B)
 val AccentColor = Color(0xFFEB5249)
 val BackgroundColor = Color(0xFFF9DEAA)
 val TextColor = Color(0xFF221100)
+//la paleta no tiene blanco: donde iria blanco se usa el fondo con la mitad de intensidad
+val BackgroundLightColor = Color(0xFFFCEFD5)
 
 // State colors
 val SuccessColor = Color(0xFFC5FAA8)

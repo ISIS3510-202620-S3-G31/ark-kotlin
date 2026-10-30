@@ -32,10 +32,8 @@ data class UserProfile(
 
     //el error al guardar la edicion del perfil, o null si se puede guardar
     //el del nombre es el mismo del registro: dice si es muy corto, muy largo o si trae numeros o simbolos
-    fun editError(): String? = UserModel.nameError(name) ?: when {
-        !isValidBirthDate() -> "Enter a valid birth date (YYYY-MM-DD); you need to be $MIN_AGE to $MAX_AGE years old"
-        else -> null
-    }
+    //la fecha usa los mismos mensajes especificos del registro (futura, menor de 13, mas de 120 anos, formato)
+    fun editError(): String? = UserModel.nameError(name) ?: UserModel.birthDateError(birthDate)
 
     //calcula la edad a partir de la fecha de nacimiento; si no hay fecha, usa la edad guardada
     fun getCalculatedAge(): Int = UserModel.ageOf(birthDate) ?: age
@@ -66,5 +64,13 @@ data class UserProfile(
         const val MIN_AGE = UserModel.MIN_AGE
         const val MAX_AGE = UserModel.MAX_AGE
         private const val DAY_MILLIS = 24 * 60 * 60 * 1000L
+        //el saludo del home cabe en dos lineas con un nombre de hasta 12 letras; si es mas largo se corta con ...
+        const val GREETING_NAME_LENGTH = 12
+
+        //primer nombre para el saludo; un nombre largo y todo pegado se corta pero siempre deja varias letras
+        fun greetingName(fullName: String): String {
+            val firstName = fullName.trim().split(" ").firstOrNull { it.isNotBlank() }.orEmpty()
+            return if (firstName.length > GREETING_NAME_LENGTH) firstName.take(GREETING_NAME_LENGTH) + "…" else firstName
+        }
     }
 }

@@ -32,7 +32,8 @@ class FeedbackRepositoryImpl(
     //sin internet esa espera no terminaba nunca y la pantalla de feedback se quedaba cargando
     override suspend fun saveFeedback(feedback: FeedbackModel): Result<FeedbackModel> = withContext(ioDispatcher) {
         runCatching {
-            val insertedId = feedbackDao.insertFeedback(feedback.toEntity().copy(isSynced = false))
+            val userId = auth.currentUser?.uid.orEmpty()
+            val insertedId = feedbackDao.insertFeedback(feedback.toEntity().copy(userId = userId, isSynced = false))
             onFeedbackSaved()
             feedback.copy(id = insertedId, isSynced = false)
         }.onFailure { error ->
@@ -64,7 +65,7 @@ class FeedbackRepositoryImpl(
         runCatching {
             val currentUserId = auth.currentUser?.uid ?: return@runCatching 0
             val uploadedIds = mutableListOf<Long>()
-            for (feedback in feedbackDao.getUnsyncedFeedback()) {
+            for (feedback in feedbackDao.getUnsyncedFeedback(currentUserId)) {
                 try {
                     firestore.collection("users")
                         .document(currentUserId)

@@ -53,5 +53,21 @@ val Typography = Typography(
         fontWeight = FontWeight.Normal,
         fontSize = 14.sp,
         lineHeight = 20.sp
-    )
+    ),
+    //los demas estilos tambien en figtree: sin ellos material usa la fuente del sistema y se ven distintos
+    titleLarge = figtree(22, 28),
+    titleMedium = figtree(16, 24),
+    titleSmall = figtree(14, 20),
+    bodyMedium = figtree(14, 20),
+    bodySmall = figtree(12, 16),
+    labelMedium = figtree(12, 16),
+    labelSmall = figtree(11, 16)
+)
+
+//estilo figtree de peso normal con el tamano y el alto de linea de material
+private fun figtree(size: Int, lineHeight: Int) = TextStyle(
+    fontFamily = FigtreeFontFamily,
+    fontWeight = FontWeight.Normal,
+    fontSize = size.sp,
+    lineHeight = lineHeight.sp
 )

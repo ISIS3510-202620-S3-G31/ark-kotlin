@@ -83,6 +83,7 @@ import com.moviles.ark.domain.models.PhotoDay
 import com.moviles.ark.domain.models.PhotoDayState
 import com.moviles.ark.domain.models.PhotoEntryModel
 import com.moviles.ark.ui.theme.AppTheme
+import com.moviles.ark.ui.theme.ScreenTopPadding
 import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.theme.ErrorColor
 import com.moviles.ark.ui.theme.FigtreeFontFamily
@@ -134,7 +135,7 @@ fun PhotoOfTheDayScreen(
                 //deja libre la barra de gestos de android para que el nombre del dia del carrusel no quede debajo
                 .navigationBarsPadding()
                 .verticalScroll(scrollState)
-                .padding(24.dp)
+                .padding(start = 24.dp, end = 24.dp, top = ScreenTopPadding, bottom = 24.dp)
         ) {
             Header(todayLabel = uiState.todayLabel, onBack = onBack)
             Spacer(modifier = Modifier.height(20.dp))

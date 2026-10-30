@@ -51,11 +51,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moviles.ark.R
 import com.moviles.ark.ui.components.AuthButtonShape
-import com.moviles.ark.ui.components.AuthNetworkErrorDialog
 import com.moviles.ark.ui.components.AuthTextField
 import com.moviles.ark.ui.theme.AppTheme
 import com.moviles.ark.ui.theme.BackgroundColor
-import com.moviles.ark.ui.theme.ErrorColor
 import com.moviles.ark.ui.theme.PrimaryColor
 import com.moviles.ark.ui.theme.SecondaryColor
 import com.moviles.ark.ui.theme.TextColor
@@ -68,18 +66,10 @@ fun LoginScreen(
     onEmailChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
     onLoginClick: () -> Unit,
-    onNavigateToRegister: () -> Unit,
-    onDismissNoInternetDialog: () -> Unit = {}
+    onNavigateToRegister: () -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
     var passwordVisible by remember { mutableStateOf(false) }
-
-    if (uiState.showNoInternetDialog) {
-        AuthNetworkErrorDialog(
-            isAirplaneMode = uiState.isAirplaneModeError,
-            onDismiss = onDismissNoInternetDialog
-        )
-    }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -182,25 +172,25 @@ fun LoginScreen(
                         }
                     )
 
-                    // Mensaje de error si la autenticacion falla
+                    // Mensaje en rojo si la autenticacion falla o no hay internet
                     if (uiState.errorMessage != null) {
                         Spacer(modifier = Modifier.height(10.dp))
                         Text(
                             text = uiState.errorMessage,
-                            color = ErrorColor,
+                            color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.bodyLarge
                         )
                     }
 
                     Spacer(modifier = Modifier.height(20.dp))
 
-                    // Boton principal de Login habilitado cuando el formulario es valido
+                    // Boton principal de Login: siempre responde (si falta algo se marca el campo), solo se apaga mientras carga
                     Button(
                         onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             onLoginClick()
                         },
-                        enabled = uiState.isFormValid && !uiState.isLoading,
+                        enabled = !uiState.isLoading,
                         shape = AuthButtonShape,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = PrimaryColor,
@@ -268,8 +258,7 @@ fun LoginRoute(
         onEmailChange = viewModel::onEmailChange,
         onPasswordChange = viewModel::onPasswordChange,
         onLoginClick = { viewModel.onLoginClick(onLoginSuccess) },
-        onNavigateToRegister = onNavigateToRegister,
-        onDismissNoInternetDialog = viewModel::dismissNoInternetDialog
+        onNavigateToRegister = onNavigateToRegister
     )
 }
 
@@ -280,7 +269,6 @@ fun LoginScreenPreview() {
         val dummyUiState = LoginUiState(
             email = "usuario@ejemplo.com",
             password = "password123",
-            isFormValid = true,
             isLoading = false
         )
 

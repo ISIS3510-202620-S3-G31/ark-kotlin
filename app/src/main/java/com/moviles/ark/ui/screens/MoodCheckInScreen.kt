@@ -2,7 +2,6 @@ package com.moviles.ark.ui.screens
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,7 +29,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -41,7 +39,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -50,16 +47,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.moviles.ark.domain.composite.SingleEmotion
 import com.moviles.ark.domain.models.MoodCheckInModel
+import com.moviles.ark.ui.components.CheckInSummaryComponent
 import com.moviles.ark.ui.components.MoodSelectorComponent
 import com.moviles.ark.ui.components.ModernVoiceInputBox
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
-import com.moviles.ark.ui.components.getEmotionColor
-import com.moviles.ark.ui.components.getEmotionEmoji
 import com.moviles.ark.ui.theme.AppTheme
+import com.moviles.ark.ui.theme.ScreenTopPadding
 import com.moviles.ark.ui.theme.FigtreeFontFamily
 import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.theme.PrimaryColor
@@ -281,6 +277,7 @@ fun MoodCheckInScreen(
 }
 
 //vista no editable de revision cuando el usuario ya realizo su check-in diario
+//el boton Close de abajo la cierra; el resumen es el mismo del dialogo del home
 @Composable
 private fun MoodCheckInReviewContent(
     checkIn: MoodCheckInModel?,
@@ -301,37 +298,12 @@ private fun MoodCheckInReviewContent(
                 .fillMaxSize()
                 .statusBarsPadding()
                 .verticalScroll(rememberScrollState())
-                .padding(start = 22.dp, end = 22.dp, top = 16.dp, bottom = 24.dp),
+                .padding(start = 22.dp, end = 22.dp, top = ScreenTopPadding, bottom = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp, end = 2.dp),
-                horizontalArrangement = Arrangement.End
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(38.dp)
-                        .clip(CircleShape)
-                        .background(TextColor.copy(alpha = 0.08f))
-                        .clickable(onClick = onClose),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Close",
-                        tint = TextColor.copy(alpha = 0.75f),
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
             Surface(
                 shape = RoundedCornerShape(12.dp),
-                color = Color(0xFFEFE0C2),
+                color = TextColor.copy(alpha = 0.06f),
                 border = BorderStroke(1.dp, TextColor.copy(alpha = 0.12f))
             ) {
                 Row(
@@ -364,201 +336,22 @@ private fun MoodCheckInReviewContent(
                 color = MaterialTheme.colorScheme.onBackground
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(TextColor.copy(alpha = 0.06f))
-                    .padding(horizontal = 14.dp, vertical = 5.dp)
-            ) {
-                Text(
-                    text = "Today • $dateFormatted",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = PrimaryColor,
-                    fontSize = 12.sp
-                )
-            }
+            Text(
+                text = dateFormatted,
+                style = MaterialTheme.typography.bodyMedium,
+                fontFamily = FigtreeFontFamily,
+                fontWeight = FontWeight.SemiBold,
+                color = PrimaryColor
+            )
 
-            Spacer(modifier = Modifier.height(26.dp))
+            Spacer(modifier = Modifier.height(22.dp))
 
-            //tarjeta de estado de bloqueo con mensaje amigable
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(Color(0xFFF3E4CF).copy(alpha = 0.7f))
-                    .border(1.dp, PrimaryColor.copy(alpha = 0.25f), RoundedCornerShape(20.dp))
-                    .padding(16.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(PrimaryColor.copy(alpha = 0.15f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Lock,
-                            contentDescription = null,
-                            tint = PrimaryColor,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                    Text(
-                        text = "You've already completed your daily check-in today. Review your entry below.",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontFamily = FigtreeFontFamily,
-                        color = TextColor.copy(alpha = 0.8f),
-                        lineHeight = 18.sp
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            //emociones registradas en modo solo lectura
-            val emotions = checkIn?.mood?.getEmotions().orEmpty()
-            if (emotions.isNotEmpty()) {
-                Text(
-                    text = "Recorded Emotions",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = TextColor
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(vertical = 4.dp)
-                ) {
-                    emotions.forEach { emotion ->
-                        Surface(
-                            shape = RoundedCornerShape(14.dp),
-                            color = getEmotionColor(emotion).copy(alpha = 0.18f),
-                            border = BorderStroke(1.dp, getEmotionColor(emotion).copy(alpha = 0.35f))
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Text(
-                                    text = getEmotionEmoji(emotion),
-                                    fontSize = 16.sp
-                                )
-                                Text(
-                                    text = emotion.name.lowercase().replaceFirstChar { it.uppercase() },
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = TextColor
-                                )
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                val intensity = checkIn?.mood?.getIntensity()?.toInt() ?: 3
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(
-                        text = "Intensity:",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Medium,
-                        color = TextColor.copy(alpha = 0.65f)
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                        for (i in SingleEmotion.MIN_INTENSITY..SingleEmotion.MAX_INTENSITY) {
-                            Box(
-                                modifier = Modifier
-                                    .size(8.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        if (i <= intensity) PrimaryColor
-                                        else TextColor.copy(alpha = 0.15f)
-                                    )
-                            )
-                        }
-                    }
-                    Text(
-                        text = "$intensity/5",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Bold,
-                        color = TextColor
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            //nota no editable
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(TextColor.copy(alpha = 0.06f))
-                    .border(1.2.dp, Color(0xFFEADBCE), RoundedCornerShape(20.dp))
-                    .padding(16.dp)
-            ) {
-                Column {
-                    Text(
-                        text = "Note",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = TextColor.copy(alpha = 0.6f)
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = if (!checkIn?.note.isNullOrBlank()) checkIn!!.note else "No note recorded for today.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (!checkIn?.note.isNullOrBlank()) TextColor else TextColor.copy(alpha = 0.45f)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            //ubicacion registrada
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(TextColor.copy(alpha = 0.06f))
-                    .padding(horizontal = 12.dp, vertical = 5.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Place,
-                    contentDescription = "Location",
-                    tint = PrimaryColor.copy(alpha = 0.8f),
-                    modifier = Modifier.size(14.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                val locationText = if (checkIn?.latitude != null && checkIn.longitude != null) {
-                    String.format(Locale.US, "%.4f, %.4f", checkIn.latitude, checkIn.longitude)
-                } else {
-                    "Location unavailable"
-                }
-                Text(
-                    text = locationText,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextColor.copy(alpha = 0.75f),
-                    fontSize = 11.5.sp
-                )
-            }
+            CheckInSummaryComponent(checkIn = checkIn)
 
             Spacer(modifier = Modifier.height(28.dp))
 
-            //boton de cierre de revision
             Button(
                 onClick = onClose,
                 colors = ButtonDefaults.buttonColors(containerColor = PrimaryColor),

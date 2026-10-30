@@ -40,12 +40,14 @@ class ArkApplication : Application() {
         //programar sincronizacion en segundo plano con workmanager sujeta a conectividad de red
         SyncWorker.enqueue(this)
         SyncWorker.schedulePeriodic(this)
-        //precargar y verificar el soporte del modelo de reconocimiento de voz offline
-        container.speechToTextHelper.preloadOfflineModel()
         //escuchar los avisos push de cambios en el catalogo de herramientas
         ToolsCatalogMessagingService.subscribeToCatalogUpdates()
         //los eventos de analitica llevan el uid de la cuenta para poder sumar el tiempo de pantalla por usuario
-        container.auth.addAuthStateListener { auth -> container.analyticsRepository.setUserId(auth.currentUser?.uid) }
+        //tambien carga el avatar que eligio la cuenta que entra (se guarda por cuenta en ProfilePreferences)
+        container.auth.addAuthStateListener { auth ->
+            container.analyticsRepository.setUserId(auth.currentUser?.uid)
+            ProfilePreferences.bindUser(auth.currentUser?.uid)
+        }
         //tiempo de pantalla: ProcessLifecycleOwner avisa cuando la app entera entra o sale de pantalla
         //(no cada actividad), y espera un momento antes de avisar la salida para que rotar el telefono no corte la sesion
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {

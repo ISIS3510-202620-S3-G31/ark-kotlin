@@ -131,7 +131,7 @@ class ProfileViewModel(
     }
 
     fun onEditNameChange(name: String) {
-        _uiState.update { it.copy(editName = name, editError = null) }
+        _uiState.update { it.copy(editName = UserModel.limitName(name), editError = null) }
     }
 
     //el modelo limpia lo escrito para que quepa en YYYY-MM-DD (el selector de fecha ya la entrega asi)

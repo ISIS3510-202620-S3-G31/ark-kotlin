@@ -9,7 +9,6 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
 import com.moviles.ark.domain.models.StatsModel
-import com.moviles.ark.domain.models.StatsVisitSummary
 import com.moviles.ark.domain.repositories.StatsRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,18 +20,29 @@ import kotlinx.coroutines.launch
 data class StatsUiState(
     val isLoading: Boolean = true,
     val stats: StatsModel? = null,
-    val errorMessage: String? = null,
+    //motivo por el que no hay stats para mostrar; la pantalla elige el mensaje con esto
+    val emptyReason: StatsEmptyReason? = null,
     //true mientras el pull-to-refresh espera a firestore
     val isRefreshing: Boolean = false,
+    //true mientras se piden stats nuevas a firestore con las guardadas ya en pantalla
+    val isUpdating: Boolean = false,
     //aviso corto de una sola vez, por ejemplo cuando no hay red al refrescar
     val noticeMessage: String? = null,
-    //indica si el intento de conexion detecto falta de internet
+    //sin internet: lo que se ve son las ultimas stats guardadas en el telefono
     val isOffline: Boolean = false,
-    //cantidad de veces que el usuario ha visitado la pantalla de estadisticas hoy
-    val todayVisitsCount: Int = 0,
-    //visitas de esta semana y promedio semanal; cambia en vivo con cada visita
-    val visitSummary: StatsVisitSummary = StatsVisitSummary()
+    //sube cada vez que llegan stats nuevas de firestore; la pantalla parpadea para que se note
+    val updateCount: Int = 0,
+    //cantidad de veces que el usuario ha visitado la pantalla de estadisticas hoy (dato de la pregunta de negocio, no se muestra)
+    val todayVisitsCount: Int = 0
 )
+
+//por que no hay stats en pantalla
+enum class StatsEmptyReason {
+    //sin internet y sin stats guardadas en el telefono (primera vez o se borro el cache)
+    OFFLINE_NO_SAVED,
+    //con internet pero firestore no respondio
+    SERVER_ERROR
+}
 
 class StatsViewModel(
     private val statsRepository: StatsRepository? = null,
@@ -46,20 +56,7 @@ class StatsViewModel(
     private var loadJob: Job? = null
     private var refreshJob: Job? = null
 
-    //las estadisticas se cargan al abrir la pantalla (onScreenOpened); aqui solo se escucha el resumen de visitas
-    init {
-        observeVisitSummary()
-    }
-
-    private fun observeVisitSummary() {
-        val repository = statsRepository ?: return
-        viewModelScope.launch {
-            repository.observeVisitSummary().collect { summary ->
-                privateUiState.value = privateUiState.value.copy(visitSummary = summary)
-            }
-        }
-    }
-
+    //las estadisticas se cargan al abrir la pantalla (onScreenOpened)
     //true si la pantalla se cerro solo porque el telefono giro: al volver a dibujarse no es una visita nueva
     private var reopeningAfterRotation = false
 
@@ -79,33 +76,24 @@ class StatsViewModel(
         reopeningAfterRotation = changingConfiguration
     }
 
-    //patron cache-then-network:
-    //1) registra la visita del usuario (incrementando el conteo diario en room y sincronizando a firestore)
-    //2) lee y muestra inmediatamente el cache de disco en 0 ms si existe
-    //3) en paralelo, consulta a firestore en Dispatchers.IO el documento precomputado del backend
-    //4) al responder firestore, actualiza la interfaz y refresca el cache del disco
+    //estrategia de conectividad eventual (cache-then-network):
+    //1) muestra de inmediato las ultimas stats guardadas en cacheDir, con la fecha en que se cargaron
+    //2) con internet pide stats nuevas a firestore; al llegar reemplazan a las guardadas y la pantalla parpadea
+    //3) sin internet se quedan las guardadas; si no hay ninguna se explica por que no hay stats
+    //nunca se calculan stats con datos sueltos del telefono: o son las de firestore o las ultimas que llegaron de ahi
     fun loadStats() {
-        if (statsRepository == null) {
-            privateUiState.value = StatsUiState(isLoading = false, stats = null)
+        val repository = statsRepository ?: run {
+            privateUiState.value = StatsUiState(isLoading = false, emptyReason = StatsEmptyReason.SERVER_ERROR)
             return
         }
 
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
-            // 1. CACHE: Muestra inmediatamente las ultimas stats guardadas en disco
-            val cached = statsRepository.getCachedStats()
+            val cached = repository.getCachedStats()
             if (cached != null) {
-                showIfNotPoorer(cached)
-                privateUiState.value = privateUiState.value.copy(isLoading = false)
+                privateUiState.value = privateUiState.value.copy(isLoading = false, stats = cached, emptyReason = null)
                 Log.d("StatsViewModel", "Stats displayed from disk cache: total=${cached.totalCheckIns}")
-            } else {
-                privateUiState.value = privateUiState.value.copy(
-                    isLoading = privateUiState.value.stats == null,
-                    errorMessage = null
-                )
             }
-
-            // 2. NETWORK: Peticion en segundo plano al backend (Cache-then-Network)
             fetchFromFirestore(showNotice = false)
         }
     }
@@ -134,52 +122,62 @@ class StatsViewModel(
 
     private suspend fun fetchFromFirestore(showNotice: Boolean) {
         val repository = statsRepository ?: return
+        val shown = privateUiState.value.stats
         if (!isOnline()) {
-            //sin red se recalcula siempre en el telefono: el cache del disco no trae lo que se hizo offline
-            repository.getLocalStats().getOrNull()?.let { showIfNotPoorer(it) }
+            //sin red no cambia nada de lo que se ve, tampoco la fecha de "last updated"
             privateUiState.value = privateUiState.value.copy(
                 isLoading = false,
                 isRefreshing = false,
+                isUpdating = false,
                 isOffline = true,
-                errorMessage = if (privateUiState.value.stats == null) "Offline" else null,
-                noticeMessage = if (showNotice) OFFLINE_NOTICE else null
+                emptyReason = if (shown == null) StatsEmptyReason.OFFLINE_NO_SAVED else null,
+                noticeMessage = if (showNotice) offlineNotice(shown) else null
             )
             return
         }
-        privateUiState.value = privateUiState.value.copy(isRefreshing = showNotice, isOffline = false)
+        privateUiState.value = privateUiState.value.copy(
+            isRefreshing = showNotice,
+            isUpdating = shown != null,
+            isOffline = false
+        )
         val result = repository.getUserStats()
-        if (result.isSuccess) {
-            val data = result.getOrNull()
-            if (data != null) showIfNotPoorer(data)
-            privateUiState.value = privateUiState.value.copy(isLoading = false, isRefreshing = false, isOffline = false)
-            Log.d("StatsViewModel", "Stats loaded successfully: total=${data?.totalCheckIns}")
-        } else {
-            val errorMsg = result.exceptionOrNull()?.localizedMessage ?: "Could not load statistics"
-            Log.e("StatsViewModel", "Error loading stats: $errorMsg")
-            //firestore tambien avisa "client is offline" aunque el telefono crea tener red
-            val isNetError = !isOnline() || errorMsg.contains("offline", ignoreCase = true)
-            //si fallo la red y no habia cache previa usamos fallback de room
-            if (privateUiState.value.stats == null) {
-                repository.getLocalStats().getOrNull()?.let { showIfNotPoorer(it) }
-            }
+        val data = result.getOrNull()
+        if (data != null) {
             privateUiState.value = privateUiState.value.copy(
                 isLoading = false,
                 isRefreshing = false,
+                isUpdating = false,
+                stats = data,
+                emptyReason = null,
+                updateCount = privateUiState.value.updateCount + 1
+            )
+            Log.d("StatsViewModel", "Stats loaded from Firestore: total=${data.totalCheckIns}")
+        } else {
+            val errorMsg = result.exceptionOrNull()?.localizedMessage.orEmpty()
+            Log.e("StatsViewModel", "Error loading stats: $errorMsg")
+            //firestore tambien avisa "client is offline" aunque el telefono crea tener red
+            val isNetError = !isOnline() || errorMsg.contains("offline", ignoreCase = true)
+            privateUiState.value = privateUiState.value.copy(
+                isLoading = false,
+                isRefreshing = false,
+                isUpdating = false,
                 isOffline = isNetError,
-                errorMessage = if (privateUiState.value.stats == null) errorMsg else null,
-                noticeMessage = if (showNotice) OFFLINE_NOTICE else null
+                emptyReason = when {
+                    shown != null -> null
+                    isNetError -> StatsEmptyReason.OFFLINE_NO_SAVED
+                    else -> StatsEmptyReason.SERVER_ERROR
+                },
+                noticeMessage = if (showNotice) offlineNotice(shown) else null
             )
         }
     }
 
-    private fun showIfNotPoorer(data: StatsModel) {
-        if (data.canReplace(privateUiState.value.stats)) {
-            privateUiState.value = privateUiState.value.copy(isLoading = false, stats = data, errorMessage = null)
-        }
-    }
+    //el aviso dice de cuando son las stats que se siguen viendo
+    private fun offlineNotice(shown: StatsModel?): String =
+        if (shown == null) NO_STATS_NOTICE else "Couldn't refresh. Showing stats from ${StatsModel.lastUpdatedLabel(shown.lastUpdated)}."
 
     companion object {
-        private const val OFFLINE_NOTICE = "Couldn't refresh. Showing your saved stats."
+        private const val NO_STATS_NOTICE = "Couldn't refresh. Connect to the internet to load your stats."
 
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {

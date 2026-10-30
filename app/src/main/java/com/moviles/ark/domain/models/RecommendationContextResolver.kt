@@ -7,14 +7,14 @@ import com.moviles.ark.domain.strategies.RecommendationContext
 import com.moviles.ark.domain.strategies.RecommendationStrategy
 import java.util.TimeZone
 
-//por que se eligio la estrategia; el carrusel del home lo puede usar para sus etiquetas
-enum class RecommendationReason {
+//por que se eligio la estrategia; la tarjeta del home muestra la etiqueta y la explicacion
+enum class RecommendationReason(val label: String, val explanation: String) {
     //hubo check-in hoy: se recomienda segun el animo
-    TODAY_MOOD,
+    TODAY_MOOD("Based on your mood", "Picked for how you said you feel today"),
     //no hubo check-in hoy, pero ya hay historial: se recomiendan las mas usadas
-    USAGE_HISTORY,
+    USAGE_HISTORY("Your go-to tool", "One of the tools you finish most often"),
     //usuario nuevo o sin datos recientes: orden normal del catalogo
-    DEFAULT
+    DEFAULT("Suggested for today", "A good tool to start with. Check in to get one for your mood")
 }
 
 //resultado de la decision: que estrategia usar, con que datos y por que
