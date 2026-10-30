@@ -1,12 +1,11 @@
 package com.moviles.ark.domain.adapters
 
+import com.moviles.ark.domain.models.BreathingPhase
+
 //vibracion del telefono para la respiracion; el viewmodel decide cuando y la implementacion como (data/local/sensors)
 interface HapticFeedbackAdapter {
-    //doble pulsacion al pasar de hold a exhale
-    fun vibrateExhaleCue()
-
-    //pulsacion corta en los demas cambios de fase
-    fun vibratePhaseCue()
+    //cada etapa del ciclo tiene su vibracion para seguir el ejercicio con los ojos cerrados
+    fun vibratePhaseCue(phase: BreathingPhase)
 }
 
 //reproductor de la musica ambiental; la implementacion usa el MediaPlayer de android

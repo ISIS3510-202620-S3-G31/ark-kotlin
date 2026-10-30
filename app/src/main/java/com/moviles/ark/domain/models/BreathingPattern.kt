@@ -59,10 +59,6 @@ data class BreathingPattern(
             exhale = exhale.coerceIn(CUSTOM_BREATH_RANGE)
         )
 
-        //todas las fases vibran al empezar; la de hold a exhale tiene su propia vibracion: avisa que ya se puede soltar el aire
-        fun cuesExhale(previous: BreathingPhase, current: BreathingPhase): Boolean =
-            previous == BreathingPhase.HOLD && current == BreathingPhase.EXHALE
-
         //se puede reiniciar si ya empezo o si termino algun ciclo
         fun canReset(phase: BreathingPhase, completedCycles: Int): Boolean =
             phase != BreathingPhase.READY || completedCycles > 0

@@ -92,7 +92,7 @@ fun CustomBreathingRoute(
     onBack: (wasCompleted: Boolean, durationSeconds: Int) -> Unit = { _, _ -> }
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    //la vibracion al pasar de hold a exhale la dispara el viewmodel
+    //la vibracion de cada etapa la dispara el viewmodel
 
     //atras (boton o gesto) = abandonar: se guarda como no terminada y se vuelve sin feedback
     val leave = { onBack(false, viewModel.abandonSession()) }
@@ -152,45 +152,6 @@ fun CustomBreathingScreen(
         ) {
             BreathingTopBar(onBack = onBack)
 
-            //arriba: el patron (antes de empezar) o los ciclos (mientras corre), junto a la musica
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-                    .padding(horizontal = 20.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier.weight(1f),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (!uiState.isRunning && uiState.phase == BreathingPhase.READY) {
-                        PatternSelector(
-                            uiState = uiState,
-                            onSelectPreset = onSelectPreset,
-                            onSelectCustom = onSelectCustom,
-                            onEditCustom = onEditCustom,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    } else if (uiState.completedCycles > 0) {
-                        Text(
-                            text = if (uiState.completedCycles == 1) "1 cycle" else "${uiState.completedCycles} cycles",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = TextColor
-                        )
-                    }
-                }
-
-                //borde = musica en pausa; relleno con ondas = sonando. Tocarlo abre la hoja con las pistas
-                RoundIconButton(
-                    icon = if (uiState.isMusicPlaying) Icons.Filled.GraphicEq else Icons.Filled.MusicNote,
-                    contentDescription = if (uiState.isMusicPlaying) "Ambient music playing, choose track" else "Ambient music",
-                    filled = uiState.isMusicPlaying,
-                    onClick = onToggleTrackSelector
-                )
-            }
-
             //el circulo queda centrado en todo el espacio libre del medio
             Box(
                 modifier = Modifier
@@ -200,6 +161,44 @@ fun CustomBreathingScreen(
             ) {
                 BreathingCircle(uiState = uiState)
             }
+
+            //debajo del circulo, centrado y al alcance del pulgar: la musica y luego el patron o los ciclos
+            //borde = musica en pausa; relleno con ondas = sonando. Tocarlo abre la hoja con las pistas
+            RoundIconButton(
+                icon = if (uiState.isMusicPlaying) Icons.Filled.GraphicEq else Icons.Filled.MusicNote,
+                contentDescription = if (uiState.isMusicPlaying) "Ambient music playing, choose track" else "Ambient music",
+                filled = uiState.isMusicPlaying,
+                onClick = onToggleTrackSelector
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            //el patron (antes de empezar) o los ciclos (mientras corre)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .padding(horizontal = 20.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                if (!uiState.isRunning && uiState.phase == BreathingPhase.READY) {
+                    PatternSelector(
+                        uiState = uiState,
+                        onSelectPreset = onSelectPreset,
+                        onSelectCustom = onSelectCustom,
+                        onEditCustom = onEditCustom,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else if (uiState.completedCycles > 0) {
+                    Text(
+                        text = if (uiState.completedCycles == 1) "1 cycle" else "${uiState.completedCycles} cycles",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = TextColor
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
 
             //abajo del todo: reiniciar, iniciar/pausar y terminar
             BreathingControls(
