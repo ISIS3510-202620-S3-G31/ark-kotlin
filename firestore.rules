@@ -4,6 +4,7 @@ rules_version = '2';
 // - Soporte de birthDate (YYYY-MM-DD) para el registro de usuarios
 // - Retrocompatibilidad con age para el subequipo de Flutter
 // - Colecciones privadas actualizadas para Kotlin y Flutter
+// - Foto de perfil opcional de Kotlin en users/{uid} (avatarId, avatarSource, photoUrl)
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -11,11 +12,23 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == userId;
     }
 
+    // Optional profile picture saved by Kotlin so it shows on every device; Flutter does not write or read it
+    // avatarId: preset avatar, avatarSource: 'preset' or 'photo', photoUrl: download URL in Storage (users/{uid}/avatar/)
+    function isValidAvatar(data) {
+      return (!('avatarId' in data) || (data.avatarId is string && data.avatarId.size() <= 40))
+        && (!('avatarSource' in data) || data.avatarSource in ['preset', 'photo'])
+        && (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.size() <= 2048
+              && data.photoUrl.matches('https://firebasestorage[.]googleapis[.]com/.*')));
+    }
+
     // Profile saved by register: name, email, and birthDate (or legacy age from flutter)
+    // The profile picture fields are optional, so every profile valid before is still valid
     function isValidUser(data) {
-      return (data.keys().hasOnly(['name', 'birthDate', 'email']) ||
-              data.keys().hasOnly(['name', 'age', 'email']) ||
-              data.keys().hasOnly(['name', 'birthDate', 'age', 'email']))
+      let profileKeys = data.keys().removeAll(['avatarId', 'avatarSource', 'photoUrl']);
+      return (profileKeys.hasOnly(['name', 'birthDate', 'email']) ||
+              profileKeys.hasOnly(['name', 'age', 'email']) ||
+              profileKeys.hasOnly(['name', 'birthDate', 'age', 'email']))
+        && isValidAvatar(data)
         && data.name is string && data.name.size() > 0 && data.name.size() <= 100
         && data.email is string && data.email.size() <= 254
         && (!('birthDate' in data) || (data.birthDate is string && data.birthDate.size() >= 8 && data.birthDate.size() <= 15))
@@ -45,14 +58,15 @@ service cloud.firestore {
       allow create, update: if isOwner(userId) && isValidUser(request.resource.data);
 
       // Private data of each user
-      // Flutter: photos, breathing_sessions, tear_entries, tool_sessions, stats, feedback
+      // Flutter: photos, breathing_sessions, tear_entries, tool_sessions, stats, feedback, analytics_events
       // Kotlin: mood_checkins, photos, tool_interactions, stats_summary, useful_insights, tool_load_latency, screen_time, stats_daily_visits
       match /{collection}/{docId} {
         allow read, write: if isOwner(userId)
           && collection in ['photos', 'breathing_sessions', 'mood_checkins', 'tear_entries',
-                            'tool_sessions', 'stats', 'feedback',
+                            'tool_sessions', 'stats', 'feedback', 'stats_daily_visits',
+                            'analytics_events',
                             'tool_interactions', 'stats_summary', 'useful_insights',
-                            'tool_load_latency', 'screen_time', 'stats_daily_visits'];
+                            'tool_load_latency', 'screen_time'];
       }
     }
   }

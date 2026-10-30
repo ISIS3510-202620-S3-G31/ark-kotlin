@@ -95,16 +95,72 @@ interface UserDao {
         }
     }
 
-    @Query("UPDATE users SET avatarPath = :avatarPath WHERE uid = :uid")
-    suspend fun updateAvatarRaw(uid: String, avatarPath: String)
+    //foto nueva elegida por el usuario: se muestra de una vez y queda pendiente de subir a storage
+    @Query("UPDATE users SET avatarPath = :avatarPath, photoUrl = NULL, usesPhoto = 1, isAvatarSynced = 0 WHERE uid = :uid")
+    suspend fun updatePhotoRaw(uid: String, avatarPath: String)
 
-    suspend fun updateAvatar(uid: String, avatarPath: String) {
+    suspend fun updatePhoto(uid: String, avatarPath: String) {
         try {
-            updateAvatarRaw(uid, avatarPath)
+            updatePhotoRaw(uid, avatarPath)
         } catch (e: Exception) {
             CrashlyticsHelper.logNonFatal(
                 componentName = "UserDao",
-                action = "updateAvatar",
+                action = "updatePhoto",
+                throwable = e
+            )
+            throw e
+        }
+    }
+
+    //el usuario eligio un avatar de la lista o volvio a su foto: queda pendiente de subir a firestore
+    @Query("UPDATE users SET avatarId = :avatarId, usesPhoto = :usesPhoto, isAvatarSynced = 0 WHERE uid = :uid")
+    suspend fun updateAvatarChoiceRaw(uid: String, avatarId: String, usesPhoto: Boolean)
+
+    suspend fun updateAvatarChoice(uid: String, avatarId: String, usesPhoto: Boolean) {
+        try {
+            updateAvatarChoiceRaw(uid, avatarId, usesPhoto)
+        } catch (e: Exception) {
+            CrashlyticsHelper.logNonFatal(
+                componentName = "UserDao",
+                action = "updateAvatarChoice",
+                throwable = e,
+                extraKeys = mapOf("avatar_id" to avatarId, "uses_photo" to usesPhoto.toString())
+            )
+            throw e
+        }
+    }
+
+    //url de storage de la foto recien subida; solo si esa sigue siendo la foto del telefono
+    @Query("UPDATE users SET photoUrl = :photoUrl WHERE uid = :uid AND avatarPath = :avatarPath")
+    suspend fun savePhotoUrlRaw(uid: String, avatarPath: String, photoUrl: String)
+
+    suspend fun savePhotoUrl(uid: String, avatarPath: String, photoUrl: String) {
+        try {
+            savePhotoUrlRaw(uid, avatarPath, photoUrl)
+        } catch (e: Exception) {
+            CrashlyticsHelper.logNonFatal(
+                componentName = "UserDao",
+                action = "savePhotoUrl",
+                throwable = e
+            )
+            throw e
+        }
+    }
+
+    //despues de subir el avatar; si el usuario lo cambio mientras se subia, queda pendiente para la siguiente vez
+    @Query(
+        "UPDATE users SET isAvatarSynced = 1 WHERE uid = :uid AND avatarId = :avatarId AND usesPhoto = :usesPhoto " +
+            "AND IFNULL(photoUrl, '') = IFNULL(:photoUrl, '')"
+    )
+    suspend fun markAvatarSyncedRaw(uid: String, avatarId: String, usesPhoto: Boolean, photoUrl: String?)
+
+    suspend fun markAvatarSynced(uid: String, avatarId: String, usesPhoto: Boolean, photoUrl: String?) {
+        try {
+            markAvatarSyncedRaw(uid, avatarId, usesPhoto, photoUrl)
+        } catch (e: Exception) {
+            CrashlyticsHelper.logNonFatal(
+                componentName = "UserDao",
+                action = "markAvatarSynced",
                 throwable = e
             )
             throw e

@@ -18,8 +18,17 @@ interface UserRepository {
     //sobrecarga de compatibilidad por si se edita usando edad
     suspend fun updateProfile(name: String, age: Int): Result<Unit>
 
-    //copia la foto elegida al almacenamiento privado de la app y la deja como avatar
+    //copia la foto elegida al almacenamiento privado de la app, la deja como imagen de perfil y la sube a la nube
     suspend fun updateAvatar(sourceUri: String): Result<Unit>
+
+    //muestra un avatar de la lista; la foto subida se guarda para poder volver a ella
+    suspend fun selectAvatar(avatarId: String): Result<Unit>
+
+    //vuelve a mostrar la foto que ya se habia subido
+    suspend fun selectPhoto(): Result<Unit>
+
+    //sube lo que se cambio sin internet (nombre, fecha, avatar y foto); devuelve cuantas cosas subio
+    suspend fun syncPendingProfile(): Int
 
     //guarda la racha calculada para poder mostrarla sin internet
     suspend fun saveStreak(streakDays: Int, lastCheckInAt: Long?): Result<Unit>

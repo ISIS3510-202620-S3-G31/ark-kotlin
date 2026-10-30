@@ -7,12 +7,12 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
-import com.moviles.ark.domain.repositories.AvatarRepository
 import com.moviles.ark.domain.repositories.UserRepository
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import com.moviles.ark.domain.adapters.WeatherServiceAdapter
+import com.moviles.ark.domain.models.Avatar
 import com.moviles.ark.domain.models.CachedRecommendation
 import com.moviles.ark.domain.models.MoodCheckInModel
 import com.moviles.ark.domain.models.RecommendationContextResolver
@@ -56,9 +56,7 @@ class HomeViewModel(
     //clima de afuera para la tarjeta de clima; necesita la ubicacion del telefono
     private val weatherServiceAdapter: WeatherServiceAdapter? = null,
     private val locationRepository: LocationRepository? = null,
-    //avatar elegido; null en previews
-    private val avatarRepository: AvatarRepository? = null,
-    //nombre guardado en el telefono para el saludo; null en previews
+    //nombre guardado en el telefono para el saludo y foto de perfil; null en previews
     private val userRepository: UserRepository? = null,
     private val now: () -> Long = { System.currentTimeMillis() },
     initialTools: List<ToolModel> = ToolModel.DEFAULT_CATALOG,
@@ -144,19 +142,16 @@ class HomeViewModel(
         }
     }
 
+    //avatar y foto viven en room por cuenta (y en firestore); el home muestra lo mismo que la pantalla de perfil
     private fun observeAvatar() {
-        avatarRepository?.let { repository ->
-            viewModelScope.launch {
-                repository.currentAvatarId.collect { id ->
-                    _uiState.value = _uiState.value.copy(avatarId = id)
-                }
-            }
-        }
-        //la foto subida vive en room por cuenta; con ella el home muestra lo mismo que la pantalla de perfil
-        userRepository?.let { repository ->
-            viewModelScope.launch {
-                repository.observeProfile().collect { profile ->
-                    _uiState.update { it.copy(avatarPhotoPath = profile?.avatarPath) }
+        val repository = userRepository ?: return
+        viewModelScope.launch {
+            repository.observeProfile().collect { profile ->
+                _uiState.update {
+                    it.copy(
+                        avatarId = profile?.avatarId ?: Avatar.DEFAULT_ID,
+                        avatarPhotoPath = profile?.visiblePhotoPath()
+                    )
                 }
             }
         }
@@ -322,7 +317,6 @@ class HomeViewModel(
                     isOnline = app.container.networkConnectivityObserver::isConnected,
                     weatherServiceAdapter = app.container.weatherServiceAdapter,
                     locationRepository = app.container.locationRepository,
-                    avatarRepository = app.container.avatarRepository,
                     userRepository = app.container.userRepository
                 )
             }

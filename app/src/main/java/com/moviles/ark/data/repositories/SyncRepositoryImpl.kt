@@ -13,11 +13,7 @@ import com.moviles.ark.data.local.daos.FeedbackDao
 import com.moviles.ark.data.local.daos.PhotoEntryDao
 import com.moviles.ark.data.local.daos.StatsDailyVisitDao
 import com.moviles.ark.data.local.daos.ToolRecordDao
-import com.moviles.ark.data.local.daos.UserDao
-import com.moviles.ark.data.remote.dtos.UserDto
 import com.moviles.ark.data.remote.dtos.editableFields
-import com.moviles.ark.domain.models.UserModel
-import com.google.firebase.firestore.SetOptions
 import com.moviles.ark.data.local.entities.PhotoEntryEntity
 import com.moviles.ark.data.remote.CrashlyticsHelper
 import com.moviles.ark.data.remote.dtos.documentId
@@ -42,8 +38,8 @@ class SyncRepositoryImpl(
     private val emotionCheckInDao: EmotionCheckInDao,
     private val feedbackDao: FeedbackDao,
     private val statsDailyVisitDao: StatsDailyVisitDao? = null,
-    //perfil editado sin internet (users.isSynced = 0)
-    private val userDao: UserDao? = null
+    //sube el perfil y la foto de perfil que se cambiaron sin internet (UserRepository.syncPendingProfile)
+    private val syncPendingProfile: suspend () -> Int = { 0 }
 ) : SyncRepository {
 
     //una sola subida a la vez: el check-in pide subida al guardarse y el SyncManager al volver la red
@@ -259,23 +255,10 @@ class SyncRepositoryImpl(
             )
         }
 
-        // 6. Sincronizar el perfil editado sin internet (users.isSynced = 0)
-        //antes solo se subia al volver a abrir la pantalla de perfil; ahora tambien cuando vuelve la conexion
+        // 6. Sincronizar el perfil editado sin internet: nombre y fecha (users.isSynced = 0)
+        //y el avatar o la foto de perfil (users.isAvatarSynced = 0); lo sube el repositorio del usuario
         try {
-            val pendingProfile = userDao?.getUser(currentUserId)?.takeIf { !it.isSynced }
-            if (pendingProfile != null) {
-                val profile = UserDto(
-                    name = pendingProfile.name,
-                    birthDate = pendingProfile.birthDate,
-                    age = UserModel.ageOf(pendingProfile.birthDate) ?: pendingProfile.age
-                )
-                firestore.collection("users")
-                    .document(currentUserId)
-                    .set(profile, SetOptions.mergeFields(profile.editableFields()))
-                    .awaitWithTimeout()
-                userDao.markAsSynced(currentUserId)
-                syncedCount++
-            }
+            syncedCount += syncPendingProfile()
         } catch (e: Exception) {
             Log.e("SyncRepository", "Error syncing edited profile", e)
             CrashlyticsHelper.logNonFatal(

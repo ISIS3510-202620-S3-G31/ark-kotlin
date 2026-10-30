@@ -11,10 +11,13 @@ data class ProfileUiState(
     val age: Int = 0,
     //fecha de nacimiento YYYY-MM-DD; vacia en cuentas viejas que solo guardaron la edad
     val birthDate: String = "",
-    //ruta del avatar en el telefono; null muestra las iniciales
+    //foto subida por el usuario (archivo en el telefono); null si nunca subio una
+    //se ofrece en el selector aunque ahora este mostrando un avatar
     val avatarPath: String? = null,
-    //avatar preset seleccionado localmente
+    //avatar de la lista que eligio
     val selectedAvatarId: String = Avatar.DEFAULT_ID,
+    //true si eligio mostrar su foto en vez del avatar
+    val showsPhoto: Boolean = false,
     //fecha ya formateada para mostrar, por ejemplo "October 2026"
     val memberSince: String = "",
     //dias desde que creo la cuenta, contando el dia del registro como el 1; 0 si no se conoce

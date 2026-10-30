@@ -56,7 +56,6 @@ interface AppContainer {
     val toolInteractionRepository: ToolInteractionRepository
     val statsRepository: StatsRepository
     val photoRepository: PhotoEntryRepository
-    val avatarRepository: com.moviles.ark.domain.repositories.AvatarRepository
     val analyticsRepository: AnalyticsRepository
     val toolLatencyTracker: ToolLatencyTracker
     val screenTimeTracker: com.moviles.ark.domain.models.ScreenTimeTracker
@@ -90,8 +89,8 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val authRepository: AuthRepository by lazy {
         AuthRepositoryImpl(authServiceAdapter, firestore, networkConnectivityObserver, onSignedIn = { syncManager.requestSync() })
     }
-    // perfil guardado en room para verlo sin internet, con nombre y fecha sincronizados con firestore
-    override val userRepository: UserRepository by lazy { UserRepositoryImpl(context, auth, firestore, database.userDao()) }
+    // perfil guardado en room para verlo sin internet, con nombre, fecha y foto de perfil sincronizados con firestore y storage
+    override val userRepository: UserRepository by lazy { UserRepositoryImpl(context, auth, firestore, storage, database.userDao()) }
     override val locationRepository: LocationRepository by lazy { LocationRepositoryImpl(Location(context)) }
     // check-ins guardados en room al instante; el sync los sube a firestore cuando hay red
     override val moodRepository: MoodRepository by lazy {
@@ -127,8 +126,6 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         //cada usuario solo ve sus fotos; sus archivos van en Pictures/Ark/User_<uid>
         PhotoEntryRepositoryImpl(context, auth, database.photoEntryDao(), firestore, storage, onPhotoSaved = { syncManager.requestSync() })
     }
-    // avatar elegido, guardado en SharedPreferences
-    override val avatarRepository: com.moviles.ark.domain.repositories.AvatarRepository by lazy { com.moviles.ark.data.repositories.AvatarRepositoryImpl() }
     override val analyticsRepository: AnalyticsRepository by lazy { AnalyticsRepositoryImpl(Firebase.analytics, auth, firestore) }
     // one tracker for the whole app: the tap on a tool and its screen live in different places
     override val toolLatencyTracker: ToolLatencyTracker by lazy { ToolLatencyTracker(analyticsRepository) }
@@ -195,7 +192,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             emotionCheckInDao = database.emotionCheckInDao(),
             feedbackDao = database.feedbackDao(),
             statsDailyVisitDao = database.statsDailyVisitDao(),
-            userDao = database.userDao()
+            syncPendingProfile = { userRepository.syncPendingProfile() }
         )
     }
     override val syncManager: SyncManager by lazy {

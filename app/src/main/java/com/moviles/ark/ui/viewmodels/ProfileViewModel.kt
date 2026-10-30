@@ -10,7 +10,6 @@ import com.moviles.ark.domain.models.CheckInStreak
 import com.moviles.ark.domain.models.UserModel
 import com.moviles.ark.domain.models.UserProfile
 import com.moviles.ark.domain.repositories.AuthRepository
-import com.moviles.ark.domain.repositories.AvatarRepository
 import com.moviles.ark.domain.repositories.MoodRepository
 import com.moviles.ark.domain.repositories.UserRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,8 +28,6 @@ class ProfileViewModel(
     private val userRepository: UserRepository,
     //check-ins del usuario para la racha
     private val moodRepository: MoodRepository? = null,
-    //avatar elegido; null en previews
-    private val avatarRepository: AvatarRepository? = null,
     private val now: () -> Long = { System.currentTimeMillis() }
 ) : ViewModel() {
     //privado: solo el viewmodel lo modifica
@@ -49,7 +46,6 @@ class ProfileViewModel(
     init {
         loadCachedProfile()
         observeProfile()
-        observeAvatar()
     }
 
     //lo ultimo guardado en el telefono (sharedpreferences) se muestra de una vez mientras llegan room y firestore
@@ -75,17 +71,19 @@ class ProfileViewModel(
         }
     }
 
-    private fun observeAvatar() {
-        val repository = avatarRepository ?: return
-        viewModelScope.launch {
-            repository.currentAvatarId.collect { avatarId ->
-                _uiState.update { it.copy(selectedAvatarId = avatarId) }
-            }
-        }
+    //elegir un avatar de la lista; la foto subida no se borra y se puede volver a ella
+    //room cambia de una vez (la pantalla lo ve) y el repositorio lo sube a firestore cuando hay red
+    fun onAvatarSelected(avatarId: String) {
+        viewModelScope.launch { userRepository.selectAvatar(avatarId) }
     }
 
-    fun onAvatarSelected(avatarId: String) {
-        avatarRepository?.setAvatarId(avatarId)
+    //volver a mostrar la foto que ya subio
+    fun onPhotoSelected() {
+        viewModelScope.launch {
+            userRepository.selectPhoto().onFailure {
+                _uiState.update { it.copy(message = "Upload a photo first") }
+            }
+        }
     }
 
     //trae lo ultimo de firestore (y sube un cambio que haya quedado pendiente sin internet)
@@ -196,6 +194,8 @@ class ProfileViewModel(
                 age = profile.getCalculatedAge(),
                 birthDate = profile.birthDate,
                 avatarPath = profile.avatarPath,
+                selectedAvatarId = profile.avatarId,
+                showsPhoto = profile.showsPhoto(),
                 memberSince = formatMemberSince(profile.memberSince),
                 daysWithArk = profile.daysWithArk(now()),
                 //la racha guardada solo vale si el ultimo check-in fue hoy o ayer
@@ -222,8 +222,7 @@ class ProfileViewModel(
                 ProfileViewModel(
                     authRepository = app.container.authRepository,
                     userRepository = app.container.userRepository,
-                    moodRepository = app.container.moodRepository,
-                    avatarRepository = app.container.avatarRepository
+                    moodRepository = app.container.moodRepository
                 )
             }
         }
