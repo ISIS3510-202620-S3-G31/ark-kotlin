@@ -1,8 +1,6 @@
 package com.moviles.ark.domain.repositories
 
 import com.moviles.ark.domain.models.StatsModel
-import com.moviles.ark.domain.models.StatsVisitSummary
-import kotlinx.coroutines.flow.Flow
 
 //interfaz de dominio para consultar y persistir estadisticas de checkins
 interface StatsRepository {
@@ -16,6 +14,4 @@ interface StatsRepository {
     suspend fun recordStatsVisit(): Result<Int>
     //obtiene cuantas veces ha entrado el usuario en el dia actual
     suspend fun getTodayStatsVisitsCount(): Result<Int>
-    //visitas de esta semana y promedio semanal; emite de nuevo con cada visita
-    fun observeVisitSummary(): Flow<StatsVisitSummary>
 }

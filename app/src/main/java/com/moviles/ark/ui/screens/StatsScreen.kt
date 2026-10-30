@@ -75,11 +75,11 @@ import com.moviles.ark.domain.composite.Emotion
 import com.moviles.ark.domain.models.StatsCalculator
 import com.moviles.ark.domain.models.EmotionShare
 import com.moviles.ark.domain.models.StatsModel
-import com.moviles.ark.domain.models.StatsVisitSummary
 import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.ui.components.getEmotionColor
 import com.moviles.ark.ui.components.getEmotionEmoji
 import com.moviles.ark.ui.theme.AccentColor
+import com.moviles.ark.ui.theme.ScreenTopPadding
 import com.moviles.ark.ui.theme.AppTheme
 import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.theme.FigtreeFontFamily
@@ -127,7 +127,6 @@ fun StatsScreen(
         errorMessage = uiState.errorMessage,
         isRefreshing = uiState.isRefreshing,
         isOffline = uiState.isOffline,
-        visitSummary = uiState.visitSummary,
         onRefresh = { viewModel.refresh() },
         onNavigateToToolsCatalog = onNavigateToToolsCatalog
     )
@@ -142,7 +141,6 @@ fun StatsScreenContent(
     errorMessage: String? = null,
     isRefreshing: Boolean = false,
     isOffline: Boolean = false,
-    visitSummary: StatsVisitSummary = StatsVisitSummary(),
     onRefresh: () -> Unit = {},
     onNavigateToToolsCatalog: (ToolCategory?) -> Unit = {}
 ) {
@@ -159,7 +157,7 @@ fun StatsScreenContent(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 22.dp, end = 22.dp, top = 22.dp, bottom = 12.dp)
+                    .padding(start = 22.dp, end = 22.dp, top = ScreenTopPadding, bottom = 12.dp)
             ) {
                 Column(
                     modifier = Modifier.align(Alignment.Center),
@@ -246,7 +244,7 @@ fun StatsScreenContent(
                         )
                     }
                 } else {
-                    StatsMainView(stats = stats, visitSummary = visitSummary, onNavigateToToolsCatalog = onNavigateToToolsCatalog)
+                    StatsMainView(stats = stats, onNavigateToToolsCatalog = onNavigateToToolsCatalog)
                 }
             }
         }
@@ -334,7 +332,7 @@ private fun StatsErrorView(
                     Text(
                         text = "Retry",
                         fontFamily = FigtreeFontFamily,
-                        color = Color.White,
+                        color = TextColor,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 14.sp
                     )
@@ -541,7 +539,6 @@ data class TooltipInfo(val title: String, val message: String)
 @Composable
 private fun StatsMainView(
     stats: StatsModel,
-    visitSummary: StatsVisitSummary = StatsVisitSummary(),
     onNavigateToToolsCatalog: (ToolCategory?) -> Unit = {}
 ) {
     var activeTooltip by remember { mutableStateOf<TooltipInfo?>(null) }
@@ -614,24 +611,10 @@ private fun StatsMainView(
                                     fontSize = 11.sp
                                 )
                                 Spacer(modifier = Modifier.width(5.dp))
-                                Box(
-                                    modifier = Modifier
-                                        .size(18.dp)
-                                        .clip(CircleShape)
-                                        .background(PrimaryColor.copy(alpha = 0.15f))
-                                        .clickable {
-                                            activeTooltip = TooltipInfo(
-                                                "Top Feeling",
-                                                "The emotion you registered most frequently across all your check-ins."
-                                            )
-                                        },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Info,
-                                        contentDescription = "Info",
-                                        tint = PrimaryColor,
-                                        modifier = Modifier.size(12.dp)
+                                InfoBadge {
+                                    activeTooltip = TooltipInfo(
+                                        "Top Feeling",
+                                        "The emotion you registered most often across your daily check-ins."
                                     )
                                 }
                             }
@@ -696,13 +679,22 @@ private fun StatsMainView(
                         }
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
-                            Text(
-                                text = "Check-ins",
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontFamily = FigtreeFontFamily,
-                                color = TextColor.copy(alpha = 0.65f),
-                                fontSize = 11.sp
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "Check-ins",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontFamily = FigtreeFontFamily,
+                                    color = TextColor.copy(alpha = 0.65f),
+                                    fontSize = 11.sp
+                                )
+                                Spacer(modifier = Modifier.width(5.dp))
+                                InfoBadge {
+                                    activeTooltip = TooltipInfo(
+                                        "Check-ins",
+                                        "How many daily check-ins you have saved. Only the check-in you do once a day counts; the feeling you share after a tool does not."
+                                    )
+                                }
+                            }
                             Text(
                                 text = "${stats.totalCheckIns}",
                                 style = MaterialTheme.typography.titleMedium,
@@ -714,16 +706,6 @@ private fun StatsMainView(
                         }
                     }
                 }
-            }
-        }
-
-        //cuantas veces entro a sus estadisticas esta semana y su promedio; sube en vivo con cada entrada
-        if (visitSummary.hasVisits()) {
-            item {
-                StatsVisitsCard(
-                    summary = visitSummary,
-                    onShowTooltip = { activeTooltip = it }
-                )
             }
         }
 
@@ -741,14 +723,16 @@ private fun StatsMainView(
             EmotionDistributionCard(
                 emotionFrequencies = stats.emotionFrequencies,
                 distribution = stats.emotionDistribution(),
-                totalRecords = stats.emotionRecordCount(),
                 onShowTooltip = { activeTooltip = it }
             )
         }
 
         //grafico de torta: frecuencia de herramientas con relieve
         item {
-            ToolsUsagePieChartCard(toolUsagePercentages = stats.toolUsagePercentages)
+            ToolsUsagePieChartCard(
+                toolUsagePercentages = stats.toolUsagePercentages,
+                onShowTooltip = { activeTooltip = it }
+            )
         }
     }
 
@@ -776,111 +760,40 @@ private fun StatsMainView(
                     Text("OK", color = PrimaryColor, fontWeight = FontWeight.SemiBold)
                 }
             },
-            containerColor = Color(0xFFFFF9EE),
+            containerColor = BackgroundColor,
             shape = RoundedCornerShape(20.dp)
         )
     }
 }
 
-//tarjeta de visitas a estadisticas: esta semana a la izquierda y el promedio semanal a la derecha
+//boton (i) de cada tarjeta: abre el dialogo que explica que muestra
 @Composable
-private fun StatsVisitsCard(
-    summary: StatsVisitSummary,
-    onShowTooltip: (TooltipInfo) -> Unit
-) {
-    Surface(
+private fun InfoBadge(onClick: () -> Unit) {
+    Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .shadow(5.dp, RoundedCornerShape(20.dp), ambientColor = Color(0x30351B08), spotColor = Color(0x30351B08)),
-        shape = RoundedCornerShape(20.dp),
-        color = CardSurfaceColor,
-        border = BorderStroke(1.dp, CardBorderColor)
+            .size(20.dp)
+            .clip(CircleShape)
+            .background(PrimaryColor.copy(alpha = 0.15f))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
     ) {
-        Column(
-            modifier = Modifier
-                .background(Brush.verticalGradient(colors = listOf(Color(0xFFF7ECDC), Color(0xFFEADBCE))))
-                .padding(horizontal = 18.dp, vertical = 14.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "Your stats visits",
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontFamily = FigtreeFontFamily,
-                    fontWeight = FontWeight.Bold,
-                    color = TextColor,
-                    fontSize = 15.sp
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Box(
-                    modifier = Modifier
-                        .size(18.dp)
-                        .clip(CircleShape)
-                        .background(PrimaryColor.copy(alpha = 0.15f))
-                        .clickable {
-                            onShowTooltip(
-                                TooltipInfo(
-                                    "Your stats visits",
-                                    "How many times you opened your stats this week (Monday to today) and your weekly average since your first visit. It updates every time you come back."
-                                )
-                            )
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Info,
-                        contentDescription = "Info",
-                        tint = PrimaryColor,
-                        modifier = Modifier.size(12.dp)
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(10.dp))
-            Row(modifier = Modifier.fillMaxWidth()) {
-                VisitsNumber(
-                    value = "${summary.thisWeek}",
-                    label = "this week",
-                    modifier = Modifier.weight(1f)
-                )
-                VisitsNumber(
-                    value = String.format(Locale.US, "%.1f", summary.weeklyAverage),
-                    label = if (summary.weeksTracked == 1) "per week (1 week)" else "per week (${summary.weeksTracked} weeks)",
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun VisitsNumber(value: String, label: String, modifier: Modifier = Modifier) {
-    Column(modifier = modifier) {
-        Text(
-            text = value,
-            style = MaterialTheme.typography.titleMedium,
-            fontFamily = FigtreeFontFamily,
-            fontWeight = FontWeight.Bold,
-            color = PrimaryColor,
-            fontSize = 24.sp
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyLarge,
-            fontFamily = FigtreeFontFamily,
-            color = TextColor.copy(alpha = 0.65f),
-            fontSize = 12.sp
+        Icon(
+            imageVector = Icons.Default.Info,
+            contentDescription = "Info",
+            tint = PrimaryColor,
+            modifier = Modifier.size(14.dp)
         )
     }
 }
 
-//grafico de barras para el journey emocional de la semana con escala visible de 1 a 5 y tipografia oficial
 @Composable
 private fun WeeklyEmotionJourneyCard(
     weeklyIntensities: Map<String, Float>,
     weeklyEmotions: Map<String, Emotion>,
     onShowTooltip: (TooltipInfo) -> Unit = {}
 ) {
-    //orden fijo de hace 6 dias hasta hoy, sin depender del orden del mapa que llega de firestore o del cache
-    val dayLabels = StatsCalculator.lastSevenDayLabels()
+    //hoy y los 6 dias anteriores; los datos se buscan por fecha, sin depender del orden del mapa del cache
+    val weekDays = StatsCalculator.lastSevenDays()
 
     Card(
         modifier = Modifier
@@ -907,26 +820,12 @@ private fun WeeklyEmotionJourneyCard(
                             color = TextColor
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .size(20.dp)
-                                .clip(CircleShape)
-                                .background(PrimaryColor.copy(alpha = 0.15f))
-                                .clickable {
-                                    onShowTooltip(
-                                        TooltipInfo(
-                                            "Weekly Emotion Journey",
-                                            "Shows the dominant emotion and its highest intensity recorded for each day of the past week."
-                                        )
-                                    )
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Info,
-                                contentDescription = "Info",
-                                tint = PrimaryColor,
-                                modifier = Modifier.size(14.dp)
+                        InfoBadge {
+                            onShowTooltip(
+                                TooltipInfo(
+                                    "Weekly Emotion Journey",
+                                    "Today and the 6 days before it. Each bar is the emotion you recorded most that day, at the highest intensity you gave it."
+                                )
                             )
                         }
                     }
@@ -983,9 +882,9 @@ private fun WeeklyEmotionJourneyCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.Bottom
                 ) {
-                    for (day in dayLabels) {
-                        val emotion = weeklyEmotions[day]
-                        val intensity = weeklyIntensities[day] ?: 0f
+                    for (day in weekDays) {
+                        val emotion = weeklyEmotions[day.key]
+                        val intensity = weeklyIntensities[day.key] ?: 0f
                         val hasEntry = intensity > 0f && emotion != null
                         val barColor = if (emotion != null) getEmotionColor(emotion) else PrimaryColor
                         val emoji = if (emotion != null) getEmotionEmoji(emotion) else ""
@@ -1048,7 +947,7 @@ private fun WeeklyEmotionJourneyCard(
 
                             //etiqueta del dia con tipografia oficial
                             Text(
-                                text = day.take(3),
+                                text = day.label,
                                 style = MaterialTheme.typography.bodySmall,
                                 fontFamily = FigtreeFontFamily,
                                 fontSize = 11.sp,
@@ -1069,7 +968,6 @@ private fun WeeklyEmotionJourneyCard(
 private fun EmotionDistributionCard(
     emotionFrequencies: Map<Emotion, Int>,
     distribution: List<EmotionShare>,
-    totalRecords: Int,
     onShowTooltip: (TooltipInfo) -> Unit = {}
 ) {
     Card(
@@ -1094,35 +992,15 @@ private fun EmotionDistributionCard(
                         color = TextColor
                     )
                     Spacer(modifier = Modifier.width(6.dp))
-                    Box(
-                        modifier = Modifier
-                            .size(20.dp)
-                            .clip(CircleShape)
-                            .background(PrimaryColor.copy(alpha = 0.15f))
-                            .clickable {
-                                onShowTooltip(
-                                    TooltipInfo(
-                                        "Emotion Distribution",
-                                        "Shows the frequency count of each emotion across all check-ins rather than a flat average."
-                                    )
-                                )
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Info,
-                            contentDescription = "Info",
-                            tint = PrimaryColor,
-                            modifier = Modifier.size(14.dp)
+                    InfoBadge {
+                        onShowTooltip(
+                            TooltipInfo(
+                                "Emotion Distribution",
+                                "How often you chose each emotion in your daily check-ins, as a share of all the emotions you recorded."
+                            )
                         )
                     }
                 }
-                Text(
-                    text = if (emotionFrequencies.isEmpty()) "" else "$totalRecords check-ins",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = TextColor.copy(alpha = 0.65f),
-                    fontSize = 12.sp
-                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -1186,7 +1064,8 @@ private fun EmotionDistributionCard(
 //grafico de torta con distribucion porcentual de herramientas y relieve
 @Composable
 private fun ToolsUsagePieChartCard(
-    toolUsagePercentages: Map<String, Float>
+    toolUsagePercentages: Map<String, Float>,
+    onShowTooltip: (TooltipInfo) -> Unit = {}
 ) {
     val sliceColors = listOf(
         PrimaryColor,
@@ -1214,13 +1093,24 @@ private fun ToolsUsagePieChartCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
-                    Text(
-                        text = "Tools Frequency",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontFamily = SoreanFontFamily,
-                        fontWeight = FontWeight.Bold,
-                        color = TextColor
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Tools Frequency",
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontFamily = SoreanFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            color = TextColor
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        InfoBadge {
+                            onShowTooltip(
+                                TooltipInfo(
+                                    "Tools Frequency",
+                                    "Share of all the times you opened a tool. Each slice is one tool and they add up to 100%."
+                                )
+                            )
+                        }
+                    }
                     Text(
                         text = "Historical distribution by % of tool usage",
                         style = MaterialTheme.typography.bodyLarge,
@@ -1348,26 +1238,12 @@ private fun ToolsUsagePieChartCard(
 @Preview(showBackground = true, name = "Stats Screen Preview")
 @Composable
 fun StatsScreenPreview() {
+    val previewDays = StatsCalculator.lastSevenDays().map { it.key }
     val sampleStats = StatsModel(
         totalCheckIns = 14,
         topEmotion = Emotion.HAPPINESS,
-        weeklyIntensities = mapOf(
-            "Mon" to 4.0f,
-            "Tue" to 3.0f,
-            "Wed" to 2.0f,
-            "Thu" to 4.0f,
-            "Fri" to 5.0f,
-            "Sat" to 0f,
-            "Sun" to 3.5f
-        ),
-        weeklyEmotions = mapOf(
-            "Mon" to Emotion.HAPPINESS,
-            "Tue" to Emotion.FEAR,
-            "Wed" to Emotion.SADNESS,
-            "Thu" to Emotion.ANGER,
-            "Fri" to Emotion.SURPRISE,
-            "Sun" to Emotion.DISGUST
-        ),
+        weeklyIntensities = previewDays.zip(listOf(4f, 3f, 2f, 4f, 5f, 0f, 3f)).toMap(),
+        weeklyEmotions = previewDays.zip(listOf(Emotion.HAPPINESS, Emotion.FEAR, Emotion.SADNESS, Emotion.ANGER, Emotion.SURPRISE)).toMap(),
         toolUsagePercentages = mapOf(
             "Breathing Pacer" to 42f,
             "Photo of the Day" to 25f,

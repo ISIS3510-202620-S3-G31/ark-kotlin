@@ -9,7 +9,6 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
 import com.moviles.ark.domain.models.StatsModel
-import com.moviles.ark.domain.models.StatsVisitSummary
 import com.moviles.ark.domain.repositories.StatsRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,10 +27,8 @@ data class StatsUiState(
     val noticeMessage: String? = null,
     //indica si el intento de conexion detecto falta de internet
     val isOffline: Boolean = false,
-    //cantidad de veces que el usuario ha visitado la pantalla de estadisticas hoy
-    val todayVisitsCount: Int = 0,
-    //visitas de esta semana y promedio semanal; cambia en vivo con cada visita
-    val visitSummary: StatsVisitSummary = StatsVisitSummary()
+    //cantidad de veces que el usuario ha visitado la pantalla de estadisticas hoy (dato de la pregunta de negocio, no se muestra)
+    val todayVisitsCount: Int = 0
 )
 
 class StatsViewModel(
@@ -46,20 +43,7 @@ class StatsViewModel(
     private var loadJob: Job? = null
     private var refreshJob: Job? = null
 
-    //las estadisticas se cargan al abrir la pantalla (onScreenOpened); aqui solo se escucha el resumen de visitas
-    init {
-        observeVisitSummary()
-    }
-
-    private fun observeVisitSummary() {
-        val repository = statsRepository ?: return
-        viewModelScope.launch {
-            repository.observeVisitSummary().collect { summary ->
-                privateUiState.value = privateUiState.value.copy(visitSummary = summary)
-            }
-        }
-    }
-
+    //las estadisticas se cargan al abrir la pantalla (onScreenOpened)
     //true si la pantalla se cerro solo porque el telefono giro: al volver a dibujarse no es una visita nueva
     private var reopeningAfterRotation = false
 
