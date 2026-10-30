@@ -134,6 +134,11 @@ class HomeViewModel(
         viewModelScope.launch {
             repository.observeCachedName().collect { name -> _uiState.update { it.copy(userName = name) } }
         }
+        //recien iniciada la sesion el nombre aun no esta en el telefono (antes solo llegaba al abrir perfil):
+        //se trae el perfil de firestore, o de room sin red, y el saludo cambia solo
+        if (repository.cachedProfile()?.name.isNullOrBlank()) {
+            viewModelScope.launch(Dispatchers.IO) { repository.refreshProfile() }
+        }
     }
 
     private fun observeAvatar() {

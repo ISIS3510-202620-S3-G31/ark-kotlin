@@ -191,7 +191,8 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             toolRecordDao = database.toolRecordDao(),
             emotionCheckInDao = database.emotionCheckInDao(),
             feedbackDao = database.feedbackDao(),
-            statsDailyVisitDao = database.statsDailyVisitDao()
+            statsDailyVisitDao = database.statsDailyVisitDao(),
+            userDao = database.userDao()
         )
     }
     override val syncManager: SyncManager by lazy {

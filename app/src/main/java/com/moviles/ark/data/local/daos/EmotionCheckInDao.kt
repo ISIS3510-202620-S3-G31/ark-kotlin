@@ -102,6 +102,10 @@ interface EmotionCheckInDao {
     }
 
     //despues de subirlos, se marcan como sincronizados
+    //fechas de los check-ins diarios del usuario guardados en el telefono (incluye los que aun no se suben)
+    @Query("SELECT timestamp FROM mood_checkins WHERE userId = :userId AND timestamp >= :fromMillis AND $DAILY_ONLY")
+    suspend fun getDailyTimestampsSince(userId: String, fromMillis: Long): List<Long>
+
     //ciudad que llego despues (el check-in se guardo sin red); isSynced = 0 para que el sync la suba al mismo documento
     @Query("UPDATE mood_checkins SET cityName = :cityName, isSynced = 0 WHERE userId = :userId AND timestamp = :timestamp")
     suspend fun updateCityName(userId: String, timestamp: Long, cityName: String)

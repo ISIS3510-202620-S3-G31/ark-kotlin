@@ -75,22 +75,31 @@ class MoodRepositoryImpl(
         }.recover { false }
     }
 
-    override suspend fun getCheckInTimestampsSince(fromMillis: Long): Result<List<Long>> = runCatching {
-        val currentUserId = auth.currentUser?.uid ?: return@runCatching emptyList()
-        val snapshot = firestore.collection("users")
-            .document(currentUserId)
-            .collection("mood_checkins")
-            .whereGreaterThanOrEqualTo("timestamp", fromMillis)
-            .get()
-            .await()
-        snapshot.documents.dailyCheckIns().map { it.timestamp }
-    }.onFailure { error ->
-        CrashlyticsHelper.logNonFatal(
-            componentName = "MoodRepository",
-            action = "getCheckInTimestampsSince",
-            throwable = error,
-            extraKeys = mapOf("fromMillis" to fromMillis)
-        )
+    //la racha suma los check-ins de firestore y los del telefono: uno hecho sin internet cuenta desde ese momento
+    override suspend fun getCheckInTimestampsSince(fromMillis: Long): Result<List<Long>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val currentUserId = auth.currentUser?.uid ?: return@runCatching emptyList()
+            val local = emotionCheckInDao.getDailyTimestampsSince(currentUserId, fromMillis)
+            //sin red firestore no responde a tiempo: se sigue solo con lo del telefono
+            val remote = runCatching {
+                withTimeoutOrNull(REMOTE_TIMEOUT_MILLIS) {
+                    firestore.collection("users")
+                        .document(currentUserId)
+                        .collection("mood_checkins")
+                        .whereGreaterThanOrEqualTo("timestamp", fromMillis)
+                        .get()
+                        .await()
+                }?.documents?.dailyCheckIns()?.map { it.timestamp }
+            }.getOrNull().orEmpty()
+            (local + remote).distinct()
+        }.onFailure { error ->
+            CrashlyticsHelper.logNonFatal(
+                componentName = "MoodRepository",
+                action = "getCheckInTimestampsSince",
+                throwable = error,
+                extraKeys = mapOf("fromMillis" to fromMillis)
+            )
+        }
     }
 
     override suspend fun getLatestCheckIn(): Result<MoodCheckInModel?> = withContext(Dispatchers.IO) {
