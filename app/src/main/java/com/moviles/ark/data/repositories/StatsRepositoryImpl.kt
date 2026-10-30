@@ -21,6 +21,7 @@ import com.moviles.ark.domain.repositories.StatsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -33,6 +34,9 @@ class StatsRepositoryImpl(
     private val statsCalculator: StatsCalculator = StatsCalculator(),
     private val statsDailyVisitDao: StatsDailyVisitDao? = null,
     private val onVisitRecorded: () -> Unit = {},
+    //sube lo que quedo pendiente sin red (check-ins, herramientas) antes de calcular: asi se ve aunque se haya
+    //cerrado sesion antes de que subiera
+    private val syncPendingData: suspend () -> Unit = {},
     private val now: () -> Long = { System.currentTimeMillis() }
 ) : StatsRepository {
 
@@ -42,7 +46,11 @@ class StatsRepositoryImpl(
     }
 
     //pide a firestore en IO (Source.SERVER: sin red falla en vez de devolver datos viejos) y actualiza el cache
-    override suspend fun getUserStats(): Result<StatsModel> = withContext(Dispatchers.IO) { fetchAndCacheStats() }
+    override suspend fun getUserStats(): Result<StatsModel> = withContext(Dispatchers.IO) {
+        //con tiempo maximo: una foto pesada pendiente no deja la pantalla esperando; el sync sigue por su lado
+        withTimeoutOrNull(PENDING_SYNC_TIMEOUT_MILLIS) { syncPendingData() }
+        fetchAndCacheStats()
+    }
 
     private suspend fun fetchAndCacheStats(): Result<StatsModel> = runCatching {
         val currentUserId = auth.currentUser?.uid ?: "anonymous"
@@ -192,4 +200,8 @@ class StatsRepositoryImpl(
         runCatching { toObject(T::class.java) }
             .onFailure { Log.w("StatsRepository", "Skipping document $id with an unexpected shape", it) }
             .getOrNull()
+
+    companion object {
+        private const val PENDING_SYNC_TIMEOUT_MILLIS = 10_000L
+    }
 }

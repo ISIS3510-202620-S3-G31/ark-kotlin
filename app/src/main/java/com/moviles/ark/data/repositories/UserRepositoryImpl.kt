@@ -47,7 +47,14 @@ class UserRepositoryImpl(
             val local = userDao.getUser(user.uid)
 
             //el usuario edito su perfil sin internet: se sube lo local en vez de pisarlo con lo de firestore
+            //(tambien si cerro sesion antes de que subiera: room guarda la edicion por cuenta)
             if (local != null && !local.isSynced) {
+                //el saludo del home lee estas preferencias; se borran al cerrar sesion, asi que se llenan con lo local
+                ProfilePreferences.saveProfile(
+                    name = local.name,
+                    email = user.email.orEmpty(),
+                    age = com.moviles.ark.domain.models.UserModel.ageOf(local.birthDate) ?: local.age
+                )
                 if (local.birthDate.isNotBlank()) {
                     pushProfile(user.uid, local.name, local.birthDate)
                 } else {

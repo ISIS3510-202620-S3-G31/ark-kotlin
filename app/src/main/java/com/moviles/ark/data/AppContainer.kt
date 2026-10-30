@@ -87,7 +87,9 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val firestore: FirebaseFirestore by lazy { Firebase.firestore }
     // copia en la nube de los jpg de la foto del dia
     private val storage: FirebaseStorage by lazy { Firebase.storage }
-    override val authRepository: AuthRepository by lazy { AuthRepositoryImpl(authServiceAdapter, firestore, networkConnectivityObserver) }
+    override val authRepository: AuthRepository by lazy {
+        AuthRepositoryImpl(authServiceAdapter, firestore, networkConnectivityObserver, onSignedIn = { syncManager.requestSync() })
+    }
     // perfil guardado en room para verlo sin internet, con nombre y fecha sincronizados con firestore
     override val userRepository: UserRepository by lazy { UserRepositoryImpl(context, auth, firestore, database.userDao()) }
     override val locationRepository: LocationRepository by lazy { LocationRepositoryImpl(Location(context)) }
@@ -116,7 +118,8 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             firestore = firestore,
             statsDiskCache = com.moviles.ark.data.local.StatsDiskCache(context.cacheDir),
             statsDailyVisitDao = database.statsDailyVisitDao(),
-            onVisitRecorded = { syncManager.requestSync() }
+            onVisitRecorded = { syncManager.requestSync() },
+            syncPendingData = { syncRepository.syncPendingData() }
         )
     }
     // real photo repository with Room persistence and the public gallery (MediaStore) for the jpg files

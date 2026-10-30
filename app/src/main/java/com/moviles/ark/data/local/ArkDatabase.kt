@@ -30,6 +30,7 @@ import com.moviles.ark.data.local.entities.UserEntity
 //version 3: se agrego users, el perfil guardado en el telefono
 //version 7: se agrego stats_daily_visits, conteo de visitas diarias a estadisticas
 //version 8: emociones del feedback y ciudad del check-in, con migracion para no borrar lo que no se ha subido
+//version 9: cuenta del feedback pendiente, para no subirlo a otra cuenta si se cierra sesion sin red
 //(sin migracion para un salto de version, room borra y crea de nuevo la base local)
 @Database(
     entities = [
@@ -42,7 +43,7 @@ import com.moviles.ark.data.local.entities.UserEntity
         UserEntity::class,
         StatsDailyVisitEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -68,6 +69,12 @@ abstract class ArkDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE tool_feedback ADD COLUMN userId TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         //singleton con doble comprobacion para que toda la app comparta un unico pool de conexiones
         fun getInstance(context: Context): ArkDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -76,7 +83,7 @@ abstract class ArkDatabase : RoomDatabase() {
                     ArkDatabase::class.java,
                     "ark.db"
                 )
-                .addMigrations(MIGRATION_7_8)
+                .addMigrations(MIGRATION_7_8, MIGRATION_8_9)
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
                 .also { INSTANCE = it }

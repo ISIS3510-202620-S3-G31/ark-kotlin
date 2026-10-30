@@ -188,7 +188,7 @@ class SyncRepositoryImpl(
         // 4. Subir el feedback pendiente y borrarlo del telefono; firestore queda con la copia
         try {
             feedbackDao.deleteAlreadySynced()
-            val unsyncedFeedback = if (auth.currentUser != null) feedbackDao.getUnsyncedFeedback() else emptyList()
+            val unsyncedFeedback = if (auth.currentUser != null) feedbackDao.getUnsyncedFeedback(currentUserId) else emptyList()
             val uploadedFeedbackIds = mutableListOf<Long>()
             for (feedback in unsyncedFeedback) {
                 try {

@@ -30,7 +30,9 @@ class AuthRepositoryImpl(
     private val authServiceAdapter: AuthServiceAdapter,
     private val firestore: FirebaseFirestore,
     private val networkConnectivityObserver: NetworkConnectivityObserver? = null,
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    //al entrar se sube lo que la cuenta dejo pendiente sin red (aunque haya cerrado sesion antes de que subiera)
+    private val onSignedIn: () -> Unit = {}
 ) : AuthRepository {
 
     // the session is saved on the device, so this works offline
@@ -41,6 +43,7 @@ class AuthRepositoryImpl(
             checkActiveNetworkConnection()
             try {
                 authServiceAdapter.signIn(email.trim(), password).getOrThrow()
+                onSignedIn()
                 Unit
             } catch (e: Throwable) {
                 handleNetworkException(e)

@@ -12,6 +12,10 @@ import com.moviles.ark.domain.models.FeedbackModel
 data class FeedbackEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
+    //cuenta que dejo el feedback; el sync solo lo sube a esa cuenta aunque se cierre sesion y entre otra
+    //"" en filas de antes de la version 9 (se suben a la cuenta abierta, como antes)
+    @ColumnInfo(defaultValue = "")
+    val userId: String = "",
     //interaccion calificada (id de ToolInteractionEntity); null si no se guardo la interaccion
     val interactionId: Long? = null,
     val toolId: String,

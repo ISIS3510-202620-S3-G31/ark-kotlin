@@ -63,12 +63,13 @@ interface FeedbackDao {
     }
 
     //las que faltan por subir a firestore
-    @Query("SELECT * FROM tool_feedback WHERE isSynced = 0")
-    suspend fun getUnsyncedFeedbackRaw(): List<FeedbackEntity>
+    //feedback pendiente de la cuenta abierta (y el de antes de guardar la cuenta)
+    @Query("SELECT * FROM tool_feedback WHERE isSynced = 0 AND (userId = :userId OR userId = '')")
+    suspend fun getUnsyncedFeedbackRaw(userId: String): List<FeedbackEntity>
 
-    suspend fun getUnsyncedFeedback(): List<FeedbackEntity> {
+    suspend fun getUnsyncedFeedback(userId: String): List<FeedbackEntity> {
         return try {
-            getUnsyncedFeedbackRaw()
+            getUnsyncedFeedbackRaw(userId)
         } catch (e: Exception) {
             CrashlyticsHelper.logNonFatal(
                 componentName = "FeedbackDao",
