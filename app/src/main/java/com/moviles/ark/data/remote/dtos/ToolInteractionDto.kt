@@ -35,6 +35,9 @@ fun ToolInteractionEntity.toDto(userId: String): ToolInteractionDto {
     )
 }
 
+//id del documento en firestore: siempre el mismo para la misma fila, asi subirla dos veces no la duplica
+fun ToolInteractionEntity.documentId(): String = "${timestamp.time}_$toolId"
+
 //de modelo de dominio a dto
 fun ToolInteractionModel.toDto(): ToolInteractionDto {
     return ToolInteractionDto(

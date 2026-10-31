@@ -12,7 +12,9 @@ import com.moviles.ark.domain.models.StatsModel
 import com.moviles.ark.domain.repositories.StatsRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
@@ -20,63 +22,99 @@ import kotlinx.coroutines.launch
 data class StatsUiState(
     val isLoading: Boolean = true,
     val stats: StatsModel? = null,
-    val errorMessage: String? = null,
+    //motivo por el que no hay stats para mostrar; la pantalla elige el mensaje con esto
+    val emptyReason: StatsEmptyReason? = null,
     //true mientras el pull-to-refresh espera a firestore
     val isRefreshing: Boolean = false,
+    //true mientras se piden stats nuevas a firestore con las guardadas ya en pantalla
+    val isUpdating: Boolean = false,
     //aviso corto de una sola vez, por ejemplo cuando no hay red al refrescar
     val noticeMessage: String? = null,
-    //indica si el intento de conexion detecto falta de internet
+    //sin internet: lo que se ve son las ultimas stats guardadas en el telefono
     val isOffline: Boolean = false,
-    //cantidad de veces que el usuario ha visitado la pantalla de estadisticas hoy
-    val todayVisitsCount: Int = 0
+    //sube cada vez que llegan stats nuevas de firestore; la pantalla parpadea para que se note
+    val updateCount: Int = 0,
+    //cantidad de veces que el usuario ha visitado la pantalla de estadisticas hoy (dato de la pregunta de negocio, no se muestra)
+    val todayVisitsCount: Int = 0,
+    //cosas hechas en este telefono que todavia no llegan a la nube: las stats de firestore aun no las cuentan
+    val pendingUploads: Int = 0
 )
+
+//por que no hay stats en pantalla
+enum class StatsEmptyReason {
+    //sin internet y sin stats guardadas en el telefono (primera vez o se borro el cache)
+    OFFLINE_NO_SAVED,
+    //con internet pero firestore no respondio
+    SERVER_ERROR
+}
 
 class StatsViewModel(
     private val statsRepository: StatsRepository? = null,
     //para avisar de inmediato si no hay red en vez de esperar a que firestore falle
-    private val isOnline: () -> Boolean = { true }
+    private val isOnline: () -> Boolean = { true },
+    //true cuando hay internet; vuelve a emitir cada vez que cambia
+    connectivity: Flow<Boolean> = emptyFlow(),
+    //cuantas cosas siguen guardadas solo en el telefono (SyncRepository.pendingCount)
+    private val pendingUploads: suspend () -> Int = { 0 }
 ) : ViewModel() {
     private val privateUiState = MutableStateFlow(StatsUiState())
     val uiState: StateFlow<StatsUiState> = privateUiState.asStateFlow()
+
+    //vuelve la red con la pantalla abierta: si se estaban viendo las stats guardadas se piden las nuevas
+    //(antes el aviso de "offline" y los datos viejos se quedaban hasta refrescar a mano o volver a entrar)
+    init {
+        viewModelScope.launch {
+            connectivity.collect { isConnected ->
+                if (isConnected && privateUiState.value.isOffline && statsRepository != null) {
+                    loadJob?.cancel()
+                    loadJob = viewModelScope.launch { fetchFromFirestore(showNotice = false) }
+                }
+            }
+        }
+    }
 
     //se cancela la carga anterior para que una respuesta vieja no pise a una nueva
     private var loadJob: Job? = null
     private var refreshJob: Job? = null
 
-    init {
+    //las estadisticas se cargan al abrir la pantalla (onScreenOpened)
+    //true si la pantalla se cerro solo porque el telefono giro: al volver a dibujarse no es una visita nueva
+    private var reopeningAfterRotation = false
+
+    //cada vez que el usuario entra a la pantalla cuenta una visita (pregunta de negocio de stats) y carga los datos
+    //antes la visita se contaba en loadStats, que corria dos veces al entrar (init y pantalla), y tambien al refrescar
+    fun onScreenOpened() {
+        if (reopeningAfterRotation) {
+            reopeningAfterRotation = false
+        } else {
+            viewModelScope.launch { recordDailyVisit() }
+        }
         loadStats()
     }
 
-    //patron cache-then-network:
-    //1) registra la visita del usuario (incrementando el conteo diario en room y sincronizando a firestore)
-    //2) lee y muestra inmediatamente el cache de disco en 0 ms si existe
-    //3) en paralelo, consulta a firestore en Dispatchers.IO el documento precomputado del backend
-    //4) al responder firestore, actualiza la interfaz y refresca el cache del disco
+    //la pantalla sale de la composicion; changingConfiguration = la actividad se recrea por un giro
+    fun onScreenClosed(changingConfiguration: Boolean) {
+        reopeningAfterRotation = changingConfiguration
+    }
+
+    //estrategia de conectividad eventual (cache-then-network):
+    //1) muestra de inmediato las ultimas stats guardadas en cacheDir, con la fecha en que se cargaron
+    //2) con internet pide stats nuevas a firestore; al llegar reemplazan a las guardadas y la pantalla parpadea
+    //3) sin internet se quedan las guardadas; si no hay ninguna se explica por que no hay stats
+    //nunca se calculan stats con datos sueltos del telefono: o son las de firestore o las ultimas que llegaron de ahi
     fun loadStats() {
-        if (statsRepository == null) {
-            privateUiState.value = StatsUiState(isLoading = false, stats = null)
+        val repository = statsRepository ?: run {
+            privateUiState.value = StatsUiState(isLoading = false, emptyReason = StatsEmptyReason.SERVER_ERROR)
             return
         }
 
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
-            // Registra la entrada del usuario a estadísticas e incrementa el contador del día
-            recordDailyVisit()
-
-            // 1. CACHE: Muestra inmediatamente las ultimas stats guardadas en disco
-            val cached = statsRepository.getCachedStats()
+            val cached = repository.getCachedStats()
             if (cached != null) {
-                showIfNotPoorer(cached)
-                privateUiState.value = privateUiState.value.copy(isLoading = false)
+                privateUiState.value = privateUiState.value.copy(isLoading = false, stats = cached, emptyReason = null)
                 Log.d("StatsViewModel", "Stats displayed from disk cache: total=${cached.totalCheckIns}")
-            } else {
-                privateUiState.value = privateUiState.value.copy(
-                    isLoading = privateUiState.value.stats == null,
-                    errorMessage = null
-                )
             }
-
-            // 2. NETWORK: Peticion en segundo plano al backend (Cache-then-Network)
             fetchFromFirestore(showNotice = false)
         }
     }
@@ -95,7 +133,6 @@ class StatsViewModel(
     fun refresh() {
         if (statsRepository == null || refreshJob?.isActive == true) return
         refreshJob = viewModelScope.launch {
-            recordDailyVisit()
             fetchFromFirestore(showNotice = true)
         }
     }
@@ -106,61 +143,73 @@ class StatsViewModel(
 
     private suspend fun fetchFromFirestore(showNotice: Boolean) {
         val repository = statsRepository ?: return
+        val shown = privateUiState.value.stats
         if (!isOnline()) {
-            //si no habia cache en disco calculamos fallback local desde room
-            if (privateUiState.value.stats == null) {
-                repository.getLocalStats().getOrNull()?.let { showIfNotPoorer(it) }
-            }
+            //sin red no cambia nada de lo que se ve, tampoco la fecha de "last updated"
             privateUiState.value = privateUiState.value.copy(
                 isLoading = false,
                 isRefreshing = false,
+                isUpdating = false,
                 isOffline = true,
-                errorMessage = if (privateUiState.value.stats == null) "Offline" else null,
-                noticeMessage = if (showNotice) OFFLINE_NOTICE else null
+                emptyReason = if (shown == null) StatsEmptyReason.OFFLINE_NO_SAVED else null,
+                noticeMessage = if (showNotice) offlineNotice(shown) else null
             )
             return
         }
-        privateUiState.value = privateUiState.value.copy(isRefreshing = showNotice, isOffline = false)
+        privateUiState.value = privateUiState.value.copy(
+            isRefreshing = showNotice,
+            isUpdating = shown != null,
+            isOffline = false
+        )
         val result = repository.getUserStats()
-        if (result.isSuccess) {
-            val data = result.getOrNull()
-            if (data != null) showIfNotPoorer(data)
-            privateUiState.value = privateUiState.value.copy(isLoading = false, isRefreshing = false, isOffline = false)
-            Log.d("StatsViewModel", "Stats loaded successfully: total=${data?.totalCheckIns}")
-        } else {
-            val errorMsg = result.exceptionOrNull()?.localizedMessage ?: "Could not load statistics"
-            Log.e("StatsViewModel", "Error loading stats: $errorMsg")
-            //firestore tambien avisa "client is offline" aunque el telefono crea tener red
-            val isNetError = !isOnline() || errorMsg.contains("offline", ignoreCase = true)
-            //si fallo la red y no habia cache previa usamos fallback de room
-            if (privateUiState.value.stats == null) {
-                repository.getLocalStats().getOrNull()?.let { showIfNotPoorer(it) }
-            }
+        val data = result.getOrNull()
+        if (data != null) {
             privateUiState.value = privateUiState.value.copy(
                 isLoading = false,
                 isRefreshing = false,
+                isUpdating = false,
+                stats = data,
+                emptyReason = null,
+                updateCount = privateUiState.value.updateCount + 1,
+                //el sync espera maximo 10 s antes de calcular: si algo no alcanzo a subir, se dice
+                pendingUploads = pendingUploads()
+            )
+            Log.d("StatsViewModel", "Stats loaded from Firestore: total=${data.totalCheckIns}")
+        } else {
+            val errorMsg = result.exceptionOrNull()?.localizedMessage.orEmpty()
+            Log.e("StatsViewModel", "Error loading stats: $errorMsg")
+            //firestore tambien avisa "client is offline" aunque el telefono crea tener red
+            val isNetError = !isOnline() || errorMsg.contains("offline", ignoreCase = true)
+            privateUiState.value = privateUiState.value.copy(
+                isLoading = false,
+                isRefreshing = false,
+                isUpdating = false,
                 isOffline = isNetError,
-                errorMessage = if (privateUiState.value.stats == null) errorMsg else null,
-                noticeMessage = if (showNotice) OFFLINE_NOTICE else null
+                emptyReason = when {
+                    shown != null -> null
+                    isNetError -> StatsEmptyReason.OFFLINE_NO_SAVED
+                    else -> StatsEmptyReason.SERVER_ERROR
+                },
+                noticeMessage = if (showNotice) offlineNotice(shown) else null
             )
         }
     }
 
-    private fun showIfNotPoorer(data: StatsModel) {
-        if (data.canReplace(privateUiState.value.stats)) {
-            privateUiState.value = privateUiState.value.copy(isLoading = false, stats = data, errorMessage = null)
-        }
-    }
+    //el aviso dice de cuando son las stats que se siguen viendo
+    private fun offlineNotice(shown: StatsModel?): String =
+        if (shown == null) NO_STATS_NOTICE else "Couldn't refresh. Showing stats from ${StatsModel.lastUpdatedLabel(shown.lastUpdated)}."
 
     companion object {
-        private const val OFFLINE_NOTICE = "Couldn't refresh. Showing your saved stats."
+        private const val NO_STATS_NOTICE = "Couldn't refresh. Connect to the internet to load your stats."
 
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as ArkApplication
                 StatsViewModel(
                     statsRepository = app.container.statsRepository,
-                    isOnline = { app.container.networkConnectivityObserver.isConnected() }
+                    isOnline = { app.container.networkConnectivityObserver.isConnected() },
+                    connectivity = app.container.networkConnectivityObserver.observe(),
+                    pendingUploads = { app.container.syncRepository.pendingCount() }
                 )
             }
         }

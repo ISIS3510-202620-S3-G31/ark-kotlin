@@ -63,12 +63,13 @@ interface FeedbackDao {
     }
 
     //las que faltan por subir a firestore
-    @Query("SELECT * FROM tool_feedback WHERE isSynced = 0")
-    suspend fun getUnsyncedFeedbackRaw(): List<FeedbackEntity>
+    //feedback pendiente de la cuenta abierta (y el de antes de guardar la cuenta)
+    @Query("SELECT * FROM tool_feedback WHERE isSynced = 0 AND (userId = :userId OR userId = '')")
+    suspend fun getUnsyncedFeedbackRaw(userId: String): List<FeedbackEntity>
 
-    suspend fun getUnsyncedFeedback(): List<FeedbackEntity> {
+    suspend fun getUnsyncedFeedback(userId: String): List<FeedbackEntity> {
         return try {
-            getUnsyncedFeedbackRaw()
+            getUnsyncedFeedbackRaw(userId)
         } catch (e: Exception) {
             CrashlyticsHelper.logNonFatal(
                 componentName = "FeedbackDao",
@@ -79,21 +80,13 @@ interface FeedbackDao {
         }
     }
 
-    @Query("UPDATE tool_feedback SET isSynced = 1 WHERE id IN (:ids)")
-    suspend fun markAsSyncedRaw(ids: List<Long>)
+    //las ya subidas a firestore se borran del telefono: alla queda la copia
+    //si falla, el sync lo registra en crashlytics y las filas se vuelven a subir con el mismo id (sin duplicar)
+    @Query("DELETE FROM tool_feedback WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<Long>)
 
-    suspend fun markAsSynced(ids: List<Long>) {
-        try {
-            markAsSyncedRaw(ids)
-        } catch (e: Exception) {
-            CrashlyticsHelper.logNonFatal(
-                componentName = "FeedbackDao",
-                action = "markAsSynced",
-                throwable = e,
-                extraKeys = mapOf("ids_count" to ids.size)
-            )
-            throw e
-        }
-    }
+    //filas que versiones anteriores marcaban como subidas en vez de borrarlas
+    @Query("DELETE FROM tool_feedback WHERE isSynced = 1")
+    suspend fun deleteAlreadySynced()
 }
 

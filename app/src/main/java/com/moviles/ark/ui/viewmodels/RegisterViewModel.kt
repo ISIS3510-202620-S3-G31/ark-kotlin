@@ -9,57 +9,73 @@ import com.moviles.ark.ArkApplication
 import com.moviles.ark.domain.exceptions.EmailAlreadyRegisteredException
 import com.moviles.ark.domain.exceptions.InvalidCredentialsException
 import com.moviles.ark.domain.exceptions.NetworkUnavailableException
+import com.moviles.ark.domain.models.RegistrationErrors
 import com.moviles.ark.domain.models.UserModel
 import com.moviles.ark.domain.repositories.AuthRepository
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-class RegisterViewModel(private val authRepository: AuthRepository) : ViewModel() {
+class RegisterViewModel(
+    private val authRepository: AuthRepository,
+    //true cuando hay internet; vuelve a emitir cada vez que cambia
+    connectivity: Flow<Boolean> = emptyFlow()
+) : ViewModel() {
     //solo el viewmodel puede modificar el estado privado
     private val privateUiState = MutableStateFlow(RegisterUiState())
     //contenedor reactivo expuesto a la vista de solo lectura
     val uiState: StateFlow<RegisterUiState> = privateUiState.asStateFlow()
 
+    //el aviso de "sin internet" se quita solo cuando vuelve la red; antes se quedaba hasta que el usuario escribiera
+    init {
+        viewModelScope.launch {
+            connectivity.collect { isOnline ->
+                val noInternet = setOf(UserModel.noInternetError(true), UserModel.noInternetError(false))
+                if (isOnline && privateUiState.value.errorMessage in noInternet) {
+                    privateUiState.value = privateUiState.value.copy(errorMessage = null)
+                }
+            }
+        }
+    }
+
     //cada campo le pregunta al modelo UserModel si cumple; el viewmodel solo guarda el resultado en el estado
+    //al escribir se borra el mensaje general, los errores de cada campo se recalculan
     fun onNameChange(newName: String) {
-        updateForm(privateUiState.value.copy(name = newName, nameError = UserModel.nameErrorWhileTyping(newName)))
+        val name = UserModel.limitName(newName)
+        privateUiState.value = privateUiState.value.copy(name = name, nameError = UserModel.nameErrorWhileTyping(name), errorMessage = null)
     }
 
     fun onBirthDateChange(newBirthDate: String) {
-        updateForm(privateUiState.value.copy(birthDate = newBirthDate, birthDateError = UserModel.birthDateErrorWhileTyping(newBirthDate)))
+        privateUiState.value = privateUiState.value.copy(
+            birthDate = newBirthDate,
+            birthDateError = UserModel.birthDateErrorWhileTyping(newBirthDate),
+            errorMessage = null
+        )
     }
 
     fun onEmailChange(newEmail: String) {
-        updateForm(privateUiState.value.copy(email = newEmail, emailError = UserModel.emailErrorWhileTyping(newEmail)))
+        privateUiState.value = privateUiState.value.copy(email = newEmail, emailError = UserModel.emailErrorWhileTyping(newEmail), errorMessage = null)
     }
 
     fun onPasswordChange(newPassword: String) {
         val current = privateUiState.value
-        updateForm(
-            current.copy(
-                password = newPassword,
-                passwordError = UserModel.passwordErrorWhileTyping(newPassword),
-                confirmPasswordError = UserModel.confirmPasswordErrorWhileTyping(newPassword, current.confirmPassword)
-            )
+        privateUiState.value = current.copy(
+            password = newPassword,
+            passwordError = UserModel.passwordErrorWhileTyping(newPassword),
+            confirmPasswordError = UserModel.confirmPasswordErrorWhileTyping(newPassword, current.confirmPassword),
+            errorMessage = null
         )
     }
 
     fun onConfirmPasswordChange(newConfirmPassword: String) {
         val current = privateUiState.value
-        updateForm(
-            current.copy(
-                confirmPassword = newConfirmPassword,
-                confirmPasswordError = UserModel.confirmPasswordErrorWhileTyping(current.password, newConfirmPassword)
-            )
-        )
-    }
-
-    private fun updateForm(updated: RegisterUiState) {
-        privateUiState.value = updated.copy(
-            errorMessage = null,
-            isFormValid = userOf(updated).registrationError(updated.confirmPassword) == null
+        privateUiState.value = current.copy(
+            confirmPassword = newConfirmPassword,
+            confirmPasswordError = UserModel.confirmPasswordErrorWhileTyping(current.password, newConfirmPassword),
+            errorMessage = null
         )
     }
 
@@ -70,58 +86,56 @@ class RegisterViewModel(private val authRepository: AuthRepository) : ViewModel(
         password = state.password
     )
 
-    fun dismissNoInternetDialog() {
-        privateUiState.value = privateUiState.value.copy(showNoInternetDialog = false)
+    //pone cada error junto a su campo y debajo un resumen que nombra los campos a corregir
+    private fun showErrors(errors: RegistrationErrors) {
+        privateUiState.value = privateUiState.value.copy(
+            nameError = errors.name,
+            birthDateError = errors.birthDate,
+            emailError = errors.email,
+            passwordError = errors.password,
+            confirmPasswordError = errors.confirmPassword,
+            errorMessage = errors.summary()
+        )
     }
 
     //hacer el registro cuando el usuario presiona el boton en la screen
-    //las reglas de negocio pertenecen al modelo UserModel
-    fun register(onSuccess: () -> Unit) {
+    //las reglas de negocio pertenecen al modelo UserModel; el toque nunca se ignora:
+    //si algun campo no cumple se muestra por que y la cuenta solo se crea cuando todos cumplen
+    //onSuccess recibe un aviso para mostrar al salir de la pantalla, o null si todo quedo en la nube
+    fun register(onSuccess: (notice: String?) -> Unit) {
         val state = privateUiState.value
+        if (state.isLoading) return
 
-        //el modelo dice el primer error del formulario y el de cada campo
         val userModel = userOf(state)
-        val formError = userModel.registrationError(state.confirmPassword)
-        if (formError != null) {
-            privateUiState.value = state.copy(
-                errorMessage = formError,
-                nameError = if (formError == UserModel.CHECK_FIELDS_ERROR) UserModel.nameError(userModel.name) else state.nameError,
-                birthDateError = if (formError == UserModel.CHECK_FIELDS_ERROR) UserModel.birthDateError(userModel.birthDate) else state.birthDateError,
-                emailError = if (formError == UserModel.CHECK_FIELDS_ERROR) UserModel.emailError(userModel.email) else state.emailError,
-                passwordError = if (formError == UserModel.CHECK_FIELDS_ERROR) UserModel.passwordError(userModel.password) else state.passwordError,
-                confirmPasswordError = if (formError == UserModel.PASSWORDS_DO_NOT_MATCH_ERROR) formError else state.confirmPasswordError
-            )
+        val errors = userModel.registrationErrors(state.confirmPassword)
+        if (errors.hasErrors()) {
+            showErrors(errors)
             return
         }
 
         //activamos la carga para mostrar el spinner en la pantalla
-        privateUiState.value = state.copy(isLoading = true, errorMessage = null, showNoInternetDialog = false)
+        privateUiState.value = state.copy(isLoading = true, errorMessage = null)
 
         viewModelScope.launch {
             val result = authRepository.registerUser(userModel)
             privateUiState.value = privateUiState.value.copy(isLoading = false)
 
-            result.onSuccess {
+            result.onSuccess { profileUploaded ->
                 privateUiState.value = privateUiState.value.copy(
                     successMessage = "Account created successfully! Welcome to Ark"
                 )
-                onSuccess()
+                //la cuenta existe pero la red se cayo antes de guardar el perfil: se dice que termina solo al volver la red
+                onSuccess(if (profileUploaded) null else PROFILE_PENDING_NOTICE)
             }
             result.onFailure { error ->
                 //el repositorio ya traduce los errores de firebase a excepciones del dominio
-                if (error is NetworkUnavailableException) {
-                    privateUiState.value = privateUiState.value.copy(
-                        showNoInternetDialog = true,
-                        isAirplaneModeError = error.isAirplaneMode,
-                        errorMessage = null
-                    )
-                } else {
-                    val message = when (error) {
-                        is EmailAlreadyRegisteredException -> "This email is already registered"
-                        is InvalidCredentialsException -> UserModel.INVALID_EMAIL_ERROR
-                        else -> "Could not create the account, try again"
-                    }
-                    privateUiState.value = privateUiState.value.copy(errorMessage = message)
+                //los del correo van en su campo; sin internet se avisa en rojo debajo de los campos
+                when (error) {
+                    is NetworkUnavailableException ->
+                        privateUiState.value = privateUiState.value.copy(errorMessage = UserModel.noInternetError(error.isAirplaneMode))
+                    is EmailAlreadyRegisteredException -> showErrors(RegistrationErrors(email = UserModel.EMAIL_ALREADY_REGISTERED_ERROR))
+                    is InvalidCredentialsException -> showErrors(RegistrationErrors(email = UserModel.INVALID_EMAIL_ERROR))
+                    else -> privateUiState.value = privateUiState.value.copy(errorMessage = "Could not create the account, try again")
                 }
             }
         }
@@ -129,10 +143,12 @@ class RegisterViewModel(private val authRepository: AuthRepository) : ViewModel(
 
     //factory para que el viewmodel reciba el authRepository del AppContainer
     companion object {
+        const val PROFILE_PENDING_NOTICE = "Account created. Your profile will finish saving when you're back online"
+
         val Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as ArkApplication
-                RegisterViewModel(app.container.authRepository)
+                RegisterViewModel(app.container.authRepository, app.container.networkConnectivityObserver.observe())
             }
         }
     }

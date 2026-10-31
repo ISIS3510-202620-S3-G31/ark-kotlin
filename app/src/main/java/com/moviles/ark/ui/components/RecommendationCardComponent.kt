@@ -45,6 +45,8 @@ import com.moviles.ark.ui.theme.TextColor
 fun RecommendationCardComponent(
     tool: ToolModel,
     rationaleTag: String = "Suggested for today",
+    //por que se recomienda; sin motivo se muestra la descripcion de la herramienta
+    reason: String? = null,
     modifier: Modifier = Modifier,
     onOpenTool: (String) -> Unit = {}
 ) {
@@ -110,14 +112,15 @@ fun RecommendationCardComponent(
                         fontSize = 16.sp
                     )
 
-                    //descripcion con fuente Figtree
+                    //motivo de la recomendacion con fuente Figtree
                     Text(
-                        text = tool.description,
+                        text = reason ?: tool.description,
                         style = MaterialTheme.typography.bodyLarge,
                         fontFamily = FigtreeFontFamily,
                         color = TextColor.copy(alpha = 0.75f),
                         fontSize = 12.sp,
-                        maxLines = 1,
+                        lineHeight = 16.sp,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
                 }

@@ -6,6 +6,7 @@ import com.google.firebase.auth.FirebaseAuthInvalidUserException
 import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
+import com.google.firebase.firestore.Source
 import com.moviles.ark.data.local.sensors.NetworkConnectivityObserver
 import com.moviles.ark.data.remote.CrashlyticsHelper
 import com.moviles.ark.data.remote.dtos.toDto
@@ -19,6 +20,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.IOException
 import java.net.ConnectException
 import java.net.SocketTimeoutException
@@ -30,7 +32,9 @@ class AuthRepositoryImpl(
     private val authServiceAdapter: AuthServiceAdapter,
     private val firestore: FirebaseFirestore,
     private val networkConnectivityObserver: NetworkConnectivityObserver? = null,
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    //al entrar se sube lo que la cuenta dejo pendiente sin red (aunque haya cerrado sesion antes de que subiera)
+    private val onSignedIn: () -> Unit = {}
 ) : AuthRepository {
 
     // the session is saved on the device, so this works offline
@@ -41,6 +45,7 @@ class AuthRepositoryImpl(
             checkActiveNetworkConnection()
             try {
                 authServiceAdapter.signIn(email.trim(), password).getOrThrow()
+                onSignedIn()
                 Unit
             } catch (e: Throwable) {
                 handleNetworkException(e)
@@ -59,16 +64,23 @@ class AuthRepositoryImpl(
         }
     }
 
-    override suspend fun registerUser(user: UserModel): Result<Unit> = withContext(ioDispatcher) {
+    override suspend fun registerUser(user: UserModel): Result<Boolean> = withContext(ioDispatcher) {
         runCatching {
             checkActiveNetworkConnection()
             try {
-                val uid = authServiceAdapter.createUser(user.email.trim(), user.password).getOrThrow()
+                val uid = createOrResumeAccount(user)
                 // the password stays in Firebase Auth, Firestore only gets the profile
-                firestore.collection("users").document(uid)
-                    .set(user.toDto())
-                    .await()
-                Unit
+                //la escritura solo termina cuando el servidor responde: si la red se cae justo despues de crear la cuenta
+                //el spinner se quedaba girando para siempre; firestore deja la escritura en su cola y la manda al volver la red,
+                //asi que se espera un tiempo y se sigue: la cuenta ya existe y la sesion ya esta abierta
+                val uploaded = withTimeoutOrNull(PROFILE_WRITE_TIMEOUT_MILLIS) {
+                    firestore.collection("users").document(uid)
+                        .set(user.toDto())
+                        .await()
+                    true
+                } ?: false
+                onSignedIn()
+                uploaded
             } catch (e: Throwable) {
                 handleNetworkException(e)
             }
@@ -84,6 +96,24 @@ class AuthRepositoryImpl(
                 )
             )
         }
+    }
+
+    //crea la cuenta; si el correo ya existe puede ser porque un intento anterior si la creo pero la respuesta se perdio
+    //(la red se cayo) y la app dijo "sin internet": con la misma clave se entra a esa cuenta y, si todavia no tiene
+    //perfil, se termina el registro; si ya tenia perfil es una cuenta de verdad y se avisa que el correo ya existe
+    private suspend fun createOrResumeAccount(user: UserModel): String {
+        val created = authServiceAdapter.createUser(user.email.trim(), user.password)
+        val error = created.exceptionOrNull() ?: return created.getOrThrow()
+        if (error !is FirebaseAuthUserCollisionException) throw error
+        val uid = authServiceAdapter.signIn(user.email.trim(), user.password).getOrNull() ?: throw error
+        val hasProfile = runCatching {
+            firestore.collection("users").document(uid).get(Source.SERVER).await().exists()
+        }.getOrDefault(true)
+        if (hasProfile) {
+            authServiceAdapter.signOut()
+            throw error
+        }
+        return uid
     }
 
     private fun checkActiveNetworkConnection() {
@@ -138,4 +168,9 @@ class AuthRepositoryImpl(
     }
 
     override fun logout() = authServiceAdapter.signOut()
+
+    companion object {
+        //cuanto se espera a que el servidor confirme el perfil recien creado antes de seguir con la escritura en cola
+        private const val PROFILE_WRITE_TIMEOUT_MILLIS = 8_000L
+    }
 }

@@ -6,24 +6,22 @@ import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Source
 import com.moviles.ark.data.local.StatsDiskCache
-import com.moviles.ark.data.local.daos.EmotionCheckInDao
 import com.moviles.ark.data.local.daos.StatsDailyVisitDao
-import com.moviles.ark.data.local.daos.ToolRecordDao
 import com.moviles.ark.data.local.entities.StatsDailyVisitEntity
-import com.moviles.ark.data.local.entities.toDomain
 import com.moviles.ark.data.remote.CrashlyticsHelper
 import com.moviles.ark.data.remote.dtos.MoodCheckInDto
-import com.moviles.ark.data.remote.dtos.StatsSummaryDto
+import com.moviles.ark.data.remote.dtos.hasReadableEmotions
 import com.moviles.ark.data.remote.dtos.ToolInteractionDto
 import com.moviles.ark.data.remote.dtos.toDomain
 import com.moviles.ark.data.remote.dtos.toDto
+import com.moviles.ark.domain.models.MoodCheckInModel
 import com.moviles.ark.domain.models.StatsCalculator
 import com.moviles.ark.domain.models.StatsModel
 import com.moviles.ark.domain.repositories.StatsRepository
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -31,14 +29,14 @@ import java.util.Locale
 class StatsRepositoryImpl(
     private val auth: FirebaseAuth,
     private val firestore: FirebaseFirestore,
-    //los daos de room se quedan en el repositorio: el viewmodel nunca toca la base directo
-    private val emotionCheckInDao: EmotionCheckInDao,
-    private val toolRecordDao: ToolRecordDao,
-    //cache en disco de las stats que llegaron de firestore
+    //cache en disco (cacheDir) de las ultimas stats que llegaron de firestore: es lo unico que se muestra sin red
     private val statsDiskCache: StatsDiskCache? = null,
     private val statsCalculator: StatsCalculator = StatsCalculator(),
     private val statsDailyVisitDao: StatsDailyVisitDao? = null,
     private val onVisitRecorded: () -> Unit = {},
+    //sube lo que quedo pendiente sin red (check-ins, herramientas) antes de calcular: asi se ve aunque se haya
+    //cerrado sesion antes de que subiera
+    private val syncPendingData: suspend () -> Unit = {},
     private val now: () -> Long = { System.currentTimeMillis() }
 ) : StatsRepository {
 
@@ -47,60 +45,32 @@ class StatsRepositoryImpl(
         return statsDiskCache?.read(currentUserId)
     }
 
-    //lee check-ins e interacciones de room en IO y calcula en Default; si la base esta vacia devuelve stats en cero
-    override suspend fun getLocalStats(): Result<StatsModel> = runCatching {
-        val (checkInEntities, interactionEntities) = withContext(Dispatchers.IO) {
-            emotionCheckInDao.getCheckIns().first() to toolRecordDao.getInteractions().first()
-        }
-        withContext(Dispatchers.Default) {
-            statsCalculator.calculateStats(
-                checkIns = checkInEntities.map { it.toDomain() },
-                interactions = interactionEntities.map { it.toDomain() },
-                toolPercentages = StatsCalculator.toolUsagePercentages(interactionEntities.map { it.toolId })
-            )
-        }
-    }
-
     //pide a firestore en IO (Source.SERVER: sin red falla en vez de devolver datos viejos) y actualiza el cache
-    override suspend fun getUserStats(): Result<StatsModel> = withContext(Dispatchers.IO) { fetchAndCacheStats() }
+    override suspend fun getUserStats(): Result<StatsModel> = withContext(Dispatchers.IO) {
+        //con tiempo maximo: una foto pesada pendiente no deja la pantalla esperando; el sync sigue por su lado
+        withTimeoutOrNull(PENDING_SYNC_TIMEOUT_MILLIS) { syncPendingData() }
+        fetchAndCacheStats()
+    }
 
     private suspend fun fetchAndCacheStats(): Result<StatsModel> = runCatching {
         val currentUserId = auth.currentUser?.uid ?: "anonymous"
         val todayKey = SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date())
 
-        //consulta primero el resumen precomputado directamente del backend en firestore
-        val summary = try {
-            firestore.collection("users")
-                .document(currentUserId)
-                .collection("stats_summary")
-                .document("latest")
-                .get(Source.SERVER)
-                .await()
-                .takeIf { it.exists() }
-                ?.toDtoOrNull<StatsSummaryDto>()
-        } catch (e: Exception) {
-            Log.w("StatsRepository", "Could not fetch precomputed stats summary directly from server", e)
-            null
-        }
-
-        //un resumen incompleto se recalcula abajo y se vuelve a guardar ya completo
-        if (summary != null && summary.isComplete()) {
-            val precomputedStats = summary.toDomain()
-
-            //guarda de inmediato en el disco del telefono para cache-then-network
-            statsDiskCache?.write(currentUserId, precomputedStats)
-            Log.d("StatsRepository", "Loaded precomputed stats directly from backend: totalCheckIns=${summary.totalCheckIns}")
-            return@runCatching precomputedStats
-        }
-
-        //consulta los checkins emocionales de firestore en caso de fallback o calculo inicial
+        //siempre se calcula con los check-ins e interacciones de firestore: el resumen guardado podia ser de otro dia,
+        //contaba los check-ins del feedback viejo y mezclaba nombres de herramientas; aqui solo se vuelve a escribir
         val checkInsSnapshot = firestore.collection("users")
             .document(currentUserId)
             .collection("mood_checkins")
             .get(Source.SERVER)
             .await()
-        val checkInDocs = checkInsSnapshot.documents
-        val totalCheckIns = checkInDocs.size
+        //solo los check-ins diarios; los que guardaba el feedback viejo no cuentan
+        val dailyDtos = checkInsSnapshot.documents
+            .mapNotNull { it.toDtoOrNull<MoodCheckInDto>() }
+            .filter { it.timestamp > 0L && !MoodCheckInModel.isPostToolNote(it.note) }
+        //un documento sin emociones legibles cuenta como check-in, pero no suma a ninguna emocion
+        val checkInModels = dailyDtos.filter { it.hasReadableEmotions() }.map { it.toDomain() }
+        val totalCheckIns = dailyDtos.size
+        Log.d("StatsRepository", "Daily check-ins: $totalCheckIns, without readable emotions: ${totalCheckIns - checkInModels.size}")
 
         //consulta las interacciones de herramientas de firestore
         val toolsSnapshot = firestore.collection("users")
@@ -126,10 +96,6 @@ class StatsRepositoryImpl(
         }
 
         //cada documento se lee con su dto, el mismo que usa el sync para subirlo
-        val checkInModels = checkInDocs
-            .mapNotNull { it.toDtoOrNull<MoodCheckInDto>() }
-            .filter { it.timestamp > 0L }
-            .map { it.toDomain() }
         val interactionDtos = toolDocs.mapNotNull { it.toDtoOrNull<ToolInteractionDto>() }
         val toolInteractions = interactionDtos.map { it.toDomain() }
         val toolPercentages = StatsCalculator.toolUsagePercentages(interactionDtos.map { it.toolId }.filter { it.isNotBlank() })
@@ -140,7 +106,8 @@ class StatsRepositoryImpl(
             interactions = toolInteractions,
             toolPercentages = toolPercentages
         )
-        val computedStats = calculated.copy(lastUpdated = System.currentTimeMillis())
+        //lastUpdated es el momento en que estas stats salieron de firestore; la pantalla lo muestra tal cual
+        val computedStats = calculated.copy(totalCheckIns = totalCheckIns, lastUpdated = System.currentTimeMillis())
 
         //guarda el resumen en el disco del telefono para pintarlo al instante la proxima vez
         statsDiskCache?.write(currentUserId, computedStats)
@@ -163,17 +130,15 @@ class StatsRepositoryImpl(
         saveUserStatsInternal(currentUserId, stats, toolsSnapshot.documents.size, todayKey)
     }
 
-    private suspend fun saveUserStatsInternal(userId: String, stats: StatsModel, totalTools: Int, dayKey: String) {
-        try {
-            firestore.collection("users")
-                .document(userId)
-                .collection("stats_summary")
-                .document("latest")
-                .set(stats.toDto(totalTools, dayKey))
-                .await()
-        } catch (e: Exception) {
-            Log.e("StatsRepository", "Error saving stats summary to firestore", e)
-        }
+    //no se espera: una escritura de firestore solo termina cuando el servidor responde, y si la red se caia justo
+    //despues de leer las stats la pantalla se quedaba cargando aunque ya las tenia; firestore la manda cuando pueda
+    private fun saveUserStatsInternal(userId: String, stats: StatsModel, totalTools: Int, dayKey: String) {
+        firestore.collection("users")
+            .document(userId)
+            .collection("stats_summary")
+            .document("latest")
+            .set(stats.toDto(totalTools, dayKey))
+            .addOnFailureListener { e -> Log.e("StatsRepository", "Error saving stats summary to firestore", e) }
     }
 
     //registra la entrada del usuario a la pantalla de estadisticas e incrementa el contador del dia
@@ -198,28 +163,9 @@ class StatsRepositoryImpl(
             )
             dao.insertOrUpdate(entity)
 
-            // 3. Intentar subir inmediatamente a Firestore si hay conexion
-            try {
-                firestore.collection("users")
-                    .document(currentUserId)
-                    .collection("stats_daily_visits")
-                    .document(todayKey)
-                    .set(
-                        mapOf(
-                            "userId" to currentUserId,
-                            "dateKey" to todayKey,
-                            "count" to newCount,
-                            "lastUpdatedAt" to timestamp
-                        )
-                    )
-                    .await()
-
-                dao.markAsSynced(currentUserId, todayKey)
-                Log.d("StatsRepository", "Stats daily visit for date=$todayKey (count=$newCount) synced to Firestore")
-            } catch (e: Exception) {
-                Log.w("StatsRepository", "Could not sync stats daily visit immediately (offline): ${e.message}")
-                onVisitRecorded()
-            }
+            // 3. Avisar al SyncManager para que lo suba; no se espera a firestore
+            //sin internet esa espera no terminaba y la pantalla de estadisticas se quedaba cargando
+            onVisitRecorded()
 
             newCount
         }.onFailure { error ->
@@ -252,4 +198,8 @@ class StatsRepositoryImpl(
         runCatching { toObject(T::class.java) }
             .onFailure { Log.w("StatsRepository", "Skipping document $id with an unexpected shape", it) }
             .getOrNull()
+
+    companion object {
+        private const val PENDING_SYNC_TIMEOUT_MILLIS = 10_000L
+    }
 }

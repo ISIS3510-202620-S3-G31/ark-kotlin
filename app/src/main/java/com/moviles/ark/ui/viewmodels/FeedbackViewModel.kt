@@ -10,32 +10,25 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
 import com.moviles.ark.domain.composite.Emotion
-import com.moviles.ark.domain.composite.SingleEmotion
-import com.moviles.ark.domain.models.MoodCheckInModel
 import com.moviles.ark.domain.models.FeedbackModel
-import com.moviles.ark.domain.models.ToolInteractionModel
 import com.moviles.ark.domain.repositories.FeedbackRepository
-import com.moviles.ark.domain.repositories.MoodRepository
-import com.moviles.ark.domain.repositories.ToolInteractionRepository
-import com.moviles.ark.domain.repositories.ToolRepository
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 class FeedbackViewModel(
     private val feedbackRepository: FeedbackRepository? = null,
-    private val toolInteractionRepository: ToolInteractionRepository? = null,
-    private val moodRepository: MoodRepository? = null,
-    private val toolRepository: ToolRepository? = null,
     savedStateHandle: SavedStateHandle? = null,
     initialToolId: String = "",
     initialDuration: Int = 0,
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    //true si hay internet al guardar: el aviso dice si ya subio o si queda en el telefono hasta que vuelva la red
+    private val isOnline: () -> Boolean = { true }
 ) : ViewModel() {
 
     private val privateUiState = MutableStateFlow(
@@ -72,29 +65,23 @@ class FeedbackViewModel(
         }
     }
 
+    //la regla de que toque elige, activa o quita una emocion vive en EmotionSelection
     fun onEmotionToggle(emotion: Emotion) {
-        val currentEmotions = privateUiState.value.selectedEmotions
-        val isAdding = !currentEmotions.contains(emotion)
-        val newEmotions = if (isAdding) {
-            currentEmotions + emotion
-        } else {
-            currentEmotions - emotion
-        }
-        val newActive = if (newEmotions.contains(emotion)) {
-            emotion
-        } else {
-            newEmotions.lastOrNull()
-        }
         privateUiState.value = privateUiState.value.copy(
-            selectedEmotions = newEmotions,
-            activeEmotion = newActive,
-            intensity = if (isAdding) SingleEmotion.DEFAULT_INTENSITY.toFloat() else privateUiState.value.intensity,
+            selection = privateUiState.value.selection.toggle(emotion),
             errorMessage = null
         )
     }
 
-    // Persiste en Room SQLite y sincroniza a Firestore desacoplado via FeedbackRepository
-    // Vincula la calificacion tanto a toolId como a interactionId
+    //el slider solo cambia la intensidad de la emocion activa
+    fun onIntensityChange(newIntensity: Float) {
+        privateUiState.value = privateUiState.value.copy(
+            selection = privateUiState.value.selection.withActiveIntensity(newIntensity.roundToInt()),
+            errorMessage = null
+        )
+    }
+
+    // Persiste en Room SQLite; el SyncManager lo sube a Firestore cuando hay internet
     fun saveFeedback(onSavedCallback: () -> Unit = {}) {
         val state = privateUiState.value
 
@@ -110,65 +97,51 @@ class FeedbackViewModel(
         viewModelScope.launch(ioDispatcher) {
             try {
                 val nowMillis = System.currentTimeMillis()
-                val format = toolRepository?.getToolById(state.toolId)?.format ?: ToolInteractionModel.DEFAULT_INTERACTION_TYPE
-                val durationSeconds = if (state.duration > 0) state.duration else ToolInteractionModel.DEFAULT_DURATION_SECONDS
 
-                // 1. Grabar la interaccion de forma bloqueante para obtener el interactionId generado
-                val interactionId = async(ioDispatcher) {
-                    toolInteractionRepository
-                        ?.recordCompletion(state.toolId, durationSeconds, format, nowMillis)
-                        ?.getOrThrow()
-                }.await()
-
-                // 2. Persistir feedback y check-in en paralelo en hilos de IO con async/await para no degradar la experiencia de usuario
-                val saveFeedbackDeferred = async(ioDispatcher) {
-                    feedbackRepository?.saveFeedback(
-                        FeedbackModel(
-                            toolId = state.toolId,
-                            rating = state.rating,
-                            comment = state.comment.trim(),
-                            createdAt = nowMillis,
-                            interactionId = interactionId
-                        )
+                //la interaccion ya la guardo la herramienta al terminar (o al abandonarla); aqui va la calificacion
+                //las emociones se guardan con el feedback: el check-in del dia solo lo hace el usuario y no cambia
+                val result = feedbackRepository?.saveFeedback(
+                    FeedbackModel(
+                        toolId = state.toolId,
+                        rating = state.rating,
+                        comment = state.comment.trim(),
+                        emotions = state.selection.toParts(),
+                        createdAt = nowMillis
                     )
-                }
-
-                val saveCheckInDeferred = async(ioDispatcher) {
-                    if (state.selectedEmotions.isNotEmpty() && moodRepository != null) {
-                        moodRepository.saveCheckIn(MoodCheckInModel.afterTool(state.selectedEmotions, state.intensity.toInt(), state.comment))
-                    }
-                }
-
-                // Esperar concurrentemente ambas operaciones antes de navegar
-                saveFeedbackDeferred.await()
-                saveCheckInDeferred.await()
+                )
+                //antes el resultado se ignoraba: si no se guardaba en el telefono igual salia como si se hubiera guardado
+                result?.exceptionOrNull()?.let { throw it }
                 privateUiState.value = privateUiState.value.copy(
                     isLoading = false,
                     isSaved = true,
-                    errorMessage = null
+                    errorMessage = null,
+                    //se le dice al usuario que paso con su feedback (antes volvia al home sin ningun aviso)
+                    savedNotice = if (isOnline()) SAVED_ONLINE_NOTICE else SAVED_OFFLINE_NOTICE
                 )
                 withContext(Dispatchers.Main) {
                     onSavedCallback()
                 }
             } catch (e: Exception) {
                 Log.e("FeedbackViewModel", "Error saving feedback", e)
+                //sin detalles tecnicos: es un error del telefono, no de la red
                 privateUiState.value = privateUiState.value.copy(
                     isLoading = false,
-                    errorMessage = e.localizedMessage ?: "Failed to save feedback"
+                    errorMessage = "Could not save your feedback, try again"
                 )
             }
         }
     }
 
     companion object {
+        const val SAVED_ONLINE_NOTICE = "Thanks! Your feedback was saved"
+        const val SAVED_OFFLINE_NOTICE = "Thanks! Your feedback is saved on this phone and will upload when you're back online"
+
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as ArkApplication
                 FeedbackViewModel(
                     feedbackRepository = app.container.feedbackRepository,
-                    toolInteractionRepository = app.container.toolInteractionRepository,
-                    moodRepository = app.container.moodRepository,
-                    toolRepository = app.container.toolRepository
+                    isOnline = app.container.networkConnectivityObserver::isConnected
                 )
             }
         }

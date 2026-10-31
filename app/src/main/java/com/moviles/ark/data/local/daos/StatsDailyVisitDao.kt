@@ -40,7 +40,8 @@ interface StatsDailyVisitDao {
     @Query("SELECT * FROM stats_daily_visits WHERE isSynced = 0 AND (userId = :userId OR userId = 'anonymous')")
     suspend fun getUnsyncedVisits(userId: String): List<StatsDailyVisitEntity>
 
-    //marca un dia como sincronizado
-    @Query("UPDATE stats_daily_visits SET isSynced = 1 WHERE userId = :userId AND dateKey = :dateKey")
-    suspend fun markAsSynced(userId: String, dateKey: String)
+    //marca un dia como sincronizado, solo si el conteo subido sigue siendo el de la fila
+    //(si el usuario volvio a stats mientras subia, el dia queda pendiente con el numero nuevo)
+    @Query("UPDATE stats_daily_visits SET isSynced = 1 WHERE userId = :userId AND dateKey = :dateKey AND count = :uploadedCount")
+    suspend fun markAsSyncedIfUnchanged(userId: String, dateKey: String, uploadedCount: Int)
 }

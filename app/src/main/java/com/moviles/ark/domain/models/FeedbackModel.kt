@@ -1,5 +1,7 @@
 package com.moviles.ark.domain.models
 
+import com.moviles.ark.domain.composite.SingleEmotion
+
 // Calificacion y comentario que deja el usuario al terminar una herramienta
 // Modelo del dominio desacoplado de Room (FeedbackEntity) y de Firestore (FeedbackDto)
 data class FeedbackModel(
@@ -13,6 +15,8 @@ data class FeedbackModel(
     val rating: Int,
     // Comentario u observacion opcional del usuario
     val comment: String = "",
+    // Emociones que marco al terminar, cada una con su intensidad; no cambian el check-in del dia
+    val emotions: List<SingleEmotion> = emptyList(),
     // Momento de registro en milisegundos
     val createdAt: Long = System.currentTimeMillis(),
     // Indicador de si ya fue sincronizado con Firestore

@@ -73,6 +73,7 @@ import com.moviles.ark.R
 import com.moviles.ark.domain.models.DecibelMeter
 import com.moviles.ark.domain.models.Loudness
 import com.moviles.ark.ui.theme.AccentColor
+import com.moviles.ark.ui.theme.ScreenTopPadding
 import com.moviles.ark.ui.theme.AppTheme
 import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.theme.PrimaryColor
@@ -202,7 +203,7 @@ private fun ScreamHeader(onBack: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 8.dp),
+            .padding(start = 24.dp, end = 24.dp, top = ScreenTopPadding, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {

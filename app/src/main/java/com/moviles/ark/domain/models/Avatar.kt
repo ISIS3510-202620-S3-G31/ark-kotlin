@@ -8,6 +8,9 @@ data class Avatar(
     companion object {
         const val DEFAULT_ID = "avatar_1"
 
+        //un id que no es de la lista (por ejemplo uno viejo o vacio) muestra el avatar por defecto
+        fun idOrDefault(id: String?): String = PRESETS.firstOrNull { it.id == id }?.id ?: DEFAULT_ID
+
         val PRESETS: List<Avatar> = listOf(
             Avatar("avatar_1", "Fox"),
             Avatar("avatar_2", "Owl"),

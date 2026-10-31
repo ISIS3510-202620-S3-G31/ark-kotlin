@@ -1,7 +1,13 @@
 package com.moviles.ark.ui.navigation
 
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -54,10 +60,6 @@ fun AppNavigation(
     Scaffold(
         containerColor = BackgroundColor,
         contentWindowInsets = WindowInsets(0),
-        topBar = {
-            //banner no invasivo de conexion offline
-            OfflineBannerComponent(isConnected = isConnected)
-        },
         bottomBar = {
             if (currentRoute in BottomNavItem.routes) {
                 BottomNavigationBar(
@@ -67,11 +69,28 @@ fun AppNavigation(
             }
         }
     ) { innerPadding ->
-        NavHost(
-            navController = navController,
-            startDestination = startRoute,
-            modifier = Modifier.padding(bottom = innerPadding.calculateBottomPadding())
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(bottom = innerPadding.calculateBottomPadding())
         ) {
+            //banner no invasivo de conexion offline con animacion slide-in que empuja el contenido hacia abajo
+            OfflineBannerComponent(isConnected = isConnected)
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .then(
+                        if (!isConnected) Modifier.consumeWindowInsets(WindowInsets.statusBars)
+                        else Modifier
+                    )
+            ) {
+                NavHost(
+                    navController = navController,
+                    startDestination = startRoute,
+                    modifier = Modifier.fillMaxSize()
+                ) {
             composable("register_screen") {
                 RegisterScreen(
                     onNavigateToLogin = { navController.navigate("login_screen") },
@@ -163,7 +182,7 @@ fun AppNavigation(
                     }
                 )
             }
-            //herramienta de respiracion guiada; si completo al menos 1 ciclo navega a feedback
+            //herramienta de respiracion guiada; Finish navega a feedback y atras (abandonar) vuelve sin feedback
             composable("custom_breathing_screen") {
                 CustomBreathingRoute(onBack = { wasCompleted, duration ->
                     if (wasCompleted) {
@@ -217,6 +236,8 @@ fun AppNavigation(
                     }
                 )
             }
+        }
+    }
         }
     }
 }

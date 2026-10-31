@@ -1,13 +1,23 @@
 package com.moviles.ark.ui.screens
 
+import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.ui.graphics.vector.ImageVector
+import android.app.Activity
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
+import com.moviles.ark.ui.viewmodels.StatsEmptyReason
+import com.moviles.ark.ui.components.emotionLabel
+import kotlinx.coroutines.delay
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -47,6 +57,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -77,12 +88,12 @@ import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.ui.components.getEmotionColor
 import com.moviles.ark.ui.components.getEmotionEmoji
 import com.moviles.ark.ui.theme.AccentColor
+import com.moviles.ark.ui.theme.ScreenTopPadding
 import com.moviles.ark.ui.theme.AppTheme
 import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.theme.FigtreeFontFamily
 import com.moviles.ark.ui.theme.PrimaryColor
 import com.moviles.ark.ui.theme.SecondaryColor
-import com.moviles.ark.ui.theme.SoreanFontFamily
 import com.moviles.ark.ui.theme.TextColor
 import com.moviles.ark.ui.viewmodels.StatsViewModel
 import java.text.SimpleDateFormat
@@ -93,6 +104,8 @@ import java.util.Locale
 //paleta consistente de superficies de tarjeta sobre BackgroundColor
 private val CardSurfaceColor = Color(0xFFF3E4CF)
 private val CardBorderColor = TextColor.copy(alpha = 0.12f)
+//alto del emoji y su separacion encima de cada barra de la grafica semanal
+private val EMOJI_SPACE = 38.dp
 
 @Composable
 fun StatsScreen(
@@ -102,9 +115,12 @@ fun StatsScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
 
-    //recarga automaticamente al entrar a la pantalla para mostrar check-ins recientes con cache-then-network
+    //cada entrada a la pantalla cuenta una visita y recarga con cache-then-network; girar el telefono no cuenta
     LaunchedEffect(Unit) {
-        viewModel.loadStats()
+        viewModel.onScreenOpened()
+    }
+    DisposableEffect(Unit) {
+        onDispose { viewModel.onScreenClosed((context as? Activity)?.isChangingConfigurations == true) }
     }
 
     //aviso corto cuando el refresco no pudo traer datos nuevos
@@ -118,9 +134,12 @@ fun StatsScreen(
     StatsScreenContent(
         stats = uiState.stats,
         isLoading = uiState.isLoading,
-        errorMessage = uiState.errorMessage,
+        emptyReason = uiState.emptyReason,
         isRefreshing = uiState.isRefreshing,
+        isUpdating = uiState.isUpdating,
         isOffline = uiState.isOffline,
+        pendingUploads = uiState.pendingUploads,
+        updateCount = uiState.updateCount,
         onRefresh = { viewModel.refresh() },
         onNavigateToToolsCatalog = onNavigateToToolsCatalog
     )
@@ -132,9 +151,12 @@ fun StatsScreen(
 fun StatsScreenContent(
     stats: StatsModel?,
     isLoading: Boolean,
-    errorMessage: String? = null,
+    emptyReason: StatsEmptyReason? = null,
     isRefreshing: Boolean = false,
+    isUpdating: Boolean = false,
     isOffline: Boolean = false,
+    pendingUploads: Int = 0,
+    updateCount: Int = 0,
     onRefresh: () -> Unit = {},
     onNavigateToToolsCatalog: (ToolCategory?) -> Unit = {}
 ) {
@@ -151,7 +173,7 @@ fun StatsScreenContent(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 22.dp, end = 22.dp, top = 22.dp, bottom = 12.dp)
+                    .padding(start = 22.dp, end = 22.dp, top = ScreenTopPadding, bottom = 12.dp)
             ) {
                 Column(
                     modifier = Modifier.align(Alignment.Center),
@@ -163,12 +185,7 @@ fun StatsScreenContent(
                         color = TextColor
                     )
                     Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = "Last updated: ${getLastUpdatedLabel()}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextColor.copy(alpha = 0.55f),
-                        fontSize = 12.sp
-                    )
+                    LastUpdatedLabel(stats = stats, isUpdating = isUpdating, updateCount = updateCount)
                 }
 
                 Box(
@@ -189,6 +206,17 @@ fun StatsScreenContent(
                         modifier = Modifier.size(20.dp)
                     )
                 }
+            }
+
+            //sin internet se ve lo ultimo que llego de firestore; se dice para que no parezca dato nuevo
+            if (isOffline && stats != null) {
+                StatsInfoBanner(icon = Icons.Default.WifiOff, text = "Offline · showing your last saved stats")
+            } else if (pendingUploads > 0 && stats != null) {
+                //con red pero algo hecho en este telefono no alcanzo a subir: estas stats todavia no lo cuentan
+                StatsInfoBanner(
+                    icon = Icons.Default.CloudUpload,
+                    text = "${if (pendingUploads == 1) "1 item" else "$pendingUploads items"} from this phone still uploading · pull to refresh"
+                )
             }
 
             //deslizar hacia abajo pide datos nuevos al backend en firestore
@@ -217,18 +245,11 @@ fun StatsScreenContent(
                     }
                 } else if (stats == null) {
                     PullableContent {
-                        if (isOffline) {
-                            //cuando no hay nada en disco y no hay internet: fallback ilustrado amigable
+                        if (emptyReason == StatsEmptyReason.OFFLINE_NO_SAVED) {
+                            //sin internet y sin stats guardadas: se explica por que no hay nada que mostrar
                             StatsOfflineView(onRetry = onRefresh)
-                        } else if (errorMessage != null) {
-                            StatsErrorView(
-                                message = errorMessage,
-                                onRetry = onRefresh
-                            )
                         } else {
-                            StatsEmptyView(
-                                onExploreTools = { onNavigateToToolsCatalog(null) }
-                            )
+                            StatsErrorView(onRetry = onRefresh)
                         }
                     }
                 } else if (stats.isEmpty()) {
@@ -238,7 +259,7 @@ fun StatsScreenContent(
                         )
                     }
                 } else {
-                    StatsMainView(stats = stats, onNavigateToToolsCatalog = onNavigateToToolsCatalog)
+                    StatsMainView(stats = stats, updateCount = updateCount, onNavigateToToolsCatalog = onNavigateToToolsCatalog)
                 }
             }
         }
@@ -260,7 +281,6 @@ private fun PullableContent(content: @Composable () -> Unit) {
 //vista cuando ocurre un error de servidor al cargar estadisticas
 @Composable
 private fun StatsErrorView(
-    message: String,
     onRetry: () -> Unit
 ) {
     Box(
@@ -285,28 +305,27 @@ private fun StatsErrorView(
                     modifier = Modifier
                         .size(56.dp)
                         .clip(CircleShape)
-                        .background(Color(0xFFE57373).copy(alpha = 0.18f))
+                        .background(AccentColor.copy(alpha = 0.18f))
                         .border(1.2.dp, Color(0xFFE8D3B9), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.Refresh,
                         contentDescription = null,
-                        tint = Color(0xFFD32F2F),
+                        tint = AccentColor,
                         modifier = Modifier.size(28.dp)
                     )
                 }
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    text = "Unable to load stats",
+                    text = "Couldn't load your stats",
                     style = MaterialTheme.typography.titleLarge,
-                    fontFamily = SoreanFontFamily,
                     fontWeight = FontWeight.Bold,
                     color = TextColor
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = message,
+                    text = "Ark couldn't reach the server and there are no saved stats on this phone yet. Your check-ins are safe; try again in a moment.",
                     style = MaterialTheme.typography.bodyLarge,
                     fontFamily = FigtreeFontFamily,
                     color = TextColor.copy(alpha = 0.7f),
@@ -326,7 +345,7 @@ private fun StatsErrorView(
                     Text(
                         text = "Retry",
                         fontFamily = FigtreeFontFamily,
-                        color = Color.White,
+                        color = TextColor,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 14.sp
                     )
@@ -387,9 +406,8 @@ private fun StatsOfflineView(
                 Spacer(modifier = Modifier.height(18.dp))
 
                 Text(
-                    text = "You're Currently Offline",
+                    text = "No stats on this phone yet",
                     style = MaterialTheme.typography.titleLarge,
-                    fontFamily = SoreanFontFamily,
                     fontWeight = FontWeight.Bold,
                     color = TextColor,
                     textAlign = TextAlign.Center
@@ -398,7 +416,7 @@ private fun StatsOfflineView(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 Text(
-                    text = "Ark needs an internet connection to fetch your latest cloud analytics for the first time. Check your Wi-Fi or data, and swipe down or tap retry to connect!",
+                    text = "You're offline and your stats haven't been loaded on this phone yet (or the app cache was cleared). Connect to the internet once and Ark keeps them saved to show you offline.",
                     style = MaterialTheme.typography.bodyMedium,
                     fontFamily = FigtreeFontFamily,
                     color = TextColor.copy(alpha = 0.75f),
@@ -418,7 +436,7 @@ private fun StatsOfflineView(
                     colors = ButtonDefaults.buttonColors(containerColor = PrimaryColor)
                 ) {
                     Text(
-                        text = "Retry Connection",
+                        text = "Try again",
                         fontFamily = FigtreeFontFamily,
                         fontWeight = FontWeight.Bold,
                         color = TextColor,
@@ -480,9 +498,8 @@ private fun StatsEmptyView(
                 Spacer(modifier = Modifier.height(18.dp))
 
                 Text(
-                    text = "Your Wellbeing Journey Awaits",
+                    text = "No stats yet",
                     style = MaterialTheme.typography.titleLarge,
-                    fontFamily = SoreanFontFamily,
                     fontWeight = FontWeight.Bold,
                     color = TextColor,
                     textAlign = TextAlign.Center
@@ -491,7 +508,7 @@ private fun StatsEmptyView(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 Text(
-                    text = "Track your daily emotional check-ins and explore guided wellbeing tools to unlock personalized analytics and healthy habit insights.",
+                    text = "Your stats appear after your first daily check-in or tool session. Everything here comes from what you record.",
                     style = MaterialTheme.typography.bodyMedium,
                     fontFamily = FigtreeFontFamily,
                     color = TextColor.copy(alpha = 0.75f),
@@ -523,22 +540,84 @@ private fun StatsEmptyView(
     }
 }
 
-private fun getLastUpdatedLabel(): String {
-    val format = java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault())
-    return "Today at " + format.format(java.util.Date())
+//fecha de las stats que se ven; al llegar stats nuevas dice "Updated just now" en naranja un momento
+@Composable
+private fun LastUpdatedLabel(stats: StatsModel?, isUpdating: Boolean, updateCount: Int) {
+    var justUpdated by remember { mutableStateOf(false) }
+    LaunchedEffect(updateCount) {
+        if (updateCount > 0) {
+            justUpdated = true
+            delay(JUST_UPDATED_MILLIS)
+            justUpdated = false
+        }
+    }
+    val text = when {
+        justUpdated -> "Updated just now"
+        isUpdating -> "Updating..."
+        stats != null -> "Last updated: ${StatsModel.lastUpdatedLabel(stats.lastUpdated)}"
+        else -> ""
+    }
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodySmall,
+        fontWeight = if (justUpdated) FontWeight.Bold else FontWeight.Normal,
+        color = if (justUpdated || isUpdating) PrimaryColor else TextColor.copy(alpha = 0.55f),
+        fontSize = 12.sp
+    )
 }
+
+//franja corta bajo el titulo: dice si lo que se ve son las stats guardadas o si falta algo por subir
+@Composable
+private fun StatsInfoBanner(icon: ImageVector, text: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(TextColor.copy(alpha = 0.06f))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = TextColor.copy(alpha = 0.7f),
+            modifier = Modifier.size(16.dp)
+        )
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            color = TextColor.copy(alpha = 0.75f)
+        )
+    }
+}
+
+private const val JUST_UPDATED_MILLIS = 2_500L
 
 data class TooltipInfo(val title: String, val message: String)
 
 @Composable
 private fun StatsMainView(
     stats: StatsModel,
+    updateCount: Int = 0,
     onNavigateToToolsCatalog: (ToolCategory?) -> Unit = {}
 ) {
     var activeTooltip by remember { mutableStateOf<TooltipInfo?>(null) }
 
+    //parpadeo corto cuando llegan stats nuevas de firestore, para que se note que cambiaron
+    val flash = remember { Animatable(0f) }
+    LaunchedEffect(updateCount) {
+        if (updateCount > 0) {
+            flash.snapTo(1f)
+            flash.animateTo(0f, animationSpec = tween(durationMillis = 700))
+        }
+    }
+
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer { alpha = 1f - 0.6f * flash.value },
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 6.dp, bottom = 36.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -557,10 +636,11 @@ private fun StatsMainView(
                     color = CardSurfaceColor,
                     border = BorderStroke(1.dp, CardBorderColor)
                 ) {
-                    val emotion = stats.topEmotion ?: Emotion.HAPPINESS
-                    val color = getEmotionColor(emotion)
-                    val emoji = getEmotionEmoji(emotion)
-                    val emotionName = emotion.name.lowercase().replaceFirstChar { it.uppercase() }
+                    //sin check-ins no hay emocion principal: se dice, no se inventa una
+                    val emotion = stats.topEmotion
+                    val color = emotion?.let { getEmotionColor(it) } ?: TextColor.copy(alpha = 0.3f)
+                    val emoji = emotion?.let { getEmotionEmoji(it) } ?: "—"
+                    val emotionName = emotion?.let { emotionLabel(it) } ?: "No check-ins yet"
 
                     Row(
                         modifier = Modifier
@@ -605,24 +685,10 @@ private fun StatsMainView(
                                     fontSize = 11.sp
                                 )
                                 Spacer(modifier = Modifier.width(5.dp))
-                                Box(
-                                    modifier = Modifier
-                                        .size(18.dp)
-                                        .clip(CircleShape)
-                                        .background(PrimaryColor.copy(alpha = 0.15f))
-                                        .clickable {
-                                            activeTooltip = TooltipInfo(
-                                                "Top Feeling",
-                                                "The emotion you registered most frequently across all your check-ins."
-                                            )
-                                        },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Info,
-                                        contentDescription = "Info",
-                                        tint = PrimaryColor,
-                                        modifier = Modifier.size(12.dp)
+                                InfoBadge {
+                                    activeTooltip = TooltipInfo(
+                                        "Top Feeling",
+                                        "The emotion you registered most often across your daily check-ins."
                                     )
                                 }
                             }
@@ -687,13 +753,22 @@ private fun StatsMainView(
                         }
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
-                            Text(
-                                text = "Check-ins",
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontFamily = FigtreeFontFamily,
-                                color = TextColor.copy(alpha = 0.65f),
-                                fontSize = 11.sp
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "Check-ins",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontFamily = FigtreeFontFamily,
+                                    color = TextColor.copy(alpha = 0.65f),
+                                    fontSize = 11.sp
+                                )
+                                Spacer(modifier = Modifier.width(5.dp))
+                                InfoBadge {
+                                    activeTooltip = TooltipInfo(
+                                        "Check-ins",
+                                        "How many daily check-ins you have saved. Only the check-in you do once a day counts; the feeling you share after a tool does not."
+                                    )
+                                }
+                            }
                             Text(
                                 text = "${stats.totalCheckIns}",
                                 style = MaterialTheme.typography.titleMedium,
@@ -722,14 +797,16 @@ private fun StatsMainView(
             EmotionDistributionCard(
                 emotionFrequencies = stats.emotionFrequencies,
                 distribution = stats.emotionDistribution(),
-                totalRecords = stats.emotionRecordCount(),
                 onShowTooltip = { activeTooltip = it }
             )
         }
 
         //grafico de torta: frecuencia de herramientas con relieve
         item {
-            ToolsUsagePieChartCard(toolUsagePercentages = stats.toolUsagePercentages)
+            ToolsUsagePieChartCard(
+                toolUsagePercentages = stats.toolUsagePercentages,
+                onShowTooltip = { activeTooltip = it }
+            )
         }
     }
 
@@ -757,21 +834,40 @@ private fun StatsMainView(
                     Text("OK", color = PrimaryColor, fontWeight = FontWeight.SemiBold)
                 }
             },
-            containerColor = Color(0xFFFFF9EE),
+            containerColor = BackgroundColor,
             shape = RoundedCornerShape(20.dp)
         )
     }
 }
 
-//grafico de barras para el journey emocional de la semana con escala visible de 1 a 5 y tipografia oficial
+//boton (i) de cada tarjeta: abre el dialogo que explica que muestra
+@Composable
+private fun InfoBadge(onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(20.dp)
+            .clip(CircleShape)
+            .background(PrimaryColor.copy(alpha = 0.15f))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = Icons.Default.Info,
+            contentDescription = "Info",
+            tint = PrimaryColor,
+            modifier = Modifier.size(14.dp)
+        )
+    }
+}
+
 @Composable
 private fun WeeklyEmotionJourneyCard(
     weeklyIntensities: Map<String, Float>,
     weeklyEmotions: Map<String, Emotion>,
     onShowTooltip: (TooltipInfo) -> Unit = {}
 ) {
-    //orden fijo de hace 6 dias hasta hoy, sin depender del orden del mapa que llega de firestore o del cache
-    val dayLabels = StatsCalculator.lastSevenDayLabels()
+    //hoy y los 6 dias anteriores; los datos se buscan por fecha, sin depender del orden del mapa del cache
+    val weekDays = StatsCalculator.lastSevenDays()
 
     Card(
         modifier = Modifier
@@ -798,26 +894,12 @@ private fun WeeklyEmotionJourneyCard(
                             color = TextColor
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .size(20.dp)
-                                .clip(CircleShape)
-                                .background(PrimaryColor.copy(alpha = 0.15f))
-                                .clickable {
-                                    onShowTooltip(
-                                        TooltipInfo(
-                                            "Weekly Emotion Journey",
-                                            "Shows the dominant emotion and its highest intensity recorded for each day of the past week."
-                                        )
-                                    )
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Info,
-                                contentDescription = "Info",
-                                tint = PrimaryColor,
-                                modifier = Modifier.size(14.dp)
+                        InfoBadge {
+                            onShowTooltip(
+                                TooltipInfo(
+                                    "Weekly Emotion Journey",
+                                    "Today and the 6 days before it. Each bar is the emotion you recorded most that day, at the highest intensity you gave it."
+                                )
                             )
                         }
                     }
@@ -846,11 +928,11 @@ private fun WeeklyEmotionJourneyCard(
                     .height(165.dp),
                 verticalAlignment = Alignment.Bottom
             ) {
-                //eje Y con numeros del 5 al 1
+                //eje Y con numeros del 5 al 1; arriba deja el mismo espacio del emoji para que el 5 quede a la altura de la barra mas alta
                 Column(
                     modifier = Modifier
                         .fillMaxHeight()
-                        .padding(end = 8.dp, bottom = 24.dp),
+                        .padding(end = 8.dp, top = EMOJI_SPACE - 8.dp, bottom = 24.dp),
                     verticalArrangement = Arrangement.SpaceBetween,
                     horizontalAlignment = Alignment.End
                 ) {
@@ -874,9 +956,9 @@ private fun WeeklyEmotionJourneyCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.Bottom
                 ) {
-                    for (day in dayLabels) {
-                        val emotion = weeklyEmotions[day]
-                        val intensity = weeklyIntensities[day] ?: 0f
+                    for (day in weekDays) {
+                        val emotion = weeklyEmotions[day.key]
+                        val intensity = weeklyIntensities[day.key] ?: 0f
                         val hasEntry = intensity > 0f && emotion != null
                         val barColor = if (emotion != null) getEmotionColor(emotion) else PrimaryColor
                         val emoji = if (emotion != null) getEmotionEmoji(emotion) else ""
@@ -884,62 +966,75 @@ private fun WeeklyEmotionJourneyCard(
 
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
                         ) {
-                            if (hasEntry && emoji.isNotBlank()) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(34.dp)
-                                        .drawBehind {
-                                            drawCircle(
-                                                brush = Brush.radialGradient(
-                                                    colors = listOf(
-                                                        barColor.copy(alpha = 0.75f),
-                                                        barColor.copy(alpha = 0.25f),
-                                                        Color.Transparent
-                                                    ),
-                                                    radius = 18.dp.toPx()
-                                                ),
-                                                radius = 18.dp.toPx()
-                                            )
-                                        },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = emoji,
-                                        fontSize = 20.sp
-                                    )
-                                }
-                            } else {
-                                Box(modifier = Modifier.size(34.dp))
-                            }
-
-                            Spacer(modifier = Modifier.height(4.dp))
-
-                            //barra de altura proporcional al nivel 1..5 con relieve
-                            Box(
+                            //la barra se mide sobre el espacio que queda: la de nivel 5 deja lugar al emoji y a la etiqueta
+                            BoxWithConstraints(
                                 modifier = Modifier
-                                    .width(22.dp)
-                                    .fillMaxHeight(fraction = if (hasEntry) intensityRatio.coerceAtLeast(0.12f) else 0.08f)
-                                    .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp, bottomStart = 4.dp, bottomEnd = 4.dp))
-                                    .background(
-                                        if (hasEntry) {
-                                            Brush.verticalGradient(
-                                                colors = listOf(barColor, barColor.copy(alpha = 0.72f))
-                                            )
-                                        } else {
-                                            Brush.verticalGradient(
-                                                colors = listOf(Color(0xFFEADBCE), Color(0xFFDFCCBC))
+                                    .weight(1f)
+                                    .fillMaxWidth(),
+                                contentAlignment = Alignment.BottomCenter
+                            ) {
+                                val barMaxHeight = maxHeight - EMOJI_SPACE
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    if (hasEntry && emoji.isNotBlank()) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(34.dp)
+                                                .drawBehind {
+                                                    drawCircle(
+                                                        brush = Brush.radialGradient(
+                                                            colors = listOf(
+                                                                barColor.copy(alpha = 0.75f),
+                                                                barColor.copy(alpha = 0.25f),
+                                                                Color.Transparent
+                                                            ),
+                                                            radius = 18.dp.toPx()
+                                                        ),
+                                                        radius = 18.dp.toPx()
+                                                    )
+                                                },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = emoji,
+                                                fontSize = 20.sp
                                             )
                                         }
+                                    } else {
+                                        Box(modifier = Modifier.size(34.dp))
+                                    }
+
+                                    Spacer(modifier = Modifier.height(4.dp))
+
+                                    //barra de altura proporcional al nivel 1..5 con relieve
+                                    Box(
+                                        modifier = Modifier
+                                            .width(22.dp)
+                                            .height(barMaxHeight * (if (hasEntry) intensityRatio.coerceAtLeast(0.12f) else 0.08f))
+                                            .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp, bottomStart = 4.dp, bottomEnd = 4.dp))
+                                            .background(
+                                                if (hasEntry) {
+                                                    Brush.verticalGradient(
+                                                        colors = listOf(barColor, barColor.copy(alpha = 0.72f))
+                                                    )
+                                                } else {
+                                                    Brush.verticalGradient(
+                                                        colors = listOf(Color(0xFFEADBCE), Color(0xFFDFCCBC))
+                                                    )
+                                                }
+                                            )
                                     )
-                            )
+                                }
+                            }
 
                             Spacer(modifier = Modifier.height(6.dp))
 
                             //etiqueta del dia con tipografia oficial
                             Text(
-                                text = day.take(3),
+                                text = day.label,
                                 style = MaterialTheme.typography.bodySmall,
                                 fontFamily = FigtreeFontFamily,
                                 fontSize = 11.sp,
@@ -960,7 +1055,6 @@ private fun WeeklyEmotionJourneyCard(
 private fun EmotionDistributionCard(
     emotionFrequencies: Map<Emotion, Int>,
     distribution: List<EmotionShare>,
-    totalRecords: Int,
     onShowTooltip: (TooltipInfo) -> Unit = {}
 ) {
     Card(
@@ -985,35 +1079,15 @@ private fun EmotionDistributionCard(
                         color = TextColor
                     )
                     Spacer(modifier = Modifier.width(6.dp))
-                    Box(
-                        modifier = Modifier
-                            .size(20.dp)
-                            .clip(CircleShape)
-                            .background(PrimaryColor.copy(alpha = 0.15f))
-                            .clickable {
-                                onShowTooltip(
-                                    TooltipInfo(
-                                        "Emotion Distribution",
-                                        "Shows the frequency count of each emotion across all check-ins rather than a flat average."
-                                    )
-                                )
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Info,
-                            contentDescription = "Info",
-                            tint = PrimaryColor,
-                            modifier = Modifier.size(14.dp)
+                    InfoBadge {
+                        onShowTooltip(
+                            TooltipInfo(
+                                "Emotion Distribution",
+                                "How often you chose each emotion in your daily check-ins, as a share of all the emotions you recorded."
+                            )
                         )
                     }
                 }
-                Text(
-                    text = if (emotionFrequencies.isEmpty()) "" else "$totalRecords check-ins",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = TextColor.copy(alpha = 0.65f),
-                    fontSize = 12.sp
-                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -1036,8 +1110,9 @@ private fun EmotionDistributionCard(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
+                                //emoji y color de la emocion, los mismos del check-in
                                 Text(
-                                    text = emotion.name.lowercase().replaceFirstChar { it.uppercase() },
+                                    text = "${getEmotionEmoji(emotion)}  ${emotionLabel(emotion)}",
                                     style = MaterialTheme.typography.bodyLarge,
                                     fontWeight = FontWeight.Medium,
                                     color = TextColor,
@@ -1077,7 +1152,8 @@ private fun EmotionDistributionCard(
 //grafico de torta con distribucion porcentual de herramientas y relieve
 @Composable
 private fun ToolsUsagePieChartCard(
-    toolUsagePercentages: Map<String, Float>
+    toolUsagePercentages: Map<String, Float>,
+    onShowTooltip: (TooltipInfo) -> Unit = {}
 ) {
     val sliceColors = listOf(
         PrimaryColor,
@@ -1105,13 +1181,23 @@ private fun ToolsUsagePieChartCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
-                    Text(
-                        text = "Tools Frequency",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontFamily = SoreanFontFamily,
-                        fontWeight = FontWeight.Bold,
-                        color = TextColor
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Tools Frequency",
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = TextColor
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        InfoBadge {
+                            onShowTooltip(
+                                TooltipInfo(
+                                    "Tools Frequency",
+                                    "Share of all the times you opened a tool. Each slice is one tool and they add up to 100%."
+                                )
+                            )
+                        }
+                    }
                     Text(
                         text = "Historical distribution by % of tool usage",
                         style = MaterialTheme.typography.bodyLarge,
@@ -1239,26 +1325,12 @@ private fun ToolsUsagePieChartCard(
 @Preview(showBackground = true, name = "Stats Screen Preview")
 @Composable
 fun StatsScreenPreview() {
+    val previewDays = StatsCalculator.lastSevenDays().map { it.key }
     val sampleStats = StatsModel(
         totalCheckIns = 14,
         topEmotion = Emotion.HAPPINESS,
-        weeklyIntensities = mapOf(
-            "Mon" to 4.0f,
-            "Tue" to 3.0f,
-            "Wed" to 2.0f,
-            "Thu" to 4.0f,
-            "Fri" to 5.0f,
-            "Sat" to 0f,
-            "Sun" to 3.5f
-        ),
-        weeklyEmotions = mapOf(
-            "Mon" to Emotion.HAPPINESS,
-            "Tue" to Emotion.FEAR,
-            "Wed" to Emotion.SADNESS,
-            "Thu" to Emotion.ANGER,
-            "Fri" to Emotion.SURPRISE,
-            "Sun" to Emotion.DISGUST
-        ),
+        weeklyIntensities = previewDays.zip(listOf(4f, 3f, 2f, 4f, 5f, 0f, 3f)).toMap(),
+        weeklyEmotions = previewDays.zip(listOf(Emotion.HAPPINESS, Emotion.FEAR, Emotion.SADNESS, Emotion.ANGER, Emotion.SURPRISE)).toMap(),
         toolUsagePercentages = mapOf(
             "Breathing Pacer" to 42f,
             "Photo of the Day" to 25f,

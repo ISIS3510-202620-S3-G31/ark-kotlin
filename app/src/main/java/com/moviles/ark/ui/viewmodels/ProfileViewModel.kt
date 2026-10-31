@@ -7,10 +7,10 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
 import com.moviles.ark.domain.models.CheckInStreak
+import com.moviles.ark.domain.models.ProfileSaveStatus
 import com.moviles.ark.domain.models.UserModel
 import com.moviles.ark.domain.models.UserProfile
 import com.moviles.ark.domain.repositories.AuthRepository
-import com.moviles.ark.domain.repositories.AvatarRepository
 import com.moviles.ark.domain.repositories.MoodRepository
 import com.moviles.ark.domain.repositories.UserRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,8 +29,8 @@ class ProfileViewModel(
     private val userRepository: UserRepository,
     //check-ins del usuario para la racha
     private val moodRepository: MoodRepository? = null,
-    //avatar elegido; null en previews
-    private val avatarRepository: AvatarRepository? = null,
+    //cuantas cosas siguen guardadas solo en el telefono (SyncRepository.pendingCount), para avisar antes de cerrar sesion
+    private val pendingUploads: suspend () -> Int = { 0 },
     private val now: () -> Long = { System.currentTimeMillis() }
 ) : ViewModel() {
     //privado: solo el viewmodel lo modifica
@@ -49,7 +49,6 @@ class ProfileViewModel(
     init {
         loadCachedProfile()
         observeProfile()
-        observeAvatar()
     }
 
     //lo ultimo guardado en el telefono (sharedpreferences) se muestra de una vez mientras llegan room y firestore
@@ -75,17 +74,31 @@ class ProfileViewModel(
         }
     }
 
-    private fun observeAvatar() {
-        val repository = avatarRepository ?: return
+    //elegir un avatar de la lista; la foto subida no se borra y se puede volver a ella
+    //room cambia de una vez (la pantalla lo ve) y el repositorio lo sube a firestore cuando hay red
+    fun onAvatarSelected(avatarId: String) {
         viewModelScope.launch {
-            repository.currentAvatarId.collect { avatarId ->
-                _uiState.update { it.copy(selectedAvatarId = avatarId) }
-            }
+            userRepository.selectAvatar(avatarId).onSuccess { showPictureStatus(it) }
         }
     }
 
-    fun onAvatarSelected(avatarId: String) {
-        avatarRepository?.setAvatarId(avatarId)
+    //volver a mostrar la foto que ya subio
+    fun onPhotoSelected() {
+        viewModelScope.launch {
+            userRepository.selectPhoto()
+                .onSuccess { showPictureStatus(it) }
+                .onFailure { _uiState.update { it.copy(message = "Upload a photo first") } }
+        }
+    }
+
+    //el cambio ya se ve en la imagen; solo se avisa si no llego a la nube o si otro telefono gano
+    private fun showPictureStatus(status: ProfileSaveStatus) {
+        val message = when (status) {
+            ProfileSaveStatus.UPLOADED -> null
+            ProfileSaveStatus.PENDING_UPLOAD -> "Picture saved on this phone. It will upload when you're back online"
+            ProfileSaveStatus.CHANGED_ELSEWHERE -> userRepository.takeSyncNotice()
+        }
+        if (message != null) _uiState.update { it.copy(message = message) }
     }
 
     //trae lo ultimo de firestore (y sube un cambio que haya quedado pendiente sin internet)
@@ -99,6 +112,8 @@ class ProfileViewModel(
                     else state.copy(isLoading = false, errorMessage = "Could not load your profile, try again")
                 }
             }
+            //el sync en segundo plano pudo dejar la version de otro telefono: se avisa una vez
+            userRepository.takeSyncNotice()?.let { notice -> _uiState.update { it.copy(message = notice) } }
         }
     }
 
@@ -131,7 +146,7 @@ class ProfileViewModel(
     }
 
     fun onEditNameChange(name: String) {
-        _uiState.update { it.copy(editName = name, editError = null) }
+        _uiState.update { it.copy(editName = UserModel.limitName(name), editError = null) }
     }
 
     //el modelo limpia lo escrito para que quepa en YYYY-MM-DD (el selector de fecha ya la entrega asi)
@@ -161,7 +176,15 @@ class ProfileViewModel(
         viewModelScope.launch {
             //se guarda la fecha y la edad se calcula de ella, asi se mantiene al dia con los cumpleanos
             userRepository.updateProfile(edited.name, edited.birthDate)
-                .onSuccess { _uiState.update { it.copy(isSaving = false, isEditing = false, message = "Profile saved") } }
+                .onSuccess { status ->
+                    //se dice la verdad: subido, guardado solo en el telefono o reemplazado por un cambio de otro telefono
+                    val message = when (status) {
+                        ProfileSaveStatus.UPLOADED -> "Profile saved"
+                        ProfileSaveStatus.PENDING_UPLOAD -> "Saved on this phone. It will upload when you're back online"
+                        ProfileSaveStatus.CHANGED_ELSEWHERE -> userRepository.takeSyncNotice()
+                    }
+                    _uiState.update { it.copy(isSaving = false, isEditing = false, message = message) }
+                }
                 .onFailure { _uiState.update { it.copy(isSaving = false, editError = "Could not save your profile, try again") } }
         }
     }
@@ -169,9 +192,9 @@ class ProfileViewModel(
     //uri que devuelve el selector de fotos
     fun onAvatarPicked(uri: String) {
         viewModelScope.launch {
-            userRepository.updateAvatar(uri).onFailure {
-                _uiState.update { it.copy(message = "Could not use that photo, try another one") }
-            }
+            userRepository.updateAvatar(uri)
+                .onSuccess { showPictureStatus(it) }
+                .onFailure { _uiState.update { it.copy(message = "Could not use that photo, try another one") } }
         }
     }
 
@@ -179,7 +202,28 @@ class ProfileViewModel(
         _uiState.update { it.copy(message = null) }
     }
 
+    //si quedan cosas sin subir se pregunta antes: solo se suben cuando esta misma cuenta vuelve a entrar en este telefono
     fun onSignOutClick() {
+        viewModelScope.launch {
+            val pending = pendingUploads()
+            if (pending > 0) {
+                _uiState.update { it.copy(pendingBeforeSignOut = pending) }
+            } else {
+                signOut()
+            }
+        }
+    }
+
+    fun onConfirmSignOut() {
+        _uiState.update { it.copy(pendingBeforeSignOut = 0) }
+        signOut()
+    }
+
+    fun onDismissSignOut() {
+        _uiState.update { it.copy(pendingBeforeSignOut = 0) }
+    }
+
+    private fun signOut() {
         authRepository.logout()
         //lo guardado en el telefono es del usuario que sale
         viewModelScope.launch { userRepository.clearCachedProfile() }
@@ -196,6 +240,8 @@ class ProfileViewModel(
                 age = profile.getCalculatedAge(),
                 birthDate = profile.birthDate,
                 avatarPath = profile.avatarPath,
+                selectedAvatarId = profile.avatarId,
+                showsPhoto = profile.showsPhoto(),
                 memberSince = formatMemberSince(profile.memberSince),
                 daysWithArk = profile.daysWithArk(now()),
                 //la racha guardada solo vale si el ultimo check-in fue hoy o ayer
@@ -223,7 +269,7 @@ class ProfileViewModel(
                     authRepository = app.container.authRepository,
                     userRepository = app.container.userRepository,
                     moodRepository = app.container.moodRepository,
-                    avatarRepository = app.container.avatarRepository
+                    pendingUploads = { app.container.syncRepository.pendingCount() }
                 )
             }
         }

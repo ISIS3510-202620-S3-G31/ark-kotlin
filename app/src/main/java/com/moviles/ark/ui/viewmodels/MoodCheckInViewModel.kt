@@ -7,11 +7,10 @@ import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.AP
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.moviles.ark.domain.exceptions.AlreadyCheckedInTodayException
 import com.moviles.ark.ArkApplication
 import com.moviles.ark.domain.models.LocationStatus
 import com.moviles.ark.domain.composite.Emotion
-import com.moviles.ark.domain.composite.MoodFactory
-import com.moviles.ark.domain.composite.SingleEmotion
 import com.moviles.ark.domain.models.MoodCheckInModel
 import com.moviles.ark.domain.repositories.LocationRepository
 import com.moviles.ark.domain.repositories.MoodRepository
@@ -20,10 +19,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 class MoodCheckInViewModel(
     private val locationRepository: LocationRepository? = null,
-    private val moodRepository: MoodRepository? = null
+    private val moodRepository: MoodRepository? = null,
+    //true si hay internet al guardar, para el aviso
+    private val isOnline: () -> Boolean = { true }
 ) : ViewModel() {
     private val privateUiState = MutableStateFlow(MoodCheckInUiState())
     val uiState: StateFlow<MoodCheckInUiState> = privateUiState.asStateFlow()
@@ -41,11 +43,10 @@ class MoodCheckInViewModel(
         viewModelScope.launch {
             val hasChecked = repository.hasCheckedInToday().getOrDefault(false)
             if (hasChecked) {
+                //se bloquea de una vez; el resumen (que puede esperar la ciudad) llega despues
+                privateUiState.value = privateUiState.value.copy(isAlreadyCheckedInToday = true)
                 val latest = repository.getLatestCheckIn().getOrNull()
-                privateUiState.value = privateUiState.value.copy(
-                    isAlreadyCheckedInToday = true,
-                    existingCheckIn = latest
-                )
+                privateUiState.value = privateUiState.value.copy(existingCheckIn = latest)
             }
         }
     }
@@ -85,7 +86,7 @@ class MoodCheckInViewModel(
             Log.d("MoodCheckIn", "GPS loaded: status=${result.status}, lat=${result.latitude}, lon=${result.longitude}")
             val latitude = result.latitude ?: return@launch
             val longitude = result.longitude ?: return@launch
-            //la ciudad llega despues y solo si hay red; mientras tanto el chip muestra las coordenadas
+            //la ciudad llega despues y solo si hay red; mientras tanto el chip dice que la ubicacion se guarda
             val cityName = repository.getCityName(latitude, longitude) ?: return@launch
             val current = privateUiState.value
             if (current.latitude == latitude && current.longitude == longitude) {
@@ -100,30 +101,18 @@ class MoodCheckInViewModel(
         )
     }
 
+    //la regla de que toque elige, activa o quita una emocion vive en EmotionSelection
     fun onEmotionToggle(emotion: Emotion) {
-        val currentEmotions = privateUiState.value.selectedEmotions
-        val isAdding = !currentEmotions.contains(emotion)
-        val newEmotions = if (isAdding) {
-            currentEmotions + emotion
-        } else {
-            currentEmotions - emotion
-        }
-        val newActive = if (newEmotions.contains(emotion)) {
-            emotion
-        } else {
-            newEmotions.lastOrNull()
-        }
         privateUiState.value = privateUiState.value.copy(
-            selectedEmotions = newEmotions,
-            activeEmotion = newActive,
-            intensity = if (isAdding) SingleEmotion.DEFAULT_INTENSITY.toFloat() else privateUiState.value.intensity,
+            selection = privateUiState.value.selection.toggle(emotion),
             errorMessage = null
         )
     }
 
+    //el slider solo cambia la intensidad de la emocion activa
     fun onIntensityChange(newIntensity: Float) {
         privateUiState.value = privateUiState.value.copy(
-            intensity = newIntensity,
+            selection = privateUiState.value.selection.withActiveIntensity(newIntensity.roundToInt()),
             errorMessage = null
         )
     }
@@ -158,10 +147,11 @@ class MoodCheckInViewModel(
         }
         //el modelo arma el animo (una emocion o varias) y valida el check-in
         val checkIn = MoodCheckInModel(
-            mood = MoodFactory.fromEmotions(state.selectedEmotions, state.intensity.toInt()),
+            mood = state.selection.toMood(),
             note = state.note,
             latitude = state.latitude,
-            longitude = state.longitude
+            longitude = state.longitude,
+            cityName = state.cityName
         )
         val validationError = checkIn.validationError()
         if (validationError != null) {
@@ -181,14 +171,25 @@ class MoodCheckInViewModel(
                         isSaved = true,
                         isAlreadyCheckedInToday = true,
                         existingCheckIn = checkIn,
-                        errorMessage = null
+                        errorMessage = null,
+                        //se dice que paso: subido o guardado en el telefono hasta que vuelva la red
+                        savedNotice = if (isOnline()) SAVED_ONLINE_NOTICE else SAVED_OFFLINE_NOTICE
                     )
                     //el contador de estadisticas solo se actualiza tras la insercion exitosa en base de datos
                     onSavedCallback()
                 } else {
-                    val errorMsg = result.exceptionOrNull()?.localizedMessage ?: "Could not save check-in"
-                    Log.e("MoodCheckIn", "Save error: $errorMsg")
-                    privateUiState.value = state.copy(isLoading = false, errorMessage = errorMsg)
+                    val error = result.exceptionOrNull()
+                    Log.e("MoodCheckIn", "Save error", error)
+                    //mensajes para el usuario, sin el texto tecnico de la excepcion
+                    if (error is AlreadyCheckedInTodayException) {
+                        privateUiState.value = state.copy(
+                            isLoading = false,
+                            isAlreadyCheckedInToday = true,
+                            errorMessage = MoodCheckInModel.ALREADY_CHECKED_IN_ERROR
+                        )
+                    } else {
+                        privateUiState.value = state.copy(isLoading = false, errorMessage = "Could not save your check-in, try again")
+                    }
                 }
             }
         } else {
@@ -200,12 +201,16 @@ class MoodCheckInViewModel(
     }
 
     companion object {
+        const val SAVED_ONLINE_NOTICE = "Check-in saved"
+        const val SAVED_OFFLINE_NOTICE = "Check-in saved on this phone. It will upload when you're back online"
+
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as ArkApplication
                 MoodCheckInViewModel(
                     locationRepository = app.container.locationRepository,
-                    moodRepository = app.container.moodRepository
+                    moodRepository = app.container.moodRepository,
+                    isOnline = app.container.networkConnectivityObserver::isConnected
                 )
             }
         }

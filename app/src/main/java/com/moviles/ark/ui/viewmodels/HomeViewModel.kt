@@ -7,15 +7,16 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
-import com.moviles.ark.domain.repositories.AvatarRepository
 import com.moviles.ark.domain.repositories.UserRepository
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import com.moviles.ark.domain.adapters.WeatherServiceAdapter
+import com.moviles.ark.domain.models.Avatar
 import com.moviles.ark.domain.models.CachedRecommendation
 import com.moviles.ark.domain.models.MoodCheckInModel
 import com.moviles.ark.domain.models.RecommendationContextResolver
+import com.moviles.ark.domain.models.RecommendationReason
 import com.moviles.ark.domain.models.RecommendationDecision
 import com.moviles.ark.domain.models.ToolModel
 import com.moviles.ark.domain.models.ToolCategory
@@ -30,7 +31,9 @@ import com.moviles.ark.domain.strategies.DefaultRecommendationStrategy
 import com.moviles.ark.domain.strategies.RecommendationStrategy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
@@ -55,9 +58,9 @@ class HomeViewModel(
     //clima de afuera para la tarjeta de clima; necesita la ubicacion del telefono
     private val weatherServiceAdapter: WeatherServiceAdapter? = null,
     private val locationRepository: LocationRepository? = null,
-    //avatar elegido; null en previews
-    private val avatarRepository: AvatarRepository? = null,
-    //nombre guardado en el telefono para el saludo; null en previews
+    //true cuando hay internet; vuelve a emitir cada vez que cambia
+    private val connectivity: Flow<Boolean> = emptyFlow(),
+    //nombre guardado en el telefono para el saludo y foto de perfil; null en previews
     private val userRepository: UserRepository? = null,
     private val now: () -> Long = { System.currentTimeMillis() },
     initialTools: List<ToolModel> = ToolModel.DEFAULT_CATALOG,
@@ -90,31 +93,59 @@ class HomeViewModel(
     //arranca con el orden por defecto mientras llegan el check-in y el historial
     private var activeStrategy: RecommendationStrategy = DefaultRecommendationStrategy()
 
+    //van antes del init: kotlin inicializa en orden y, declaradas despues, volvian a 0 lo que el init ya habia puesto
+    private var lastWeatherLoadAt = 0L
+    //true si la tarjeta muestra el clima recien pedido a la api (no el guardado ni la neutral)
+    private var hasLiveWeather = false
+
     init {
         checkTodayStatus()
         loadTools()
         loadWeatherSuggestion()
         observeAvatar()
         observeUserName()
+        observeReconnection()
+    }
+
+    //vuelve la red con el home abierto: lo que fallo sin internet se pide otra vez
+    //(antes el clima esperaba 15 minutos y salir y volver al home, y el saludo sin nombre esperaba a abrir el perfil)
+    private fun observeReconnection() {
+        viewModelScope.launch {
+            var wasOnline = true
+            connectivity.collect { isConnected ->
+                if (isConnected && !wasOnline) {
+                    if (!hasLiveWeather) loadWeatherSuggestion()
+                    if (_uiState.value.userName.isBlank()) userRepository?.let { launch(Dispatchers.IO) { it.refreshProfile() } }
+                }
+                wasOnline = isConnected
+            }
+        }
     }
 
     //el clima va aparte del resolver de estrategias: no cambia el orden del catalogo, solo llena su propia tarjeta
-    //se valida la cache en disco (TTL de 1 hora) para tener clima sin red; si no hay clima o no tiene sugerencia la tarjeta no sale
+    //se valida la cache en disco (TTL de 1 hora) para tener clima sin red; si no hay clima la tarjeta queda neutral
+
     fun loadWeatherSuggestion() {
+        //la tarjeta sale de una vez con la sugerencia neutral y se cambia cuando llega el clima
+        if (_uiState.value.weatherSuggestion == null) {
+            val currentTools = _uiState.value.tools.ifEmpty { ToolModel.DEFAULT_CATALOG }
+            _uiState.update { it.copy(weatherSuggestion = WeatherSuggestionEngine.loadingSuggestion(currentTools)) }
+        }
         val adapter = weatherServiceAdapter ?: return
+        lastWeatherLoadAt = now()
         viewModelScope.launch(Dispatchers.IO) {
             val location = locationRepository?.getCurrentLocation()
             val latitude = location?.latitude
             val longitude = location?.longitude
 
-            val weather = if (latitude != null && longitude != null) {
-                adapter.getCurrentWeather(latitude, longitude).getOrNull()
-            } else {
-                adapter.getCachedWeather()
-            }
+            //sin internet la consulta falla: se usa el ultimo clima guardado si aun vale y es del mismo lugar
+            val liveWeather = if (latitude != null && longitude != null) adapter.getCurrentWeather(latitude, longitude).getOrNull() else null
+            hasLiveWeather = liveWeather != null
+            val weather = liveWeather ?: adapter.getCachedWeather(latitude, longitude)
 
             val currentTools = _uiState.value.tools.ifEmpty { ToolModel.DEFAULT_CATALOG }
             val suggestion = weather?.let { WeatherSuggestionEngine(it).suggest(currentTools) }
+                ?: WeatherSuggestionEngine.defaultNeutralSuggestion(currentTools)
 
             _uiState.update { it.copy(weatherSuggestion = suggestion) }
         }
@@ -126,13 +157,24 @@ class HomeViewModel(
         viewModelScope.launch {
             repository.observeCachedName().collect { name -> _uiState.update { it.copy(userName = name) } }
         }
+        //recien iniciada la sesion el nombre aun no esta en el telefono (antes solo llegaba al abrir perfil):
+        //se trae el perfil de firestore, o de room sin red, y el saludo cambia solo
+        if (repository.cachedProfile()?.name.isNullOrBlank()) {
+            viewModelScope.launch(Dispatchers.IO) { repository.refreshProfile() }
+        }
     }
 
+    //avatar y foto viven en room por cuenta (y en firestore); el home muestra lo mismo que la pantalla de perfil
     private fun observeAvatar() {
-        val repository = avatarRepository ?: return
+        val repository = userRepository ?: return
         viewModelScope.launch {
-            repository.currentAvatarId.collect { id ->
-                _uiState.value = _uiState.value.copy(avatarId = id)
+            repository.observeProfile().collect { profile ->
+                _uiState.update {
+                    it.copy(
+                        avatarId = profile?.avatarId ?: Avatar.DEFAULT_ID,
+                        avatarPhotoPath = profile?.visiblePhotoPath()
+                    )
+                }
             }
         }
     }
@@ -174,7 +216,7 @@ class HomeViewModel(
                 .collect { catalogTools ->
                     //solo se recomiendan y se muestran las herramientas que ya tienen pantalla
                     val rawTools = ToolModel.implemented(catalogTools)
-                    val recommendedTools = recommend(rawTools)
+                    val (recommendedTools, reason) = recommend(rawTools)
                     val selected = _uiState.value.selectedCategory
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
@@ -182,7 +224,8 @@ class HomeViewModel(
                         filteredTools = ToolModel.inCategory(recommendedTools, selected),
                         availableCategories = ToolModel.availableCategories(recommendedTools, selected),
                         //la estrategia deja primero la herramienta que recomienda
-                        recommendedTool = recommendedTools.firstOrNull()
+                        recommendedTool = recommendedTools.firstOrNull(),
+                        recommendationReason = reason
                     )
                 }
         }
@@ -223,30 +266,34 @@ class HomeViewModel(
     //el home se vuelve a mostrar: valida el estado del check-in diario y si venia de una herramienta recalcula recomendaciones
     fun onHomeShown() {
         checkTodayStatus()
+        //el home vive toda la sesion: al volver se pide el clima otra vez si ya paso lo que dura su cache
+        //(antes la tarjeta se quedaba con el clima de cuando se abrio la app, por ejemplo "Sunny" de noche)
+        if (now() - lastWeatherLoadAt >= WEATHER_REFRESH_MILLIS) loadWeatherSuggestion()
         if (!isAwayInTool) return
         isAwayInTool = false
         loadTools()
     }
 
     fun onCheckInSaved() {
+        //el home cambia a "Checked-in Today" de una vez; antes esperaba a leer el check-in (y su ciudad) y por unos
+        //segundos seguia ofreciendo el check-in del dia
+        _uiState.update { it.copy(isCheckInCompleted = true) }
         viewModelScope.launch(Dispatchers.IO) {
             val checkIn = moodRepository?.getLatestCheckIn()?.getOrNull()
-            _uiState.value = _uiState.value.copy(
-                isCheckInCompleted = true,
-                todayCheckIn = checkIn
-            )
+            _uiState.update { it.copy(isCheckInCompleted = true, todayCheckIn = checkIn) }
         }
         loadTools()
     }
 
     //online-first: con internet se decide con los datos frescos y el resultado se guarda en disco;
     //sin internet se usa lo guardado hoy y, si no hay, se decide en el telefono con lo que haya guardado
-    private suspend fun recommend(rawTools: List<ToolModel>): List<ToolModel> {
+    //devuelve el orden y por que se eligio, para que la tarjeta lo explique
+    private suspend fun recommend(rawTools: List<ToolModel>): Pair<List<ToolModel>, RecommendationReason> {
         val online = isOnline()
         if (!online) {
             val cached = recommendationRepository?.getLastRecommendation()
             val latestCheckInAt = moodRepository?.getLatestCheckIn()?.getOrNull()?.timestamp
-            if (cached != null && cached.isFresh(now(), latestCheckInAt)) return cached.applyTo(rawTools)
+            if (cached != null && cached.isFresh(now(), latestCheckInAt)) return cached.applyTo(rawTools) to cached.reason
         }
 
         val decision = resolveDecision()
@@ -257,7 +304,7 @@ class HomeViewModel(
                 CachedRecommendation(decision.reason, recommendedTools.map { it.id }, now())
             )
         }
-        return recommendedTools
+        return recommendedTools to decision.reason
     }
 
     //decide la estrategia con el ultimo check-in del usuario y las herramientas que termino
@@ -277,6 +324,8 @@ class HomeViewModel(
     companion object {
         private const val DAY_MILLIS = 24 * 60 * 60 * 1000L
         private const val CHECK_IN_PROMPT_DELAY_MILLIS = 1500L
+        //igual al tiempo que la cache del clima sirve para el mismo lugar (OpenMeteoAdapterImpl.FRESH_TTL_MILLIS)
+        private const val WEATHER_REFRESH_MILLIS = 15 * 60 * 1000L
 
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
@@ -290,7 +339,7 @@ class HomeViewModel(
                     isOnline = app.container.networkConnectivityObserver::isConnected,
                     weatherServiceAdapter = app.container.weatherServiceAdapter,
                     locationRepository = app.container.locationRepository,
-                    avatarRepository = app.container.avatarRepository,
+                    connectivity = app.container.networkConnectivityObserver.observe(),
                     userRepository = app.container.userRepository
                 )
             }

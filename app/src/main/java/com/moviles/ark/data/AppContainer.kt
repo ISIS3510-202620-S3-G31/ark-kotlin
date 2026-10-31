@@ -10,6 +10,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.firestore
 import com.google.firebase.storage.FirebaseStorage
 import com.google.firebase.storage.storage
+import com.moviles.ark.data.workers.RemotePhotoDeleteWorker
 import com.moviles.ark.R
 import com.moviles.ark.data.local.ArkDatabase
 import com.moviles.ark.data.local.daos.FeedbackDao
@@ -56,7 +57,6 @@ interface AppContainer {
     val toolInteractionRepository: ToolInteractionRepository
     val statsRepository: StatsRepository
     val photoRepository: PhotoEntryRepository
-    val avatarRepository: com.moviles.ark.domain.repositories.AvatarRepository
     val analyticsRepository: AnalyticsRepository
     val toolLatencyTracker: ToolLatencyTracker
     val screenTimeTracker: com.moviles.ark.domain.models.ScreenTimeTracker
@@ -87,38 +87,51 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val firestore: FirebaseFirestore by lazy { Firebase.firestore }
     // copia en la nube de los jpg de la foto del dia
     private val storage: FirebaseStorage by lazy { Firebase.storage }
-    override val authRepository: AuthRepository by lazy { AuthRepositoryImpl(authServiceAdapter, firestore, networkConnectivityObserver) }
-    // perfil guardado en room para verlo sin internet, con nombre y fecha sincronizados con firestore
-    override val userRepository: UserRepository by lazy { UserRepositoryImpl(context, auth, firestore, database.userDao()) }
+    override val authRepository: AuthRepository by lazy {
+        AuthRepositoryImpl(authServiceAdapter, firestore, networkConnectivityObserver, onSignedIn = { syncManager.requestSync() })
+    }
+    // perfil guardado en room para verlo sin internet, con nombre, fecha y foto de perfil sincronizados con firestore y storage
+    override val userRepository: UserRepository by lazy { UserRepositoryImpl(context, auth, firestore, storage, database.userDao(), isOnline = networkConnectivityObserver::isConnected) }
     override val locationRepository: LocationRepository by lazy { LocationRepositoryImpl(Location(context)) }
     // check-ins guardados en room al instante; el sync los sube a firestore cuando hay red
     override val moodRepository: MoodRepository by lazy {
-        MoodRepositoryImpl(auth, firestore, database.emotionCheckInDao(), onCheckInSaved = { syncManager.requestSync() })
+        MoodRepositoryImpl(
+            auth,
+            firestore,
+            database.emotionCheckInDao(),
+            onCheckInSaved = { syncManager.requestSync() },
+            resolveCityName = locationRepository::getCityName,
+            isOnline = networkConnectivityObserver::isConnected
+        )
     }
     // catalogo de herramientas en room como unica fuente de verdad, actualizado desde firestore y con copia en filesDir/tools.json
     override val toolRepository: com.moviles.ark.domain.repositories.ToolRepository by lazy {
         ToolRepositoryImpl(database.toolDao(), firestore, com.moviles.ark.data.local.ToolCatalogFileStore(context))
     }
-    // interacciones con herramientas guardadas en room; las usa la recomendacion por frecuencia del home
-    override val toolInteractionRepository: ToolInteractionRepository by lazy { ToolInteractionRepositoryImpl(database.toolRecordDao(), auth) }
+    // interacciones con herramientas: pendientes en room hasta que el sync las sube a firestore y las borra
+    // las usan la recomendacion por frecuencia del home y las estadisticas
+    override val toolInteractionRepository: ToolInteractionRepository by lazy {
+        ToolInteractionRepositoryImpl(database.toolRecordDao(), auth, firestore, onInteractionSaved = { syncManager.requestSync() })
+    }
     override val statsRepository: StatsRepository by lazy {
         StatsRepositoryImpl(
             auth = auth,
             firestore = firestore,
-            emotionCheckInDao = database.emotionCheckInDao(),
-            toolRecordDao = database.toolRecordDao(),
             statsDiskCache = com.moviles.ark.data.local.StatsDiskCache(context.cacheDir),
             statsDailyVisitDao = database.statsDailyVisitDao(),
-            onVisitRecorded = { syncManager.requestSync() }
+            onVisitRecorded = { syncManager.requestSync() },
+            syncPendingData = { syncRepository.syncPendingData() }
         )
     }
     // real photo repository with Room persistence and the public gallery (MediaStore) for the jpg files
     override val photoRepository: PhotoEntryRepository by lazy {
         //cada usuario solo ve sus fotos; sus archivos van en Pictures/Ark/User_<uid>
-        PhotoEntryRepositoryImpl(context, auth, database.photoEntryDao(), firestore, storage)
+        PhotoEntryRepositoryImpl(
+            context, auth, database.photoEntryDao(), firestore, storage,
+            onPhotoSaved = { syncManager.requestSync() },
+            onRemoteDeleteNeeded = { userId, takenAt -> RemotePhotoDeleteWorker.enqueue(context, userId, takenAt) }
+        )
     }
-    // avatar elegido, guardado en SharedPreferences
-    override val avatarRepository: com.moviles.ark.domain.repositories.AvatarRepository by lazy { com.moviles.ark.data.repositories.AvatarRepositoryImpl() }
     override val analyticsRepository: AnalyticsRepository by lazy { AnalyticsRepositoryImpl(Firebase.analytics, auth, firestore) }
     // one tracker for the whole app: the tap on a tool and its screen live in different places
     override val toolLatencyTracker: ToolLatencyTracker by lazy { ToolLatencyTracker(analyticsRepository) }
@@ -136,10 +149,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     }
     // adapter de musica ambiental para desacoplar el consumo de jamendo y cachear audios en disco
     override val musicServiceAdapter: com.moviles.ark.domain.adapters.MusicServiceAdapter by lazy {
-        com.moviles.ark.data.remote.apis.JamendoServiceAdapterImpl(
-            context = context,
-            bundledAudioUri = "android.resource://${context.packageName}/${R.raw.breathing_ambient}"
-        )
+        com.moviles.ark.data.remote.apis.JamendoServiceAdapterImpl(context = context)
     }
     override val feedbackDao: FeedbackDao by lazy { database.feedbackDao() }
     // repositorio de feedback desacoplado de Room y Firestore
@@ -158,7 +168,8 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             toolRecordDao = database.toolRecordDao(),
             auth = auth,
             bundledAudioUri = "android.resource://${context.packageName}/${R.raw.breathing_ambient}",
-            musicServiceAdapter = musicServiceAdapter
+            musicServiceAdapter = musicServiceAdapter,
+            onInteractionSaved = { syncManager.requestSync() }
         )
     }
     // scream tank: volumen del microfono medido en memoria, sin guardar audio; la sesion va a room
@@ -166,7 +177,8 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         com.moviles.ark.data.repositories.ScreamTankRepositoryImpl(
             microphoneLevelMeter = com.moviles.ark.data.local.sensors.MicrophoneLevelMeter(context),
             toolRecordDao = database.toolRecordDao(),
-            auth = auth
+            auth = auth,
+            onInteractionSaved = { syncManager.requestSync() }
         )
     }
     override val audioPlayerHelper: AudioPlayerHelper by lazy { AudioPlayerHelper(context) }
@@ -185,11 +197,15 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             toolRecordDao = database.toolRecordDao(),
             emotionCheckInDao = database.emotionCheckInDao(),
             feedbackDao = database.feedbackDao(),
-            statsDailyVisitDao = database.statsDailyVisitDao()
+            statsDailyVisitDao = database.statsDailyVisitDao(),
+            syncPendingProfile = { userRepository.syncPendingProfile() },
+            hasPendingProfile = { userRepository.hasPendingProfileChanges() }
         )
     }
     override val syncManager: SyncManager by lazy {
-        SyncManager(context, networkConnectivityObserver, syncRepository)
+        //al arrancar con red y cada vez que vuelve la conexion se trae el catalogo de herramientas: antes solo
+        //llegaba por push (FCM) y si el push no llegaba el catalogo quedaba viejo hasta el siguiente
+        SyncManager(context, networkConnectivityObserver, syncRepository, onOnline = { toolRepository.refreshTools().isSuccess })
     }
     // sensor de luz + hora del dia para recomendaciones segun el entorno; uno para toda la app
     override val environmentalSensorManager: EnvironmentalSensorManager by lazy { EnvironmentalSensorManager(context) }

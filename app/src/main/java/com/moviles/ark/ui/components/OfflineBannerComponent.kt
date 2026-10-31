@@ -23,11 +23,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.moviles.ark.ui.theme.FigtreeFontFamily
+import com.moviles.ark.ui.theme.AccentColor
+import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.theme.TextColor
 
 //banner no invasivo que se muestra en la parte superior cuando se pierde la conexion a internet
@@ -45,7 +46,7 @@ fun OfflineBannerComponent(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color(0xFFE57373))
+                .background(AccentColor)
                 .statusBarsPadding()
                 .padding(horizontal = 16.dp, vertical = 6.dp),
             contentAlignment = Alignment.Center
@@ -57,16 +58,16 @@ fun OfflineBannerComponent(
                 Icon(
                     imageVector = Icons.Default.WifiOff,
                     contentDescription = "Offline",
-                    tint = Color.White,
+                    tint = BackgroundColor,
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "You are offline • Changes will save locally",
+                    text = "You are offline",
                     style = MaterialTheme.typography.labelMedium,
                     fontFamily = FigtreeFontFamily,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
+                    color = BackgroundColor,
                     fontSize = 12.sp
                 )
             }

@@ -4,11 +4,14 @@ import android.content.Context
 import com.moviles.ark.data.remote.CrashlyticsHelper
 import com.moviles.ark.domain.adapters.MusicServiceAdapter
 import com.moviles.ark.domain.models.AmbientTrackModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -16,8 +19,7 @@ import java.net.URL
 //evita retener audios en ram para prevenir oom y permite reproducir y listar canciones en cache sin conexion
 class JamendoServiceAdapterImpl(
     private val context: Context,
-    private val apiClient: JamendoApiClient = JamendoApiClient(),
-    private val bundledAudioUri: String = ""
+    private val apiClient: JamendoApiClient = JamendoApiClient()
 ) : MusicServiceAdapter {
 
     //cache en disco; cacheDir es el estandar oficial de android para audios descargados bajo demanda con politica lru
@@ -25,96 +27,144 @@ class JamendoServiceAdapterImpl(
         if (!exists()) mkdirs()
     }
 
+    //ids que se estan descargando, para no bajar dos veces la misma pista al mismo tiempo sobre el mismo archivo
+    private val downloadsInProgress = mutableSetOf<String>()
+
     override suspend fun getAmbientTracks(limit: Int): Result<List<AmbientTrackModel>> = withContext(Dispatchers.IO) {
         runCatching {
-            val dtos = try {
-                apiClient.fetchAmbientTracks(limit)
-            } catch (e: Exception) {
-                emptyList()
-            }
+            val dtos = apiClient.fetchAmbientTracks(limit)
+            //ni con los reintentos llegaron pistas: se trata igual que sin conexion
+            if (dtos.isEmpty()) throw IOException("jamendo no devolvio pistas")
 
-            if (dtos.isNotEmpty()) {
-                dtos.map { dto ->
-                    saveTrackMetadata(dto.id, dto.name, dto.artistName, dto.duration, dto.albumImage.ifBlank { null })
-                    val cachedFile = File(audioCacheDir, "${dto.id}.mp3")
-                    val isCached = cachedFile.exists() && cachedFile.length() > 0L
-                    AmbientTrackModel(
-                        id = dto.id,
-                        title = dto.name,
-                        artist = dto.artistName,
-                        audioUrl = if (isCached) cachedFile.absolutePath else dto.audioUrl,
-                        durationSeconds = dto.duration,
-                        coverImageUrl = dto.albumImage.ifBlank { null },
-                        isAvailableOffline = isCached
-                    )
-                }
-            } else {
-                //cuando la api de jamendo no responde o no hay internet, lista todos los mp3s guardados en disco
-                listCachedTracks()
+            dtos.map { dto ->
+                AmbientTrackModel(
+                    id = dto.id,
+                    title = dto.name,
+                    artist = dto.artistName,
+                    //se guarda siempre la url remota; si la pista ya esta en cache se reproduce desde el archivo
+                    audioUrl = dto.audioUrl,
+                    durationSeconds = dto.duration,
+                    coverImageUrl = dto.albumImage.ifBlank { null },
+                    isAvailableOffline = cachedFileOf(dto.id).isUsable()
+                )
             }
         }.onFailure { error ->
-            CrashlyticsHelper.logNonFatal("JamendoServiceAdapter", "getAmbientTracks", error)
+            //sin internet es un caso esperado; solo se reportan los errores raros (por ejemplo json invalido)
+            if (error !is IOException) CrashlyticsHelper.logNonFatal("JamendoServiceAdapter", "getAmbientTracks", error)
         }
     }
 
-    override suspend fun resolveTrackAudioUri(trackId: String, remoteAudioUrl: String): String = withContext(Dispatchers.IO) {
-        val cachedFile = File(audioCacheDir, "$trackId.mp3")
-        if (cachedFile.exists() && cachedFile.length() > 0L) {
+    override suspend fun getCachedTracks(): List<AmbientTrackModel> = withContext(Dispatchers.IO) {
+        listCachedTracks()
+    }
+
+    override suspend fun resolvePlaybackUri(track: AmbientTrackModel): String = withContext(Dispatchers.IO) {
+        val cachedFile = cachedFileOf(track.id)
+        if (cachedFile.isUsable()) {
+            //se marca como usada para que la limpieza lru borre primero las que no se escuchan
             cachedFile.setLastModified(System.currentTimeMillis())
-            return@withContext cachedFile.absolutePath
+            cachedFile.absolutePath
+        } else {
+            //sin archivo local se empieza de una vez por streaming; la descarga para offline va aparte
+            track.audioUrl
         }
-
-        //si no esta en disco y viene por url remota, se descarga por streams a filesDir sin retener bytes en memoria ram
-        if (remoteAudioUrl.startsWith("http://") || remoteAudioUrl.startsWith("https://")) {
-            try {
-                val url = URL(remoteAudioUrl)
-                val connection = (url.openConnection() as HttpURLConnection).apply {
-                    connectTimeout = 8000
-                    readTimeout = 12000
-                    instanceFollowRedirects = true
-                }
-                if (connection.responseCode == HttpURLConnection.HTTP_OK) {
-                    pruneDiskCacheIfNeeded()
-                    val tempFile = File(audioCacheDir, "$trackId.tmp")
-                    connection.inputStream.use { input ->
-                        FileOutputStream(tempFile).use { output -> input.copyTo(output) }
-                    }
-                    if (tempFile.length() > 0L && tempFile.renameTo(cachedFile)) {
-                        return@withContext cachedFile.absolutePath
-                    }
-                }
-            } catch (e: Exception) {
-                CrashlyticsHelper.logNonFatal("JamendoServiceAdapter", "resolveTrackAudioUri_download", e, mapOf("track_id" to trackId))
-            }
-        }
-
-        if (bundledAudioUri.isNotBlank()) return@withContext bundledAudioUri
-        return@withContext remoteAudioUrl
     }
+
+    override suspend fun cacheTrack(track: AmbientTrackModel): AmbientTrackModel? = withContext(Dispatchers.IO) {
+        val cachedFile = cachedFileOf(track.id)
+        if (cachedFile.isUsable()) return@withContext track.copy(isAvailableOffline = true)
+        if (!track.audioUrl.startsWith("https://") && !track.audioUrl.startsWith("http://")) return@withContext null
+        //si esa pista ya se esta descargando no se abre otra descarga que escriba el mismo archivo
+        val isFirstDownload = synchronized(downloadsInProgress) { downloadsInProgress.add(track.id) }
+        if (!isFirstDownload) return@withContext null
+
+        //se descarga a un archivo .part y solo se renombra a .mp3 cuando llego completo
+        val partFile = File(audioCacheDir, "${track.id}.part")
+        try {
+            val connection = (URL(track.audioUrl).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 8000
+                readTimeout = 15000
+                instanceFollowRedirects = true
+            }
+            try {
+                if (connection.responseCode != HttpURLConnection.HTTP_OK) return@withContext null
+                val expectedBytes = connection.contentLengthLong
+                //un archivo mas grande que toda la cache borraria las demas pistas: no se guarda
+                if (expectedBytes > MAX_CACHE_SIZE_BYTES) return@withContext null
+
+                //se copia por bloques sin retener el audio en ram; si se sale de la pantalla la descarga se corta aqui
+                connection.inputStream.use { input ->
+                    FileOutputStream(partFile).use { output ->
+                        val buffer = ByteArray(BUFFER_SIZE)
+                        while (true) {
+                            ensureActive()
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            output.write(buffer, 0, read)
+                        }
+                    }
+                }
+
+                //un archivo cortado sonaria unos segundos y se detendria: solo entra a la cache si llego completo
+                val isComplete = partFile.length() > 0L && (expectedBytes <= 0L || partFile.length() == expectedBytes)
+                //se hace espacio solo cuando la pista nueva ya llego entera: si la red se cae a mitad de la descarga
+                //no se pierden pistas que ya sonaban sin internet a cambio de nada
+                if (isComplete) pruneDiskCacheIfNeeded(incomingBytes = partFile.length())
+                if (isComplete && partFile.renameTo(cachedFile)) {
+                    saveTrackMetadata(track)
+                    track.copy(isAvailableOffline = true)
+                } else {
+                    null
+                }
+            } finally {
+                connection.disconnect()
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            CrashlyticsHelper.logNonFatal("JamendoServiceAdapter", "cacheTrack_download", e, mapOf("track_id" to track.id))
+            null
+        } finally {
+            //si la descarga fallo o se cancelo no queda el archivo a medias
+            partFile.delete()
+            synchronized(downloadsInProgress) { downloadsInProgress.remove(track.id) }
+        }
+    }
+
+    private fun cachedFileOf(trackId: String) = File(audioCacheDir, "$trackId.mp3")
+
+    private fun File.isUsable() = exists() && length() > 0L
 
     //lista todas las canciones descargadas que residen fisicamente en disco para que el usuario pueda reproducirlas offline
     private fun listCachedTracks(): List<AmbientTrackModel> {
         val mp3Files = audioCacheDir.listFiles()?.filter { it.extension == "mp3" && it.length() > 0L } ?: return emptyList()
-        return mp3Files.map { file ->
+        //las escuchadas mas recientemente van primero
+        return mp3Files.sortedByDescending { it.lastModified() }.map { file ->
             val trackId = file.nameWithoutExtension
             val meta = readTrackMetadata(trackId)
             val fallback = KNOWN_TRACKS.find { it.id == trackId }
             AmbientTrackModel(
                 id = trackId,
-                title = meta?.title ?: fallback?.title ?: "Cached Track $trackId",
-                artist = meta?.artist ?: fallback?.artist ?: "Jamendo (offline)",
-                audioUrl = file.absolutePath,
-                durationSeconds = meta?.duration ?: fallback?.durationSeconds ?: 180,
+                title = meta?.title ?: fallback?.title ?: "Saved track",
+                artist = meta?.artist ?: fallback?.artist ?: "Jamendo",
+                audioUrl = meta?.audioUrl ?: file.absolutePath,
+                durationSeconds = meta?.duration ?: fallback?.durationSeconds ?: 0,
                 coverImageUrl = meta?.coverUrl ?: fallback?.coverImageUrl,
                 isAvailableOffline = true
             )
         }
     }
 
-    private fun saveTrackMetadata(trackId: String, title: String, artist: String, duration: Int, coverUrl: String?) {
+    //los datos de la pista se guardan junto al mp3 para mostrar su nombre cuando no hay internet
+    private fun saveTrackMetadata(track: AmbientTrackModel) {
         try {
-            val json = JSONObject().put("title", title).put("artist", artist).put("duration", duration).put("coverUrl", coverUrl ?: "")
-            File(audioCacheDir, "$trackId.meta").writeText(json.toString())
+            val json = JSONObject()
+                .put("title", track.title)
+                .put("artist", track.artist)
+                .put("duration", track.durationSeconds)
+                .put("coverUrl", track.coverImageUrl ?: "")
+                .put("audioUrl", track.audioUrl)
+            File(audioCacheDir, "${track.id}.meta").writeText(json.toString())
         } catch (_: Exception) { }
     }
 
@@ -124,32 +174,46 @@ class JamendoServiceAdapterImpl(
             if (!file.exists()) return null
             val json = JSONObject(file.readText())
             TrackMeta(
-                title = json.optString("title", "Cached Track $trackId"),
-                artist = json.optString("artist", "Jamendo (offline)"),
-                duration = json.optInt("duration", 180),
-                coverUrl = json.optString("coverUrl").ifBlank { null }
+                title = json.optString("title").ifBlank { "Saved track" },
+                artist = json.optString("artist").ifBlank { "Jamendo" },
+                duration = json.optInt("duration", 0),
+                coverUrl = json.optString("coverUrl").ifBlank { null },
+                audioUrl = json.optString("audioUrl").ifBlank { null }
             )
         } catch (_: Exception) { null }
     }
 
-    //politica lru en disco para no saturar el almacenamiento
-    private fun pruneDiskCacheIfNeeded() {
-        val files = audioCacheDir.listFiles()?.filter { it.extension == "mp3" } ?: return
-        if (files.size >= MAX_CACHED_TRACKS || files.sumOf { it.length() } > MAX_CACHE_SIZE_BYTES) {
-            val sortedByOldest = files.sortedBy { it.lastModified() }
-            val filesToDelete = sortedByOldest.take(files.size - MAX_CACHED_TRACKS + 1)
-            for (file in filesToDelete) {
-                file.delete()
-                File(audioCacheDir, "${file.nameWithoutExtension}.meta").delete()
+    //politica lru en disco para no saturar el almacenamiento: borra las mas viejas hasta que quepa la nueva
+    private fun pruneDiskCacheIfNeeded(incomingBytes: Long) {
+        val allFiles = audioCacheDir.listFiles() ?: return
+        val mp3Ids = allFiles.filter { it.extension == "mp3" }.map { it.nameWithoutExtension }.toSet()
+        val activeDownloads = synchronized(downloadsInProgress) { downloadsInProgress.toSet() }
+        //restos: descargas a medias que ya no siguen (.tmp, .part) y datos de pistas que nunca se descargaron
+        allFiles.filter { file ->
+            when (file.extension) {
+                "tmp" -> true
+                "part" -> file.nameWithoutExtension !in activeDownloads
+                "meta" -> file.nameWithoutExtension !in mp3Ids
+                else -> false
             }
+        }.forEach { it.delete() }
+
+        val mp3Files = allFiles.filter { it.extension == "mp3" }.sortedBy { it.lastModified() }.toMutableList()
+        var totalBytes = mp3Files.sumOf { it.length() }
+        while (mp3Files.isNotEmpty() && (mp3Files.size >= MAX_CACHED_TRACKS || totalBytes + incomingBytes > MAX_CACHE_SIZE_BYTES)) {
+            val oldest = mp3Files.removeAt(0)
+            totalBytes -= oldest.length()
+            oldest.delete()
+            File(audioCacheDir, "${oldest.nameWithoutExtension}.meta").delete()
         }
     }
 
-    private data class TrackMeta(val title: String, val artist: String, val duration: Int, val coverUrl: String?)
+    private data class TrackMeta(val title: String, val artist: String, val duration: Int, val coverUrl: String?, val audioUrl: String?)
 
     companion object {
         private const val MAX_CACHED_TRACKS = 6
         private const val MAX_CACHE_SIZE_BYTES = 25 * 1024 * 1024L
+        private const val BUFFER_SIZE = 64 * 1024
 
         //pistas conocidas de respaldo para resolver nombres offline si el archivo meta no existe
         private val KNOWN_TRACKS = listOf(

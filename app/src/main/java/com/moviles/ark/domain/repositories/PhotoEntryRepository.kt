@@ -12,8 +12,11 @@ interface PhotoEntryRepository {
 
     //guarda la foto que entrego la camara; sourceUri es la direccion de la foto como texto
     suspend fun savePhoto(sourceUri: String, caption: String, takenAt: Long): Result<PhotoEntryModel>
-    //elimina la foto del almacenamiento local y de la base de datos
+    //elimina la foto del almacenamiento local y de la base de datos; la copia de la nube se borra cuando haya red
     suspend fun deletePhoto(photoId: Long): Result<Unit>
+    //borra la copia de la nube (jpg en storage y documento en firestore) de una foto ya borrada en el telefono
+    //falla si no hay red o no es la cuenta duena, para que el worker lo reintente
+    suspend fun deleteRemoteCopy(userId: String, takenAt: Long): Result<Unit> = Result.success(Unit)
     //trae de firestore las fotos de ese rango que no esten en el telefono (otro telefono o app reinstalada)
     //sin red no hace nada: se queda con lo que ya hay en room
     suspend fun refreshFromCloud(fromMillis: Long, toMillis: Long)

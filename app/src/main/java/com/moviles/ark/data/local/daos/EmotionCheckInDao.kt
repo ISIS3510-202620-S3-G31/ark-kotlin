@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.Query
 import com.moviles.ark.data.local.entities.CheckInEntity
 import com.moviles.ark.data.remote.CrashlyticsHelper
+import com.moviles.ark.domain.models.MoodCheckInModel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 
@@ -26,21 +27,6 @@ interface EmotionCheckInDao {
                 action = "insertCheckIn",
                 throwable = e,
                 extraKeys = mapOf("timestamp" to checkIn.timestamp)
-            )
-            throw e
-        }
-    }
-
-    //todos los check-ins, del mas nuevo al mas viejo
-    @Query("SELECT * FROM mood_checkins ORDER BY timestamp DESC")
-    fun getCheckInsRaw(): Flow<List<CheckInEntity>>
-
-    fun getCheckIns(): Flow<List<CheckInEntity>> {
-        return getCheckInsRaw().catch { e ->
-            CrashlyticsHelper.logNonFatal(
-                componentName = "EmotionCheckInDao",
-                action = "getCheckIns",
-                throwable = e
             )
             throw e
         }
@@ -78,7 +64,7 @@ interface EmotionCheckInDao {
     }
 
     //el ultimo check-in del usuario; el home lo lee de aqui para funcionar sin internet
-    @Query("SELECT * FROM mood_checkins WHERE userId = :userId ORDER BY timestamp DESC LIMIT 1")
+    @Query("SELECT * FROM mood_checkins WHERE userId = :userId AND $DAILY_ONLY ORDER BY timestamp DESC LIMIT 1")
     suspend fun getLatestCheckInRaw(userId: String): CheckInEntity?
 
     suspend fun getLatestCheckIn(userId: String): CheckInEntity? {
@@ -95,7 +81,7 @@ interface EmotionCheckInDao {
     }
 
     //cuantos check-ins tiene el usuario desde una fecha; con 0 desde el inicio del dia todavia no ha hecho el de hoy
-    @Query("SELECT COUNT(*) FROM mood_checkins WHERE userId = :userId AND timestamp >= :fromMillis")
+    @Query("SELECT COUNT(*) FROM mood_checkins WHERE userId = :userId AND timestamp >= :fromMillis AND $DAILY_ONLY")
     suspend fun countCheckInsSince(userId: String, fromMillis: Long): Int
 
     //los que faltan por subir a firestore; solo los del usuario con sesion, porque se suben a su carpeta
@@ -116,6 +102,19 @@ interface EmotionCheckInDao {
     }
 
     //despues de subirlos, se marcan como sincronizados
+    //fechas de los check-ins diarios del usuario guardados en el telefono (incluye los que aun no se suben)
+    @Query("SELECT timestamp FROM mood_checkins WHERE userId = :userId AND timestamp >= :fromMillis AND $DAILY_ONLY")
+    suspend fun getDailyTimestampsSince(userId: String, fromMillis: Long): List<Long>
+
+    //ciudad que llego despues (el check-in se guardo sin red); isSynced = 0 para que el sync la suba al mismo documento
+    @Query("UPDATE mood_checkins SET cityName = :cityName, isSynced = 0 WHERE userId = :userId AND timestamp = :timestamp")
+    suspend fun updateCityName(userId: String, timestamp: Long, cityName: String)
+
+    //despues de subir un check-in: solo queda sincronizado si la ciudad no cambio mientras subia;
+    //si llego la ciudad en ese momento, la fila sigue pendiente y el siguiente sync la sube
+    @Query("UPDATE mood_checkins SET isSynced = 1 WHERE id = :id AND cityName IS :uploadedCityName")
+    suspend fun markAsSyncedIfUnchanged(id: Long, uploadedCityName: String?)
+
     @Query("UPDATE mood_checkins SET isSynced = 1 WHERE id IN (:ids)")
     suspend fun markAsSyncedRaw(ids: List<Long>)
 
@@ -132,5 +131,9 @@ interface EmotionCheckInDao {
             throw e
         }
     }
-}
 
+    companion object {
+        //los check-ins que guardaba el feedback viejo no son el check-in del dia: no bloquean, no cuentan
+        const val DAILY_ONLY = "note NOT LIKE '${MoodCheckInModel.POST_TOOL_NOTE_PREFIX}%'"
+    }
+}

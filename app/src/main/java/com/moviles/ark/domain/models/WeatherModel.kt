@@ -29,7 +29,8 @@ data class WeatherModel(
 }
 
 //que tiene el clima de especial; el home lo usa para el icono de la tarjeta
-enum class WeatherCondition { RAINY, COLD, SUNNY }
+//NEUTRAL = nublado y templado, o sin datos del clima
+enum class WeatherCondition { RAINY, COLD, SUNNY, NEUTRAL }
 
 //herramienta que sugiere el clima y el motivo que se muestra en el home
 data class WeatherSuggestion(

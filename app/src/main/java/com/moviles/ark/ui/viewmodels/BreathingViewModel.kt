@@ -51,112 +51,124 @@ class BreathingViewModel(
     private var phaseStartRealtime: Long = 0L
     private var sessionStartRealtime: Long = 0L
 
+    //carga de la pista elegida y descarga para offline en curso; se cancelan al cambiar de pista
+    private var playbackJob: Job? = null
+    private var offlineCacheJob: Job? = null
+    //pista que tiene cargada el reproductor, para reanudarla desde donde iba
+    private var loadedTrackId: String? = null
+
     init {
+        //la pista de la app es la unica predeterminada: suena de una vez, con o sin internet
+        breathingRepository?.defaultTrack?.let { track ->
+            _uiState.update { it.copy(ambientTracks = listOf(track), defaultTrackId = track.id, selectedTrack = track) }
+        }
         loadAmbientTracks()
     }
 
-    //carga las canciones relajantes desde el repositorio de respiracion (jamendo)
+    //carga las canciones relajantes desde el repositorio de respiracion (jamendo o, sin conexion, la cache)
     fun loadAmbientTracks() {
-        if (breathingRepository == null) return
+        val repository = breathingRepository ?: return
+        if (_uiState.value.isLoadingTracks) return
 
-        _uiState.update { it.copy(isLoadingMusic = true) }
+        _uiState.update { it.copy(isLoadingTracks = true, tracksLoadFailed = false) }
         viewModelScope.launch {
-            val result = breathingRepository.getAmbientTracks()
-            result.onSuccess { tracks ->
-                _uiState.update { current ->
-                    current.copy(
-                        ambientTracks = tracks,
-                        selectedTrack = current.selectedTrack ?: tracks.firstOrNull(),
-                        isLoadingMusic = false
-                    )
-                }
-            }
-            result.onFailure {
-                _uiState.update { it.copy(isLoadingMusic = false) }
+            val catalog = repository.getAmbientTracks()
+            _uiState.update { current ->
+                current.copy(
+                    ambientTracks = catalog.tracks,
+                    //la pista elegida se conserva aunque cambie la lista; si no habia, la primera (la de la app)
+                    selectedTrack = catalog.tracks.firstOrNull { it.id == current.selectedTrack?.id }
+                        ?: current.selectedTrack
+                        ?: catalog.tracks.firstOrNull(),
+                    isLoadingTracks = false,
+                    tracksLoadFailed = !catalog.isOnline
+                )
             }
         }
     }
 
-    //reproduce o pausa la musica ambiental
+    //boton de play/pausa de la musica: pausa la que suena o reproduce la elegida
     fun toggleMusic() {
-        val currentState = _uiState.value
-        val track = currentState.selectedTrack ?: currentState.ambientTracks.firstOrNull() ?: return
-
-        if (currentState.isMusicPlaying) {
-            audioPlayerHelper?.pause()
-            _uiState.update { it.copy(isMusicPlaying = false) }
-        } else {
-            _uiState.update { it.copy(isMusicPlaying = true, selectedTrack = track) }
-            playTrack(track)
-        }
-    }
-
-    //cambia de cancion seleccionada
-    fun selectTrack(track: AmbientTrackModel) {
-        val wasPlaying = _uiState.value.isMusicPlaying
-        _uiState.update { it.copy(selectedTrack = track) }
-
-        if (wasPlaying) {
-            playTrack(track)
-        }
-    }
-
-    //reproduce una pista; si falla (por ejemplo sin internet) pasa a la pista que viene en la app )
-    private fun playTrack(track: AmbientTrackModel) {
-        viewModelScope.launch {
-            val audioUrl = breathingRepository?.resolveTrackAudio(track) ?: track.audioUrl
-            audioPlayerHelper?.playUrl(
-            url = audioUrl,
-            onPlaybackStateChanged = { isPlaying ->
-                _uiState.update { it.copy(isMusicPlaying = isPlaying) }
-            },
-            onError = { playOfflineTrackInsteadOf(track) }
-            )
-        }
-    }
-
-    private fun playOfflineTrackInsteadOf(failedTrack: AmbientTrackModel) {
-        val offlineTrack = _uiState.value.ambientTracks.firstOrNull { it.isAvailableOffline } ?: return
-        //si la que fallo ya era la de la app no se reintenta, para no quedar en un ciclo
-        if (failedTrack.isAvailableOffline) return
-        _uiState.update { it.copy(selectedTrack = offlineTrack, isMusicPlaying = true) }
-        playTrack(offlineTrack)
-    }
-
-    //pasa a la siguiente cancion de la lista
-    fun nextTrack() {
-        val tracks = _uiState.value.ambientTracks
-        if (tracks.isEmpty()) return
-
-        val currentIndex = tracks.indexOfFirst { it.id == _uiState.value.selectedTrack?.id }
-        val nextIndex = if (currentIndex in 0 until tracks.size - 1) currentIndex + 1 else 0
-        selectTrack(tracks[nextIndex])
-    }
-
-    //vuelve a la cancion anterior de la lista
-    fun previousTrack() {
-        val tracks = _uiState.value.ambientTracks
-        if (tracks.isEmpty()) return
-
-        val currentIndex = tracks.indexOfFirst { it.id == _uiState.value.selectedTrack?.id }
-        val prevIndex = if (currentIndex > 0) currentIndex - 1 else tracks.size - 1
-        selectTrack(tracks[prevIndex])
-    }
-
-    //muestra u oculta la hoja inferior con las canciones
-    fun toggleTrackSelector() {
-        _uiState.update { it.copy(showTrackSelector = !it.showTrackSelector) }
-    }
-
-    //toque sobre una pista de la hoja: si es la que esta sonando se pausa; si no, se cambia y se reproduce
-    fun onTrackTapped(track: AmbientTrackModel) {
         val state = _uiState.value
-        if (track.id == state.selectedTrack?.id && state.isMusicPlaying) {
-            toggleMusic()
-            return
+        val track = state.selectedTrack ?: state.ambientTracks.firstOrNull() ?: return
+        if (state.isMusicActive) pauseMusic() else playTrack(track)
+    }
+
+    //toque sobre una pista de la hoja: la elegida se pausa o reanuda; otra pista se cambia y empieza a sonar
+    fun onTrackTapped(track: AmbientTrackModel) {
+        if (track.id == _uiState.value.selectedTrack?.id) toggleMusic() else playTrack(track)
+    }
+
+    private fun pauseMusic() {
+        //si todavia estaba cargando se cancela para que no empiece a sonar despues de la pausa
+        playbackJob?.cancel()
+        audioPlayerHelper?.pause()
+        _uiState.update { it.copy(isMusicPlaying = false, isTrackBuffering = false) }
+    }
+
+    //reproduce la pista en bucle hasta que el usuario la pause, elija otra o salga de la pantalla
+    private fun playTrack(track: AmbientTrackModel) {
+        val audioPlayer = audioPlayerHelper ?: return
+        playbackJob?.cancel()
+        if (track.id != loadedTrackId) {
+            //la pista anterior se calla de una vez para que no siga avisando que suena mientras carga la nueva
+            audioPlayer.pause()
         }
-        selectTrack(track)
-        if (!state.isMusicPlaying) toggleMusic()
+        //solo se descarga para offline la pista que se esta escuchando
+        if (track.id != _uiState.value.selectedTrack?.id) offlineCacheJob?.cancel()
+        _uiState.update {
+            it.copy(selectedTrack = track, isMusicPlaying = false, isTrackBuffering = true, unplayableTrackId = null)
+        }
+
+        //la misma pista que estaba en pausa sigue desde donde iba
+        if (track.id == loadedTrackId && audioPlayer.resume()) return
+
+        playbackJob = viewModelScope.launch {
+            val audioUrl = breathingRepository?.resolveTrackAudio(track) ?: track.audioUrl
+            loadedTrackId = track.id
+            audioPlayer.playUrl(
+                url = audioUrl,
+                onPlaybackStateChanged = { isPlaying ->
+                    _uiState.update { it.copy(isMusicPlaying = isPlaying, isTrackBuffering = false) }
+                },
+                onError = { onTrackPlaybackFailed(track) }
+            )
+            //mientras suena por streaming se guarda en la cache del disco para que quede disponible sin internet
+            if (!track.isAvailableOffline) saveTrackForOffline(track)
+        }
+    }
+
+    private fun saveTrackForOffline(track: AmbientTrackModel) {
+        val repository = breathingRepository ?: return
+        if (offlineCacheJob?.isActive == true) return
+        offlineCacheJob = viewModelScope.launch {
+            repository.saveTrackForOffline(track) ?: return@launch
+            //la pista ya suena sin internet; para hacerle espacio la cache pudo borrar otras mas viejas,
+            //asi que se vuelven a marcar todas segun lo que de verdad quedo guardado
+            val offlineIds = repository.offlineTrackIds()
+            _uiState.update { current ->
+                current.copy(
+                    ambientTracks = current.ambientTracks.map { it.copy(isAvailableOffline = it.id in offlineIds) },
+                    selectedTrack = current.selectedTrack?.let { it.copy(isAvailableOffline = it.id in offlineIds) }
+                )
+            }
+        }
+    }
+
+    //no se pudo reproducir (por ejemplo se perdio la conexion en pleno streaming): se avisa en su fila y no se cambia sola
+    private fun onTrackPlaybackFailed(track: AmbientTrackModel) {
+        loadedTrackId = null
+        _uiState.update { it.copy(isMusicPlaying = false, isTrackBuffering = false, unplayableTrackId = track.id) }
+    }
+
+    //abre la hoja con las pistas; si la ultima carga fallo (por ejemplo se abrio sin internet) se vuelve a intentar
+    fun openTrackSelector() {
+        _uiState.update { it.copy(showTrackSelector = true) }
+        if (_uiState.value.tracksLoadFailed) loadAmbientTracks()
+    }
+
+    fun dismissTrackSelector() {
+        _uiState.update { it.copy(showTrackSelector = false) }
     }
 
     fun togglePlayPause() {
@@ -170,11 +182,14 @@ class BreathingViewModel(
     fun start() {
         if (_uiState.value.isRunning) return
 
-        val currentPhase = if (_uiState.value.phase == BreathingPhase.READY) {
+        val isFirstPhase = _uiState.value.phase == BreathingPhase.READY
+        val currentPhase = if (isFirstPhase) {
             BreathingPhase.INHALE
         } else {
             _uiState.value.phase
         }
+        //la primera inhalacion tambien vibra; al reanudar una pausa la etapa sigue y no se repite
+        if (isFirstPhase) hapticFeedback?.vibratePhaseCue(BreathingPhase.INHALE)
 
         val now = SystemClock.elapsedRealtime()
         phaseStartRealtime = now - phaseElapsedMs
@@ -199,9 +214,9 @@ class BreathingViewModel(
         _uiState.value = _uiState.value.copy(isRunning = false)
     }
 
+    //reiniciar vuelve el circulo al inicio dentro de la misma sesion: no la termina ni la abandona
     fun reset() {
-        //reiniciar cierra la sesion actual: si termino algun ciclo, se guarda antes de borrar el contador
-        finishSession()
+        pause()
         phaseElapsedMs = 0L
         _uiState.value = _uiState.value.copy(
             phase = BreathingPhase.READY,
@@ -330,9 +345,8 @@ class BreathingViewModel(
 
         //el modelo dice que fase sigue y si se completo un ciclo
         val (nextPhase, isCycleCompleted) = _uiState.value.pattern.next(currentPhase)
-        if (BreathingPattern.cuesExhale(currentPhase, nextPhase)) {
-            hapticFeedback?.vibrateExhaleCue()
-        }
+        //cada etapa que empieza vibra, tambien en cada ciclo nuevo
+        hapticFeedback?.vibratePhaseCue(nextPhase)
 
         val updatedCycles = if (isCycleCompleted) {
             _uiState.value.completedCycles + 1
@@ -355,13 +369,14 @@ class BreathingViewModel(
         toolLatencyTracker?.onToolRendered(BreathingSession.TOOL_ID)
     }
 
-    //el usuario sale de la herramienta o reinicia: si termino al menos un ciclo, se guarda la sesion en el telefono
-    fun finishSession(): Boolean {
-        val (completed, _) = finishSessionWithDuration()
-        return completed
-    }
+    //boton Finish: la sesion queda terminada; devuelve si cuenta como terminada y cuantos segundos duro
+    fun finishSession(): Pair<Boolean, Int> = endSession(finishedByUser = true)
 
-    fun finishSessionWithDuration(): Pair<Boolean, Int> {
+    //atras (boton o gesto): el usuario abandona la herramienta; devuelve cuantos segundos alcanzo a respirar
+    fun abandonSession(): Int = endSession(finishedByUser = false).second
+
+    //guarda la sesion en el telefono como terminada o abandonada; la interaccion lleva complete = true / false
+    private fun endSession(finishedByUser: Boolean): Pair<Boolean, Int> {
         pause()
         val state = _uiState.value
         val durationSeconds = (sessionRunningMs / 1000L).toInt()
@@ -369,21 +384,22 @@ class BreathingViewModel(
             completedCycles = state.completedCycles,
             durationSeconds = durationSeconds,
             timestamp = System.currentTimeMillis(),
-            pattern = BreathingSession.patternOf(state.inhaleDuration, state.holdDuration, state.exhaleDuration, state.holdPostExhaleDuration)
+            pattern = BreathingSession.patternOf(state.inhaleDuration, state.holdDuration, state.exhaleDuration, state.holdPostExhaleDuration),
+            finishedByUser = finishedByUser
         )
         //se reinicia el tiempo para que la misma sesion no se guarde dos veces
         sessionRunningMs = 0L
-        //le preguntamos al modelo si la sesion cuenta antes de guardarla
-        val isComplete = session.isComplete()
-        if (!isComplete) return Pair(false, durationSeconds)
-        val repository = breathingRepository ?: return Pair(true, durationSeconds)
-        viewModelScope.launch {
-            //NonCancellable: al salir de la pantalla el viewmodel se limpia enseguida y no debe cortar el guardado
-            withContext(NonCancellable) {
-                repository.saveSession(session)
+        //si el temporizador nunca corrio no hubo sesion: abrir y cerrar la pantalla no cuenta como abandono
+        val repository = breathingRepository
+        if (durationSeconds > 0 && repository != null) {
+            viewModelScope.launch {
+                //NonCancellable: al salir de la pantalla el viewmodel se limpia enseguida y no debe cortar el guardado
+                withContext(NonCancellable) {
+                    repository.saveSession(session)
+                }
             }
         }
-        return Pair(true, durationSeconds)
+        return Pair(session.isComplete(), durationSeconds)
     }
 
     private fun getPhaseDuration(phase: BreathingPhase): Int = _uiState.value.pattern.durationOf(phase)
