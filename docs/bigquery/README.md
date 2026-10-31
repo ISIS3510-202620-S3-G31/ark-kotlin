@@ -101,6 +101,8 @@ query*. Una corrida por colección.
    instalar las instancias de `tool_load_latency` y `screen_time`.
 4. Correr `views_bq4_and_age.sql` (BQ4 y edad de los usuarios activos; usa las vistas de los
    dos pasos anteriores).
+5. Correr `views_answers.sql` al final: escribe la respuesta de cada BQ como texto (ver
+   "Respuestas en vivo" en la sección 5).
 
 Quedan en el dataset `ark_dashboards`:
 
@@ -122,6 +124,7 @@ Quedan en el dataset `ark_dashboards`:
 | `test_accounts` (tabla) | cuentas de prueba creadas a mano en la app; se marcan con `is_test_account`, no se borran |
 | `bq4_tool_formats` | BQ4, sesiones completadas por formato, tipo de dispositivo y cuenta de prueba |
 | `bq_age_distribution` | edad de los usuarios activos en 30 días, por grupo de MinSalud y cuenta de prueba |
+| `bq_answers` | una fila con la respuesta de cada BQ (`bq1_answer` … `bq9_answer`) y la fecha del último dato |
 
 Los dos bloques "PASO 2" del final de `views_analytics.sql` ya se corrieron: `tool_load_latency`
 y `app_screen_time` leen de Firestore (llega en segundos) y de Analytics solo lo anterior a la
@@ -147,6 +150,18 @@ Colores fijos para todo el reporte (*Resource* > *Manage dimension value colors*
 Siempre separar `device_type`: el emulador corre en el Mac y no representa a un usuario; la
 respuesta se da con celulares reales.
 
+### Respuestas en vivo
+
+Un cuadro de texto de Data Studio no puede mostrar datos, así que una respuesta escrita a mano
+("Voice 54 %") queda vieja apenas llega otro dato. Por eso las respuestas no van en cuadros de
+texto: `views_answers.sql` las escribe en BigQuery y cada página las muestra con una **tabla de una
+celda** (fuente `bq_answers`, dimensión `bqN_answer`, sin métrica). En la fuente, los campos
+`*_answer` van con tipo **Text** (Data Studio los toma como fecha porque empiezan con una) y
+frescura de 1 minuto. En la tabla: sin encabezado, sin números de fila, con *Wrap text* y sin
+dimensión de rango de fechas. Cada respuesta empieza con "Updated with data up to …", la hora del
+último dato en hora de Bogotá. En los cuadros de texto solo van el título, la pregunta y las
+definiciones que no cambian.
+
 ### Página BQ1 (latencia de render de una herramienta)
 
 Fuentes `tool_load_latency` y `tool_load_latency_summary`:
@@ -157,7 +172,7 @@ Fuentes `tool_load_latency` y `tool_load_latency_summary`:
 3. Tabla con el resumen: `device_type`, `tool_id`, aperturas, p50 y p90.
    p50 = lo que espera un usuario típico; p90 = el 10 % más lento; aperturas = cuánto confiar.
    Sin p95 ni "% sobre un umbral" hasta tener ~40 aperturas por herramienta y una meta acordada.
-4. Texto con cómo leerlo y la respuesta con fecha (se actualiza a mano).
+4. Respuesta en vivo: tabla de una celda con `bq1_answer`.
 
 Pendiente cuando haya datos de la versión nueva: comparar `open_type` (primera apertura vs
 siguientes) y `entry_point`.
@@ -174,6 +189,7 @@ Flutter.
    va con agregación **Max** (con *Count* la tabla muestra 1 en todas las localidades).
 2. Control de filtro `is_synthetic` (en `false` por defecto) y control `locality`.
 3. Para gráficas por emoción o por fecha, usar `mood_emotions_by_locality`.
+4. Respuesta en vivo: tabla de una celda con `bq5_answer`.
 
 `total_checkins` cuenta check-ins; el CSV contaba emociones (eso queda en `emotion_entries`).
 La localidad sale de cruzar el punto con el polígono oficial de cada una de las 20 localidades
@@ -190,7 +206,7 @@ Fuentes `daily_screen_time`, `daily_screen_time_summary` y `app_screen_time`:
 2. Histograma: `minutes_bucket` (orden ascendente) × *Record Count* (= usuario-días), desglose
    `device_type`.
 3. Tabla del resumen: `device_type`, `day`, usuarios activos, p50 y p90 de minutos.
-4. Texto con cómo leerlo y la respuesta con fecha.
+4. Respuesta en vivo: tabla de una celda con `bq9_answer`.
 5. `weekday` × `MEDIAN(minutes)` (orden por `weekday_number`) y `start_hour` ×
    `SUM(minutes)` (orden por `start_hour`).
 
@@ -205,7 +221,7 @@ Fuente `bq4_tool_formats`:
 2. Anillo `tool_format` × `total_completions` (no `completion_percentage`: con varias filas por
    formato, sumar porcentajes da números falsos; el anillo calcula el suyo).
 3. Barras `tool_format` × `total_completions` y scorecard con el total.
-4. Texto con la respuesta y la fecha.
+4. Respuesta en vivo: tabla de una celda con `bq3_answer`.
 
 `tool_interactions` no guarda el celular, así que la vista lo toma de la apertura de la misma
 herramienta justo antes (BQ1). La foto del día cuenta una vez por usuario y día, aunque se
@@ -214,7 +230,7 @@ retome. En Kotlin ninguna herramienta registra el formato `text`, por eso no apa
 ### Página BQ Age Distribution
 
 Fuente `bq_age_distribution`: control `is_test_account` (por defecto `false`), anillo y barras
-`age_bucket` × `active_users_30d`, scorecard con el total y texto con la respuesta y la fecha.
+`age_bucket` × `active_users_30d`, scorecard con el total y la respuesta en vivo (`bq8_answer`).
 Activo = al menos un check-in o una herramienta en los últimos 30 días.
 
 Los campos nuevos (`entry_point`, `first_open`, `app_screen_time`, `user_id`, las colecciones
@@ -263,7 +279,8 @@ la app no manda `is_synthetic`, así que el filtro tiene que ser `IS NOT TRUE`; 
 descartan todas las visitas reales. Las tres traen `device_type` (sale del `deviceModel` que manda la app; los documentos
 viejos sin modelo quedan como `Unknown`) y la página tiene un control `device_type` en
 `Real phone`: sin él, la tarjeta "Avg per user" suma el promedio del emulador y el de los
-celulares.
+celulares. La respuesta en vivo de la página es `bq7_answer` (semana más
+reciente).
 
 Para verlo en tiempo real: con el dashboard abierto, entrar a Stats en un celular con internet;
 la visita llega a Firestore en segundos y el dashboard la muestra en la siguiente relectura
