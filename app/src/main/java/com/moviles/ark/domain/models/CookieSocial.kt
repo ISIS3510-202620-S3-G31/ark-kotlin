@@ -90,8 +90,12 @@ data class SharedCookie(
     fun isExpired(now: Long): Boolean = now >= expiresAt
 
     //dias que le quedan para "Expires in N days": entre 1 y 7 aunque el reloj de los dos telefonos no coincida
-    fun daysLeft(now: Long): Int =
-        (((expiresAt - now) + CookieGifts.DAY_MS - 1) / CookieGifts.DAY_MS).toInt().coerceIn(1, CookieGifts.EXPIRY_DAYS)
+    fun daysLeft(now: Long): Int {
+        val millisLeft = expiresAt - now
+        //se redondea hacia arriba: si queda medio dia se muestra 1
+        val daysRoundedUp = (millisLeft + CookieGifts.DAY_MS - 1) / CookieGifts.DAY_MS
+        return daysRoundedUp.toInt().coerceIn(1, CookieGifts.EXPIRY_DAYS)
+    }
 }
 
 //regalo enviado: guardado solo en el telefono del remitente, que solo sabe que llego ("Sent ✓")
@@ -155,12 +159,29 @@ object CookieGifts {
     //separa lo que se muestra, lo vencido y lo ya aceptado
     //acceptingIds: regalos que se estan aceptando ahora; siguen visibles (con el boton deshabilitado) hasta terminar
     fun splitInbox(gifts: List<SharedCookie>, cookieIdsInJar: Set<String>, acceptingIds: Set<String>, now: Long): InboxView {
-        val alreadyInJar = gifts.filter { it.shareId in cookieIdsInJar && it.shareId !in acceptingIds }
-        val rest = gifts.filter { it.shareId !in cookieIdsInJar || it.shareId in acceptingIds }
-        val (expired, visible) = rest.partition { it.isExpired(now) && it.shareId !in acceptingIds }
-        return InboxView(visible = visible.sortedByDescending { it.sentAt }, expired = expired, alreadyInJar = alreadyInJar)
+        val visible = mutableListOf<SharedCookie>()
+        val expired = mutableListOf<SharedCookie>()
+        val alreadyInJar = mutableListOf<SharedCookie>()
+        for (gift in gifts) {
+            val isBeingAccepted = gift.shareId in acceptingIds
+            val isInJar = gift.shareId in cookieIdsInJar
+            if (isBeingAccepted) {
+                //mientras se acepta se sigue mostrando, aunque venza o ya este en room
+                visible.add(gift)
+            } else if (isInJar) {
+                alreadyInJar.add(gift)
+            } else if (gift.isExpired(now)) {
+                expired.add(gift)
+            } else {
+                visible.add(gift)
+            }
+        }
+        val newestFirst = visible.sortedByDescending { it.sentAt }
+        return InboxView(visible = newestFirst, expired = expired, alreadyInJar = alreadyInJar)
     }
 
     //regalos que no se habian visto en esta visita (para el aviso en vivo)
-    fun newArrivals(visible: List<SharedCookie>, seenIds: Set<String>): List<SharedCookie> = visible.filter { it.shareId !in seenIds }
+    fun newArrivals(visible: List<SharedCookie>, seenIds: Set<String>): List<SharedCookie> {
+        return visible.filter { it.shareId !in seenIds }
+    }
 }

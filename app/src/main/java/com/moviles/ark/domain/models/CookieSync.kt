@@ -13,8 +13,12 @@ object CookieSync {
 
     //dos telefonos sin red crearon el mismo titulo: la galleta mas nueva recibe el sufijo
     //true si la que llega de la nube es la mas nueva (el empate se decide por id para que los dos telefonos elijan igual)
-    fun incomingIsNewer(incomingCreatedAt: Long, incomingId: String, localCreatedAt: Long, localId: String): Boolean =
-        incomingCreatedAt > localCreatedAt || (incomingCreatedAt == localCreatedAt && incomingId > localId)
+    fun incomingIsNewer(incomingCreatedAt: Long, incomingId: String, localCreatedAt: Long, localId: String): Boolean {
+        if (incomingCreatedAt > localCreatedAt) return true
+        if (incomingCreatedAt < localCreatedAt) return false
+        //se crearon en el mismo milisegundo: gana el id mayor
+        return incomingId > localId
+    }
 }
 
 //resultado de bajar los cambios de la nube al abrir el jarro

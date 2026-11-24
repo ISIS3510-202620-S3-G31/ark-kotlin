@@ -31,7 +31,9 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.util.Collections
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 //cookie jar local first: el repositorio solo orquesta
 //los datos van a room (CookieDao), la imagen comprimida (CookieImageCompressor) va al almacenamiento privado (CookiePrivateImageStore)
@@ -71,9 +73,9 @@ class CookieRepositoryImpl(
     //dos desalojos a la vez podrian borrar la misma imagen
     private val budgetMutex = Mutex()
     //borradas en esta sesion de la app: el worker de borrado puede no aparecer todavia en workmanager
-    private val deletedHere: MutableSet<String> = java.util.Collections.synchronizedSet(HashSet())
+    private val deletedHere: MutableSet<String> = Collections.synchronizedSet(HashSet())
     //un candado por galleta para no bajar dos veces la misma imagen
-    private val downloadLocks = java.util.concurrent.ConcurrentHashMap<String, Mutex>()
+    private val downloadLocks = ConcurrentHashMap<String, Mutex>()
 
     override fun observeCookies(): Flow<List<CookieModel>> {
         //sin sesion no se muestran galletas de nadie
@@ -155,9 +157,11 @@ class CookieRepositoryImpl(
         return cookieDao.observeUnsyncedCount(userId)
     }
 
+    //sin sesion o sin preferencias (pruebas) se responde true, asi no se muestra el aviso de telefono nuevo
     override fun hasDownloadedFromCloud(): Boolean {
         val userId = currentUserId() ?: return true
-        return syncPreferences?.hasDownloaded(userId) ?: true
+        val preferences = syncPreferences ?: return true
+        return preferences.hasDownloaded(userId)
     }
 
     override suspend fun pendingUploadCount(): Int = withContext(Dispatchers.IO) {
@@ -173,14 +177,19 @@ class CookieRepositoryImpl(
             val cloud = cloudStore ?: error("The cloud is not available")
             //foto de room antes de preguntarle a la nube: solo una fila que ya estaba sincronizada antes de la consulta
             //puede faltar en la nube por un borrado en otro telefono (una que se sube durante la consulta no cuenta)
-            val before = cookieDao.getAllCookies(userId)
-            val started = System.nanoTime()
-            val remote = cloud.fetchAll(userId)
-            Log.d(SYNC_TAG, "fetched ${remote.size} cookies from firestore in ${(System.nanoTime() - started) / 1_000_000} ms")
-            val result = titleMutex.withLock { mergeRemote(userId, before, remote) }
+            val cookiesBefore = cookieDao.getAllCookies(userId)
+
+            val startedAt = System.nanoTime()
+            val cloudCookies = cloud.fetchAll(userId)
+            val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
+            Log.d(SYNC_TAG, "fetched ${cloudCookies.size} cookies from firestore in $elapsedMs ms")
+
+            val result = titleMutex.withLock { mergeWithCloud(userId, cookiesBefore, cloudCookies) }
             syncPreferences?.markDownloaded(userId)
             //un titulo con sufijo queda pendiente: se pide la subida de una vez
-            if (result.renamed.isNotEmpty()) onCookieChanged()
+            if (result.renamed.isNotEmpty()) {
+                onCookieChanged()
+            }
             Log.d(SYNC_TAG, "refresh: ${result.arrived} arrived, ${result.removed} removed, ${result.renamed.size} renamed")
             result
         }.onFailure { error ->
@@ -190,32 +199,31 @@ class CookieRepositoryImpl(
     }
 
     //se llama con titleMutex tomado: los titulos no pueden cambiar mientras se resuelven los repetidos
-    private suspend fun mergeRemote(userId: String, before: List<CookieEntity>, remote: List<CookieDto>): CookieRefreshResult {
-        val skipped = pendingRemoteDeletes() + deletedHere
-        val remoteIds = remote.map { it.id }.toSet()
-        var removed = 0
-        //1. borradas en otro telefono
-        for (local in before) {
-            if (!CookieSync.deletedInOtherPhone(local.isSynced, local.id in remoteIds, local.id in skipped)) continue
-            if (cookieDao.deleteIfUnchanged(local.id, userId, local.updatedAt) > 0) {
-                if (local.hasImage) imageStore.delete(local.id)
-                removed++
-                Log.d(SYNC_TAG, "removed id=${local.id}: deleted on another phone")
-            }
-        }
-        //2. nuevas de otro telefono y cambios mas nuevos (last write wins)
+    private suspend fun mergeWithCloud(
+        userId: String,
+        cookiesBefore: List<CookieEntity>,
+        cloudCookies: List<CookieDto>,
+    ): CookieRefreshResult {
+        //las que se estan borrando de la nube no se tocan ni se traen de vuelta
+        val idsBeingDeleted = pendingRemoteDeletes() + deletedHere
+
+        val removed = removeCookiesDeletedOnOtherPhones(userId, cookiesBefore, cloudCookies, idsBeingDeleted)
+
+        //nuevas de otro telefono y cambios mas nuevos (last write wins)
+        //los titulos se vuelven a leer de room porque se pudieron borrar galletas
         titleKeys = null
         val keys = titleKeysOf(userId)
         var arrived = 0
         val renamed = mutableListOf<Pair<String, String>>()
-        for (dto in remote) {
-            if (dto.id in skipped) continue
-            val current = cookieDao.getCookie(dto.id, userId)
-            if (current == null) {
-                insertFromCloud(userId, dto, keys, renamed)
+        for (cloudCookie in cloudCookies) {
+            if (cloudCookie.id in idsBeingDeleted) continue
+            val localCookie = cookieDao.getCookie(cloudCookie.id, userId)
+            if (localCookie == null) {
+                insertFromCloud(userId, cloudCookie, keys, renamed)
                 arrived++
-            } else if (current.isSynced && CookieSync.remoteWins(current.updatedAt, dto.updatedAt)) {
-                applyRemote(userId, current, dto, keys, renamed)
+            } else if (localCookie.isSynced && CookieSync.remoteWins(localCookie.updatedAt, cloudCookie.updatedAt)) {
+                //una galleta con cambios sin subir no se toca aqui: el sync la sube y alla se decide cual gana
+                applyCloudVersion(userId, localCookie, cloudCookie, keys, renamed)
             }
         }
         //la cache de titulos se vuelve a leer de room la proxima vez
@@ -223,63 +231,128 @@ class CookieRepositoryImpl(
         return CookieRefreshResult(arrived = arrived, renamed = renamed, removed = removed)
     }
 
+    //galletas que estaban sincronizadas y ya no estan en la nube: se borraron en otro telefono
+    private suspend fun removeCookiesDeletedOnOtherPhones(
+        userId: String,
+        cookiesBefore: List<CookieEntity>,
+        cloudCookies: List<CookieDto>,
+        idsBeingDeleted: Set<String>,
+    ): Int {
+        val cloudIds = cloudCookies.map { it.id }.toSet()
+        var removed = 0
+        for (localCookie in cookiesBefore) {
+            val deletedElsewhere = CookieSync.deletedInOtherPhone(
+                wasSynced = localCookie.isSynced,
+                existsInCloud = localCookie.id in cloudIds,
+                remoteDeletePending = localCookie.id in idsBeingDeleted,
+            )
+            if (!deletedElsewhere) continue
+            //solo se borra si no cambio desde que se leyo
+            val deletedRows = cookieDao.deleteIfUnchanged(localCookie.id, userId, localCookie.updatedAt)
+            if (deletedRows == 0) continue
+            if (localCookie.hasImage) {
+                imageStore.delete(localCookie.id)
+            }
+            removed++
+            Log.d(SYNC_TAG, "removed id=${localCookie.id}: deleted on another phone")
+        }
+        return removed
+    }
+
     //una galleta que llego de otro telefono: sin imagen local (se baja cuando haga falta)
     //si su titulo ya existe aqui, la mas nueva de las dos recibe el sufijo y queda pendiente de subir el titulo nuevo
-    private suspend fun insertFromCloud(userId: String, dto: CookieDto, keys: HashSet<String>, renamed: MutableList<Pair<String, String>>) {
-        val incoming = dto.toEntity(userId)
-        val clash = if (incoming.titleKey in keys) cookieDao.getByTitleKey(userId, incoming.titleKey) else null
-        when {
-            clash == null -> cookieDao.insertCookie(incoming)
-            CookieSync.incomingIsNewer(dto.createdAt, dto.id, clash.createdAt, clash.id) -> {
-                val finalTitle = CookieModel.uniqueTitle(dto.title, keys)
-                cookieDao.insertCookie(
-                    incoming.copy(title = finalTitle, titleKey = CookieModel.titleKeyOf(finalTitle), updatedAt = now(), isSynced = false)
-                )
-                renamed += CookieModel.cleanTitle(dto.title) to finalTitle
-                keys.add(CookieModel.titleKeyOf(finalTitle))
-                Log.d(SYNC_TAG, "title clash: incoming id=${dto.id} is newer, saved as \"$finalTitle\"")
-            }
-            else -> {
-                val finalTitle = CookieModel.uniqueTitle(clash.title, keys)
-                cookieDao.rename(clash.id, userId, finalTitle, CookieModel.titleKeyOf(finalTitle), now())
-                cookieDao.insertCookie(incoming)
-                renamed += clash.title to finalTitle
-                keys.add(CookieModel.titleKeyOf(finalTitle))
-                Log.d(SYNC_TAG, "title clash: local id=${clash.id} is newer, renamed to \"$finalTitle\"")
-            }
+    private suspend fun insertFromCloud(
+        userId: String,
+        cloudCookie: CookieDto,
+        keys: HashSet<String>,
+        renamed: MutableList<Pair<String, String>>,
+    ) {
+        val incoming = cloudCookie.toEntity(userId)
+        val sameTitleHere = if (incoming.titleKey in keys) cookieDao.getByTitleKey(userId, incoming.titleKey) else null
+
+        if (sameTitleHere == null) {
+            cookieDao.insertCookie(incoming)
+        } else if (CookieSync.incomingIsNewer(cloudCookie.createdAt, cloudCookie.id, sameTitleHere.createdAt, sameTitleHere.id)) {
+            insertIncomingWithSuffix(cloudCookie, incoming, keys, renamed)
+        } else {
+            renameLocalAndInsert(userId, sameTitleHere, incoming, keys, renamed)
         }
         keys.add(incoming.titleKey)
-        Log.d(SYNC_TAG, "arrived id=${dto.id} from another phone (hasImage=${dto.hasImage})")
+        Log.d(SYNC_TAG, "arrived id=${cloudCookie.id} from another phone (hasImage=${cloudCookie.hasImage})")
+    }
+
+    //la que llega es la mas nueva: ella recibe el sufijo y queda pendiente de subir con el titulo nuevo
+    private suspend fun insertIncomingWithSuffix(
+        cloudCookie: CookieDto,
+        incoming: CookieEntity,
+        keys: HashSet<String>,
+        renamed: MutableList<Pair<String, String>>,
+    ) {
+        val finalTitle = CookieModel.uniqueTitle(cloudCookie.title, keys)
+        val finalTitleKey = CookieModel.titleKeyOf(finalTitle)
+        val incomingRenamed = incoming.copy(title = finalTitle, titleKey = finalTitleKey, updatedAt = now(), isSynced = false)
+        cookieDao.insertCookie(incomingRenamed)
+        renamed.add(Pair(CookieModel.cleanTitle(cloudCookie.title), finalTitle))
+        keys.add(finalTitleKey)
+        Log.d(SYNC_TAG, "title clash: incoming id=${cloudCookie.id} is newer, saved as \"$finalTitle\"")
+    }
+
+    //la de este telefono es la mas nueva: ella recibe el sufijo y la que llega se guarda tal cual
+    private suspend fun renameLocalAndInsert(
+        userId: String,
+        localCookie: CookieEntity,
+        incoming: CookieEntity,
+        keys: HashSet<String>,
+        renamed: MutableList<Pair<String, String>>,
+    ) {
+        val finalTitle = CookieModel.uniqueTitle(localCookie.title, keys)
+        val finalTitleKey = CookieModel.titleKeyOf(finalTitle)
+        cookieDao.rename(localCookie.id, userId, finalTitle, finalTitleKey, now())
+        cookieDao.insertCookie(incoming)
+        renamed.add(Pair(localCookie.title, finalTitle))
+        keys.add(finalTitleKey)
+        Log.d(SYNC_TAG, "title clash: local id=${localCookie.id} is newer, renamed to \"$finalTitle\"")
     }
 
     //gano la version de la nube: se copian sus datos y se conserva la imagen local
     //si el titulo nuevo choca con otra galleta de este telefono, se le pone sufijo y queda pendiente de subir
-    private suspend fun applyRemote(
+    private suspend fun applyCloudVersion(
         userId: String,
-        current: CookieEntity,
-        dto: CookieDto,
+        localCookie: CookieEntity,
+        cloudCookie: CookieDto,
         keys: HashSet<String>,
         renamed: MutableList<Pair<String, String>>,
     ) {
-        val remoteKey = CookieModel.titleKeyOf(dto.title)
-        keys.remove(current.titleKey)
-        val clash = remoteKey in keys
-        val title = if (clash) CookieModel.uniqueTitle(dto.title, keys) else CookieModel.cleanTitle(dto.title)
-        val changed = cookieDao.applyRemote(
-            id = current.id, userId = userId, title = title, titleKey = CookieModel.titleKeyOf(title), text = dto.text,
-            state = stateOf(dto.state).name, hasImage = dto.hasImage, remoteImageUrl = dto.imageUrl.ifEmpty { null },
-            updatedAt = dto.updatedAt, seenVersion = current.updatedAt,
+        //el titulo viejo de esta galleta deja de estar ocupado
+        keys.remove(localCookie.titleKey)
+        val titleClash = CookieModel.titleKeyOf(cloudCookie.title) in keys
+        val title = if (titleClash) CookieModel.uniqueTitle(cloudCookie.title, keys) else CookieModel.cleanTitle(cloudCookie.title)
+        val titleKey = CookieModel.titleKeyOf(title)
+
+        val changedRows = cookieDao.applyRemote(
+            id = localCookie.id,
+            userId = userId,
+            title = title,
+            titleKey = titleKey,
+            text = cloudCookie.text,
+            state = stateOf(cloudCookie.state).name,
+            hasImage = cloudCookie.hasImage,
+            remoteImageUrl = cloudCookie.imageUrl.ifEmpty { null },
+            updatedAt = cloudCookie.updatedAt,
+            seenVersion = localCookie.updatedAt,
         )
-        if (changed == 0) {
-            keys.add(current.titleKey)
+        if (changedRows == 0) {
+            //la galleta cambio en este telefono mientras tanto: se queda como estaba
+            keys.add(localCookie.titleKey)
             return
         }
-        keys.add(CookieModel.titleKeyOf(title))
-        if (clash) {
-            cookieDao.rename(current.id, userId, title, CookieModel.titleKeyOf(title), now())
-            renamed += CookieModel.cleanTitle(dto.title) to title
+        keys.add(titleKey)
+        if (titleClash) {
+            //el sufijo es un cambio de este telefono: queda pendiente de subir
+            cookieDao.rename(localCookie.id, userId, title, titleKey, now())
+            renamed.add(Pair(CookieModel.cleanTitle(cloudCookie.title), title))
         }
-        Log.d(SYNC_TAG, "newer version from the cloud for id=${current.id} (state=${dto.state})")
+        Log.d(SYNC_TAG, "newer version from the cloud for id=${localCookie.id} (state=${cloudCookie.state})")
     }
 
     //sube las pendientes de a una; si una falla se cuenta y se sigue con las demas (el SyncWorker reintenta con backoff)
@@ -309,44 +382,66 @@ class CookieRepositoryImpl(
                 Log.w(SYNC_TAG, "upload failed id=${cookie.id}: ${e.javaClass.simpleName} ${e.message}")
             }
         }
-        if (pending.isNotEmpty()) Log.d(SYNC_TAG, "upload: $synced synced, $failed failed")
+        if (pending.isNotEmpty()) {
+            Log.d(SYNC_TAG, "upload: $synced synced, $failed failed")
+        }
         CookieUploadResult(synced = synced, failed = failed)
     }
 
     //primero la imagen y despues el documento: un documento nunca apunta a una imagen que no existe
     private suspend fun uploadOne(userId: String, cookie: CookieEntity, cloud: CookieCloudStore) {
-        var imageUrl = cookie.remoteImageUrl
-        if (cookie.hasImage && imageUrl == null) {
-            val bytes = imageStore.readBytes(cookie.localImagePath)
-            if (bytes != null) {
-                val started = System.nanoTime()
-                imageUrl = cloud.uploadImage(userId, cookie.id, bytes)
-                cookieDao.setRemoteImageUrl(cookie.id, imageUrl)
-                Log.d(SYNC_TAG, "uploaded picture id=${cookie.id} (${bytes.size / 1024} KB) in ${(System.nanoTime() - started) / 1_000_000} ms")
-            }
-        }
+        val imageUrl = uploadImageIfNeeded(userId, cookie, cloud)
+
         //el usuario pudo borrarla mientras subia la imagen: no se crea su documento y se borra lo que ya subio
-        if (cookieDao.getCookie(cookie.id, userId) == null) {
-            onRemoteDeleteNeeded(userId, cookie.id)
-            return
-        }
-        val dto = cookie.toDto(imageUrl)
-        val newerInCloud = cloud.pushCookie(userId, dto)
-        if (cookieDao.getCookie(cookie.id, userId) == null) {
-            onRemoteDeleteNeeded(userId, cookie.id)
-            return
-        }
+        if (wasDeletedMeanwhile(userId, cookie.id)) return
+
+        val newerInCloud = cloud.pushCookie(userId, cookie.toDto(imageUrl))
+        if (wasDeletedMeanwhile(userId, cookie.id)) return
+
         if (newerInCloud != null) {
-            //otro telefono la cambio despues (last write wins): se queda la version de la nube
-            Log.d(SYNC_TAG, "cloud version of id=${cookie.id} is newer, keeping it")
-            titleMutex.withLock {
-                val current = cookieDao.getCookie(cookie.id, userId) ?: return@withLock
-                applyRemote(userId, current, newerInCloud, titleKeysOf(userId), mutableListOf())
-            }
+            keepCloudVersion(userId, cookie.id, newerInCloud)
             return
         }
-        val marked = cookieDao.markAsSynced(cookie.id, imageUrl, cookie.updatedAt)
-        Log.d(SYNC_TAG, "uploaded id=${cookie.id} state=${cookie.state}" + if (marked == 0) " (changed while uploading, stays pending)" else "")
+        //solo queda sincronizada si no cambio mientras subia; si cambio sigue pendiente y se sube otra vez
+        val markedRows = cookieDao.markAsSynced(cookie.id, imageUrl, cookie.updatedAt)
+        if (markedRows == 0) {
+            Log.d(SYNC_TAG, "uploaded id=${cookie.id} state=${cookie.state} (changed while uploading, stays pending)")
+        } else {
+            Log.d(SYNC_TAG, "uploaded id=${cookie.id} state=${cookie.state}")
+        }
+    }
+
+    //sube la imagen si todavia no esta en storage y devuelve su url
+    //sin imagen, ya subida o sin el archivo en el telefono, devuelve la url que ya tenia (o null)
+    private suspend fun uploadImageIfNeeded(userId: String, cookie: CookieEntity, cloud: CookieCloudStore): String? {
+        if (!cookie.hasImage || cookie.remoteImageUrl != null) return cookie.remoteImageUrl
+        val bytes = imageStore.readBytes(cookie.localImagePath) ?: return null
+
+        val startedAt = System.nanoTime()
+        val imageUrl = cloud.uploadImage(userId, cookie.id, bytes)
+        cookieDao.setRemoteImageUrl(cookie.id, imageUrl)
+        val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
+        Log.d(SYNC_TAG, "uploaded picture id=${cookie.id} (${bytes.size / 1024} KB) in $elapsedMs ms")
+        return imageUrl
+    }
+
+    //true si la galleta ya no esta en room; en ese caso se pide borrar lo que ya se subio
+    private suspend fun wasDeletedMeanwhile(userId: String, cookieId: String): Boolean {
+        val cookie = cookieDao.getCookie(cookieId, userId)
+        if (cookie != null) return false
+        onRemoteDeleteNeeded(userId, cookieId)
+        return true
+    }
+
+    //otro telefono la cambio despues (last write wins): se queda la version de la nube
+    private suspend fun keepCloudVersion(userId: String, cookieId: String, cloudCookie: CookieDto) {
+        Log.d(SYNC_TAG, "cloud version of id=$cookieId is newer, keeping it")
+        titleMutex.withLock {
+            val localCookie = cookieDao.getCookie(cookieId, userId)
+            if (localCookie != null) {
+                applyCloudVersion(userId, localCookie, cloudCookie, titleKeysOf(userId), mutableListOf())
+            }
+        }
     }
 
     override suspend fun downloadImage(cookieId: String): Result<CookieModel> = withContext(Dispatchers.IO) {
@@ -355,22 +450,8 @@ class CookieRepositoryImpl(
             val cloud = cloudStore ?: error("The cloud is not available")
             //la misma imagen la pueden pedir a la vez el detalle y las del jarro de hoy: una sola descarga por galleta,
             //y la segunda encuentra la imagen ya guardada
-            downloadLocks.getOrPut(cookieId) { Mutex() }.withLock {
-                val cookie = cookieDao.getCookie(cookieId, userId)?.toModel() ?: error("This cookie no longer exists")
-                if (!cookie.hasImage || cookie.hasLocalImage()) return@withLock cookie
-                val started = System.nanoTime()
-                //se baja completa a memoria y el almacenamiento privado la escribe en {id}.jpg.tmp y la renombra:
-                //si la red se cae a mitad no queda ningun archivo a medias
-                val bytes = cloud.downloadImage(userId, cookieId)
-                val path = imageStore.save(cookieId, bytes)
-                if (cookieDao.setLocalImage(cookieId, userId, path) == 0) {
-                    //se borro mientras bajaba
-                    imageStore.delete(cookieId)
-                    error("This cookie no longer exists")
-                }
-                Log.d(SYNC_TAG, "downloaded picture id=$cookieId (${bytes.size / 1024} KB) in ${(System.nanoTime() - started) / 1_000_000} ms")
-                cookie.copy(localImagePath = path)
-            }
+            val lock = downloadLocks.getOrPut(cookieId) { Mutex() }
+            lock.withLock { downloadImageNow(userId, cookieId, cloud) }
         }.onFailure { error ->
             Log.w(SYNC_TAG, "download failed id=$cookieId: ${error.javaClass.simpleName} ${error.message}")
             //tambien si se cancelo (la red se cayo a mitad): no debe quedar ningun temporal
@@ -384,6 +465,29 @@ class CookieRepositoryImpl(
                 )
             }
         }
+    }
+
+    //se llama con el candado de la galleta tomado
+    private suspend fun downloadImageNow(userId: String, cookieId: String, cloud: CookieCloudStore): CookieModel {
+        val entity = cookieDao.getCookie(cookieId, userId) ?: error("This cookie no longer exists")
+        val cookie = entity.toModel()
+        //no tiene imagen, o otra descarga ya la dejo en el telefono
+        if (!cookie.hasImage || cookie.hasLocalImage()) return cookie
+
+        val startedAt = System.nanoTime()
+        //se baja completa a memoria y el almacenamiento privado la escribe en {id}.jpg.tmp y la renombra:
+        //si la red se cae a mitad no queda ningun archivo a medias
+        val bytes = cloud.downloadImage(userId, cookieId)
+        val path = imageStore.save(cookieId, bytes)
+        val updatedRows = cookieDao.setLocalImage(cookieId, userId, path)
+        if (updatedRows == 0) {
+            //se borro mientras bajaba
+            imageStore.delete(cookieId)
+            error("This cookie no longer exists")
+        }
+        val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
+        Log.d(SYNC_TAG, "downloaded picture id=$cookieId (${bytes.size / 1024} KB) in $elapsedMs ms")
+        return cookie.copy(localImagePath = path)
     }
 
     override suspend fun deleteRemoteCopy(userId: String, cookieId: String): Result<Unit> = withContext(Dispatchers.IO) {
@@ -406,20 +510,7 @@ class CookieRepositoryImpl(
     ): Result<CookieModel> = withContext(Dispatchers.IO) {
         runCatching {
             val userId = currentUserId() ?: error("No user is logged in")
-            //ya se habia aceptado (por ejemplo se reintento): no se duplica
-            cookieDao.getCookie(id, userId)?.let { return@runCatching it.toModel() }
-            val imagePath = jpegBytes?.let { imageStore.save(id, it) }
-            val cookie = try {
-                titleMutex.withLock {
-                    insertWithUniqueTitle(userId, id, title, text.trim().take(CookieModel.MAX_TEXT_LENGTH), imagePath, receivedFrom)
-                }
-            } catch (e: Exception) {
-                if (imagePath != null) imageStore.delete(id)
-                throw e
-            }
-            Log.d(SYNC_TAG, "gift accepted id=$id from @$receivedFrom saved as \"${cookie.title}\" (hasImage=${cookie.hasImage})")
-            onCookieChanged()
-            cookie
+            saveReceivedCookie(userId, id, title, text, receivedFrom, jpegBytes)
         }.onFailure { error ->
             //tambien si se cancelo: no debe quedar ningun temporal
             withContext(NonCancellable) { imageStore.deleteTemp(id) }
@@ -429,16 +520,51 @@ class CookieRepositoryImpl(
         }
     }
 
+    private suspend fun saveReceivedCookie(
+        userId: String,
+        id: String,
+        title: String,
+        text: String,
+        receivedFrom: String,
+        jpegBytes: ByteArray?,
+    ): CookieModel {
+        //ya se habia aceptado (por ejemplo se reintento): no se duplica
+        val alreadySaved = cookieDao.getCookie(id, userId)
+        if (alreadySaved != null) return alreadySaved.toModel()
+
+        val imagePath = if (jpegBytes != null) imageStore.save(id, jpegBytes) else null
+        val cleanText = text.trim().take(CookieModel.MAX_TEXT_LENGTH)
+        val cookie = try {
+            titleMutex.withLock { insertWithUniqueTitle(userId, id, title, cleanText, imagePath, receivedFrom) }
+        } catch (e: Exception) {
+            //sin fila en room la imagen no puede quedar sola en el telefono
+            if (imagePath != null) imageStore.delete(id)
+            throw e
+        }
+        Log.d(SYNC_TAG, "gift accepted id=$id from @$receivedFrom saved as \"${cookie.title}\" (hasImage=${cookie.hasImage})")
+        onCookieChanged()
+        return cookie
+    }
+
     //para regalar: el jpg ya comprimido del archivo privado; si se desalojo se baja primero de la nube
     override suspend fun imageBytesFor(cookieId: String): Result<ByteArray?> = withContext(Dispatchers.IO) {
         runCatching {
             val userId = currentUserId() ?: error("No user is logged in")
-            val cookie = cookieDao.getCookie(cookieId, userId)?.toModel() ?: error("This cookie no longer exists")
-            if (!cookie.hasImage) return@runCatching null
-            imageStore.readBytes(cookie.localImagePath)?.let { return@runCatching it }
-            val downloaded = downloadImage(cookieId).getOrThrow()
-            imageStore.readBytes(downloaded.localImagePath) ?: error("Couldn't read the picture of the cookie")
+            readImageBytes(userId, cookieId)
         }
+    }
+
+    //null si la galleta no tiene imagen
+    private suspend fun readImageBytes(userId: String, cookieId: String): ByteArray? {
+        val entity = cookieDao.getCookie(cookieId, userId) ?: error("This cookie no longer exists")
+        val cookie = entity.toModel()
+        if (!cookie.hasImage) return null
+
+        val bytesOnPhone = imageStore.readBytes(cookie.localImagePath)
+        if (bytesOnPhone != null) return bytesOnPhone
+
+        val downloaded = downloadImage(cookieId).getOrThrow()
+        return imageStore.readBytes(downloaded.localImagePath) ?: error("Couldn't read the picture of the cookie")
     }
 
     override fun currentUserId(): String? = userIdProvider()

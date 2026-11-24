@@ -30,17 +30,18 @@ class RemoteCookieDeleteWorker(
         val repository = (applicationContext as? ArkApplication)?.container?.cookieRepository
         if (userId.isNullOrBlank() || cookieId.isNullOrBlank() || repository == null) return@withContext Result.failure()
 
-        repository.deleteRemoteCopy(userId, cookieId).fold(
-            onSuccess = {
-                Log.d(TAG, "Deleted the cloud copy of cookie $cookieId")
-                Result.success()
-            },
-            onFailure = { error ->
-                Log.w(TAG, "Could not delete the cloud copy of cookie $cookieId yet", error)
-                //las reglas solo dejan borrar al dueno: si otra cuenta tiene la sesion se espera a que vuelva la suya
-                if (runAttemptCount < MAX_ATTEMPTS) Result.retry() else Result.failure()
-            }
-        )
+        val deleteResult = repository.deleteRemoteCopy(userId, cookieId)
+        if (deleteResult.isSuccess) {
+            Log.d(TAG, "Deleted the cloud copy of cookie $cookieId")
+            return@withContext Result.success()
+        }
+        Log.w(TAG, "Could not delete the cloud copy of cookie $cookieId yet", deleteResult.exceptionOrNull())
+        //las reglas solo dejan borrar al dueno: si otra cuenta tiene la sesion se espera a que vuelva la suya
+        if (runAttemptCount < MAX_ATTEMPTS) {
+            Result.retry()
+        } else {
+            Result.failure()
+        }
     }
 
     companion object {
@@ -69,10 +70,20 @@ class RemoteCookieDeleteWorker(
         }
 
         //ids de las galletas cuyo borrado en la nube sigue pendiente: al bajar cambios no se deben traer de vuelta
-        suspend fun pendingCookieIds(context: Context): Set<String> =
-            WorkManager.getInstance(context).getWorkInfosByTagFlow(WORK_TAG).first()
-                .filter { !it.state.isFinished }
-                .flatMap { info -> info.tags.filter { it.startsWith(COOKIE_TAG_PREFIX) }.map { it.removePrefix(COOKIE_TAG_PREFIX) } }
-                .toSet()
+        suspend fun pendingCookieIds(context: Context): Set<String> {
+            val deleteRequests = WorkManager.getInstance(context).getWorkInfosByTagFlow(WORK_TAG).first()
+            val pendingIds = mutableSetOf<String>()
+            for (request in deleteRequests) {
+                //los que ya terminaron (bien o mal) no cuentan
+                if (request.state.isFinished) continue
+                //el id de la galleta esta en la etiqueta "ark_cookie_delete_id:{id}"
+                for (tag in request.tags) {
+                    if (tag.startsWith(COOKIE_TAG_PREFIX)) {
+                        pendingIds.add(tag.removePrefix(COOKIE_TAG_PREFIX))
+                    }
+                }
+            }
+            return pendingIds
+        }
     }
 }

@@ -152,8 +152,10 @@ data class UserModel(
         //true si tiene 18 o mas: manda la fecha; el age es respaldo de perfiles viejos de flutter (0 = no se sabe)
         //si no se puede calcular la edad no se habilita
         fun isAdult(birthDate: String, age: Int): Boolean {
-            val years = ageOf(birthDate.trim()) ?: age.takeIf { it > 0 } ?: return false
-            return years >= ADULT_AGE
+            val ageFromBirthDate = ageOf(birthDate.trim())
+            if (ageFromBirthDate != null) return ageFromBirthDate >= ADULT_AGE
+            if (age <= 0) return false
+            return age >= ADULT_AGE
         }
 
         //fecha real del calendario o null; isLenient = false rechaza dias como el 30 de febrero

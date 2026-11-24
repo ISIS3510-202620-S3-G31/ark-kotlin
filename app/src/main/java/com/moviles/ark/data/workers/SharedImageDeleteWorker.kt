@@ -30,14 +30,17 @@ class SharedImageDeleteWorker(
         val repository = (applicationContext as? ArkApplication)?.container?.sharedCookieRepository
         if (userId.isNullOrBlank() || shareId.isNullOrBlank() || repository == null) return@withContext Result.failure()
 
-        repository.deleteOrphanImage(userId, shareId).fold(
-            onSuccess = { Result.success() },
-            onFailure = { error ->
-                Log.w(TAG, "Could not delete the gift picture $shareId yet", error)
-                //las reglas solo dejan borrar a from o to: si otra cuenta tiene la sesion se espera a que vuelva
-                if (runAttemptCount < MAX_ATTEMPTS) Result.retry() else Result.failure()
-            }
-        )
+        val deleteResult = repository.deleteOrphanImage(userId, shareId)
+        if (deleteResult.isSuccess) {
+            return@withContext Result.success()
+        }
+        Log.w(TAG, "Could not delete the gift picture $shareId yet", deleteResult.exceptionOrNull())
+        //las reglas solo dejan borrar a from o to: si otra cuenta tiene la sesion se espera a que vuelva
+        if (runAttemptCount < MAX_ATTEMPTS) {
+            Result.retry()
+        } else {
+            Result.failure()
+        }
     }
 
     companion object {

@@ -38,35 +38,41 @@ class SharedCookieCloudStore(
                     return@addSnapshotListener
                 }
                 if (snapshot == null) return@addSnapshotListener
-                val gifts = snapshot.documents.mapNotNull { doc -> doc.toObject(SharedCookieDto::class.java)?.copy(shareId = doc.id) }
-                Log.d(TAG, "inbox snapshot: ${gifts.size} gifts, fromCache=${snapshot.metadata.isFromCache}")
-                trySend(InboxEvent(gifts, snapshot.metadata.isFromCache))
+                val gifts = mutableListOf<SharedCookieDto>()
+                for (document in snapshot.documents) {
+                    val gift = document.toObject(SharedCookieDto::class.java)
+                    if (gift != null) {
+                        gifts.add(gift.copy(shareId = document.id))
+                    }
+                }
+                val isFromCache = snapshot.metadata.isFromCache
+                Log.d(TAG, "inbox snapshot: ${gifts.size} gifts, fromCache=$isFromCache")
+                trySend(InboxEvent(gifts, isFromCache))
             }
+        //cuando el flow se deja de escuchar se quita el listener de firestore
         awaitClose { registration.remove() }
     }
 
     //paso 1 de regalar: la foto ya comprimida de la galleta (no se vuelve a comprimir)
     //si se vence el tiempo se cancela la subida para que no siga sola en segundo plano
-    suspend fun uploadImage(shareId: String, fromUid: String, toUid: String, jpegBytes: ByteArray) = withContext(Dispatchers.IO) {
-        val metadata = storageMetadata {
-            contentType = JPEG_CONTENT_TYPE
-            setCustomMetadata(META_FROM, fromUid)
-            setCustomMetadata(META_TO, toUid)
+    suspend fun uploadImage(shareId: String, fromUid: String, toUid: String, jpegBytes: ByteArray) {
+        withContext(Dispatchers.IO) {
+            //from y to van en la metadata de la foto: storage.rules la usa para saber quien la puede leer y borrar
+            val metadata = storageMetadata {
+                contentType = JPEG_CONTENT_TYPE
+                setCustomMetadata(META_FROM, fromUid)
+                setCustomMetadata(META_TO, toUid)
+            }
+            Log.d(TAG, "uploading ${imagePath(shareId)} (${jpegBytes.size} bytes) from=$fromUid to=$toUid")
+            val uploadTask = storage.reference.child(imagePath(shareId)).putBytes(jpegBytes, metadata)
+            try {
+                uploadTask.awaitOrConnectionLost(SOCIAL_PHOTO_TIMEOUT_MS)
+            } catch (e: Throwable) {
+                //timeout, red caida o el usuario salio: la subida no sigue sola en segundo plano
+                uploadTask.cancel()
+                throw e
+            }
         }
-        Log.d(
-            TAG,
-            "uploading ${imagePath(shareId)} (${jpegBytes.size} bytes) contentType=${metadata.contentType} " +
-                "from=${metadata.getCustomMetadata(META_FROM)} to=${metadata.getCustomMetadata(META_TO)}"
-        )
-        val task = storage.reference.child(imagePath(shareId)).putBytes(jpegBytes, metadata)
-        try {
-            task.awaitOrConnectionLost(SOCIAL_PHOTO_TIMEOUT_MS)
-        } catch (e: Throwable) {
-            //timeout, red caida o el usuario salio: la subida no sigue sola en segundo plano
-            task.cancel()
-            throw e
-        }
-        Unit
     }
 
     //paso 2 de regalar: el documento con una transaccion (sin red falla, no queda en cola: o llego o no llego)
@@ -97,25 +103,29 @@ class SharedCookieCloudStore(
     }
 
     suspend fun giftExists(shareId: String): Boolean = withContext(Dispatchers.IO) {
-        gifts().document(shareId).get(Source.SERVER).awaitOrConnectionLost().exists()
+        val snapshot = gifts().document(shareId).get(Source.SERVER).awaitOrConnectionLost()
+        snapshot.exists()
     }
 
     //paso 1 de aceptar: la foto completa a memoria; quien la guarda en el telefono es el almacenamiento privado
     suspend fun downloadImage(shareId: String): ByteArray = withContext(Dispatchers.IO) {
-        storage.reference.child(imagePath(shareId)).getBytes(MAX_IMAGE_BYTES).awaitOrConnectionLost(SOCIAL_PHOTO_TIMEOUT_MS)
+        val pictureRef = storage.reference.child(imagePath(shareId))
+        pictureRef.getBytes(MAX_IMAGE_BYTES).awaitOrConnectionLost(SOCIAL_PHOTO_TIMEOUT_MS)
     }
 
     //borra la foto de un regalo; si ya no estaba no pasa nada (repetirlo no hace dano)
     //storage.rules decide con la metadata de la foto: si la foto no existe no hay metadata y storage responde
     //"sin permiso" en vez de "no existe"; en los dos casos no queda nada que este usuario pueda borrar
-    suspend fun deleteImage(shareId: String) = withContext(Dispatchers.IO) {
-        try {
-            storage.reference.child(imagePath(shareId)).delete().awaitOrConnectionLost()
-        } catch (e: Exception) {
-            if (!e.isObjectNotFound() && !e.isNotAuthorized()) throw e
-            Log.d(TAG, "gift picture ${imagePath(shareId)} not there (or not ours): nothing to delete")
+    suspend fun deleteImage(shareId: String) {
+        withContext(Dispatchers.IO) {
+            try {
+                storage.reference.child(imagePath(shareId)).delete().awaitOrConnectionLost()
+            } catch (e: Exception) {
+                val nothingToDelete = isObjectNotFound(e) || isNotAuthorized(e)
+                if (!nothingToDelete) throw e
+                Log.d(TAG, "gift picture ${imagePath(shareId)} not there (or not ours): nothing to delete")
+            }
         }
-        Unit
     }
 
     private fun gifts() = firestore.collection(SHARED_COOKIES)

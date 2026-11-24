@@ -27,8 +27,10 @@ class CookieCloudStore(
     //mismo nombre que el id: si la subida se corta y se repite queda un solo archivo
     suspend fun uploadImage(userId: String, cookieId: String, jpegBytes: ByteArray): String = withContext(Dispatchers.IO) {
         val reference = storage.reference.child(imagePath(userId, cookieId))
-        reference.putBytes(jpegBytes, storageMetadata { contentType = JPEG_CONTENT_TYPE }).awaitWithTimeout(PHOTO_UPLOAD_TIMEOUT_MS)
-        reference.downloadUrl.awaitWithTimeout().toString()
+        val metadata = storageMetadata { contentType = JPEG_CONTENT_TYPE }
+        reference.putBytes(jpegBytes, metadata).awaitWithTimeout(PHOTO_UPLOAD_TIMEOUT_MS)
+        val downloadUrl = reference.downloadUrl.awaitWithTimeout()
+        downloadUrl.toString()
     }
 
     //escribe el documento si la version de la nube no es mas nueva (last write wins por updatedAt)
@@ -38,8 +40,9 @@ class CookieCloudStore(
         firestore.runTransaction { transaction ->
             val snapshot = transaction.get(document)
             val remoteUpdatedAt = snapshot.getLong(FIELD_UPDATED_AT)
-            if (snapshot.exists() && remoteUpdatedAt != null && remoteUpdatedAt > cookie.updatedAt) {
-                snapshot.toCookie()
+            val cloudIsNewer = snapshot.exists() && remoteUpdatedAt != null && remoteUpdatedAt > cookie.updatedAt
+            if (cloudIsNewer) {
+                cookieFrom(snapshot)
             } else {
                 transaction.set(document, cookie)
                 null
@@ -50,40 +53,53 @@ class CookieCloudStore(
     //metadatos de todas las galletas del usuario (sin imagenes), de a 100 por pagina y siempre del servidor
     //Source.SERVER: sin red falla en vez de devolver la copia vieja de la cache de firestore
     suspend fun fetchAll(userId: String): List<CookieDto> = withContext(Dispatchers.IO) {
-        val result = mutableListOf<CookieDto>()
-        var last: DocumentSnapshot? = null
+        val allCookies = mutableListOf<CookieDto>()
+        //ultimo documento de la pagina anterior: la siguiente pagina empieza despues de el
+        var lastDocument: DocumentSnapshot? = null
         while (true) {
             var query = cookiesOf(userId).orderBy(FieldPath.documentId()).limit(PAGE_SIZE.toLong())
-            last?.let { query = query.startAfter(it) }
+            if (lastDocument != null) {
+                query = query.startAfter(lastDocument)
+            }
             val page = query.get(Source.SERVER).awaitWithTimeout()
-            page.documents.mapNotNullTo(result) { it.toCookie() }
+            for (document in page.documents) {
+                val cookie = cookieFrom(document)
+                if (cookie != null) allCookies.add(cookie)
+            }
+            //una pagina incompleta es la ultima
             if (page.size() < PAGE_SIZE) break
-            last = page.documents.last()
+            lastDocument = page.documents.last()
         }
-        result
+        allCookies
     }
 
     //baja el jpg completo a memoria (~400 kb); el que lo guarda en el telefono es el almacenamiento privado
     suspend fun downloadImage(userId: String, cookieId: String): ByteArray = withContext(Dispatchers.IO) {
-        storage.reference.child(imagePath(userId, cookieId)).getBytes(MAX_IMAGE_BYTES).awaitWithTimeout(PHOTO_UPLOAD_TIMEOUT_MS)
+        val reference = storage.reference.child(imagePath(userId, cookieId))
+        reference.getBytes(MAX_IMAGE_BYTES).awaitWithTimeout(PHOTO_UPLOAD_TIMEOUT_MS)
     }
 
     //primero el documento (los otros telefonos dejan de verla) y despues la imagen
     //si la imagen falla queda un archivo huerfano y el worker reintenta; repetirlo no hace dano
-    suspend fun deleteCookie(userId: String, cookieId: String) = withContext(Dispatchers.IO) {
-        cookiesOf(userId).document(cookieId).delete().awaitWithTimeout()
-        try {
-            storage.reference.child(imagePath(userId, cookieId)).delete().awaitWithTimeout()
-        } catch (e: StorageException) {
-            //no tenia imagen o ya se habia borrado
-            if (e.errorCode != StorageException.ERROR_OBJECT_NOT_FOUND) throw e
+    suspend fun deleteCookie(userId: String, cookieId: String) {
+        withContext(Dispatchers.IO) {
+            cookiesOf(userId).document(cookieId).delete().awaitWithTimeout()
+            try {
+                storage.reference.child(imagePath(userId, cookieId)).delete().awaitWithTimeout()
+            } catch (e: StorageException) {
+                //no tenia imagen o ya se habia borrado
+                if (e.errorCode != StorageException.ERROR_OBJECT_NOT_FOUND) throw e
+            }
         }
-        Unit
     }
 
     private fun cookiesOf(userId: String) = firestore.collection(USERS).document(userId).collection(COOKIES)
 
-    private fun DocumentSnapshot.toCookie(): CookieDto? = toObject(CookieDto::class.java)?.copy(id = id)
+    //el id no es un campo del documento: se copia del id del documento
+    private fun cookieFrom(snapshot: DocumentSnapshot): CookieDto? {
+        val cookie = snapshot.toObject(CookieDto::class.java) ?: return null
+        return cookie.copy(id = snapshot.id)
+    }
 
     private suspend fun <T> Task<T>.awaitWithTimeout(timeoutMs: Long = REMOTE_TIMEOUT_MS): T = withTimeout(timeoutMs) { await() }
 
