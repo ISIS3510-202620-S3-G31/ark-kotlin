@@ -204,10 +204,14 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             onInteractionSaved = { syncManager.requestSync() }
         )
     }
-    // farol de deseos: por ahora los deseos viven en memoria; luego se cambia por la version con room y lru
-    // es uno solo para toda la app, asi los deseos no se pierden al salir y volver a entrar a la herramienta
+    // farol de deseos: los deseos se guardan en room (tabla wishes), por usuario (uid de firebase)
+    // es uno solo para toda la app, asi los faroles encendidos se mantienen al salir y volver a entrar a la herramienta
     override val wishRepository: com.moviles.ark.domain.repositories.WishRepository by lazy {
-        com.moviles.ark.data.repositories.InMemoryWishRepository()
+        com.moviles.ark.data.repositories.WishRepositoryImpl(
+            wishDao = database.wishDao(),
+            userIdProvider = { auth.currentUser?.uid },
+            onWishChanged = { syncManager.requestSync() }
+        )
     }
     override val audioPlayerHelper: AudioPlayerHelper by lazy { AudioPlayerHelper(context) }
     // vibracion de la respiracion guiada

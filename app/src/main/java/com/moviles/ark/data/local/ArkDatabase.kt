@@ -16,6 +16,7 @@ import com.moviles.ark.data.local.daos.StatsDailyVisitDao
 import com.moviles.ark.data.local.daos.ToolDao
 import com.moviles.ark.data.local.daos.ToolRecordDao
 import com.moviles.ark.data.local.daos.UserDao
+import com.moviles.ark.data.local.daos.WishDao
 import com.moviles.ark.data.local.entities.BreathingSessionEntity
 import com.moviles.ark.data.local.entities.CheckInEntity
 import com.moviles.ark.data.local.entities.CookieEntity
@@ -25,6 +26,7 @@ import com.moviles.ark.data.local.entities.StatsDailyVisitEntity
 import com.moviles.ark.data.local.entities.ToolEntity
 import com.moviles.ark.data.local.entities.ToolInteractionEntity
 import com.moviles.ark.data.local.entities.UserEntity
+import com.moviles.ark.data.local.entities.WishEntity
 
 //base de datos local de la app: aqui se registran todas las tablas (entities) y sus daos
 //reemplaza a AppDatabase.kt, que se borra (nadie la usaba)
@@ -34,6 +36,7 @@ import com.moviles.ark.data.local.entities.UserEntity
 //version 8: emociones del feedback y ciudad del check-in, con migracion para no borrar lo que no se ha subido
 //version 9: cuenta del feedback pendiente, para no subirlo a otra cuenta si se cierra sesion sin red
 //version 12: se agrego cookies, las galletas del cookie jar, con migracion para no perder nada de lo anterior
+//version 13: se agrego wishes, los deseos del farol de deseos, con migracion para no perder nada de lo anterior
 //(sin migracion para un salto de version, room borra y crea de nuevo la base local)
 @Database(
     entities = [
@@ -46,8 +49,9 @@ import com.moviles.ark.data.local.entities.UserEntity
         UserEntity::class,
         StatsDailyVisitEntity::class,
         CookieEntity::class,
+        WishEntity::class,
     ],
-    version = 12,
+    version = 13,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -61,6 +65,7 @@ abstract class ArkDatabase : RoomDatabase() {
     abstract fun userDao(): UserDao
     abstract fun statsDailyVisitDao(): StatsDailyVisitDao
     abstract fun cookieDao(): CookieDao
+    abstract fun wishDao(): WishDao
 
     companion object {
         @Volatile
@@ -117,6 +122,18 @@ abstract class ArkDatabase : RoomDatabase() {
             }
         }
 
+        //solo crea la tabla nueva del farol de deseos; las demas tablas no se tocan
+        //el sql es el mismo que genera room para WishEntity, si no coincide room no abre la base
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `wishes` (`id` TEXT NOT NULL, `userId` TEXT NOT NULL, `text` TEXT NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `isSynced` INTEGER NOT NULL, " +
+                        "`isDeleted` INTEGER NOT NULL, PRIMARY KEY(`id`))"
+                )
+            }
+        }
+
         //singleton con doble comprobacion para que toda la app comparta un unico pool de conexiones
         fun getInstance(context: Context): ArkDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -125,7 +142,7 @@ abstract class ArkDatabase : RoomDatabase() {
                     ArkDatabase::class.java,
                     "ark.db"
                 )
-                .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
+                .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
                 .also { INSTANCE = it }
