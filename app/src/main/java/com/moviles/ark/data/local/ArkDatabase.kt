@@ -30,17 +30,7 @@ import com.moviles.ark.data.local.entities.ToolEntity
 import com.moviles.ark.data.local.entities.ToolInteractionEntity
 import com.moviles.ark.data.local.entities.UserEntity
 
-//base de datos local de la app: aqui se registran todas las tablas (entities) y sus daos
-//reemplaza a AppDatabase.kt, que se borra (nadie la usaba)
-//version 2: se agrego breathing_sessions; cada vez que se cambie una tabla se sube el numero
-//version 3: se agrego users, el perfil guardado en el telefono
-//version 7: se agrego stats_daily_visits, conteo de visitas diarias a estadisticas
-//version 8: emociones del feedback y ciudad del check-in, con migracion para no borrar lo que no se ha subido
-//version 9: cuenta del feedback pendiente, para no subirlo a otra cuenta si se cierra sesion sin red
-//version 12: se agrego cookies, las galletas del cookie jar, con migracion para no perder nada de lo anterior
-//version 13: se agrego favorite_fortunes, frases favoritas de la galleta de la fortuna
-//version 14: se agrego saved_fortune_cards, trazabilidad de tarjetas guardadas en galeria y nube
-//(sin migracion para un salto de version, room borra y crea de nuevo la base local)
+
 @Database(
     entities = [
         ToolEntity::class,
@@ -56,6 +46,8 @@ import com.moviles.ark.data.local.entities.UserEntity
         SavedFortuneCardEntity::class,
     ],
     version = 14,
+    ],
+    version = 13,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -159,6 +151,7 @@ abstract class ArkDatabase : RoomDatabase() {
                     "ark.db"
                 )
                 .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
+                .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
                 .also { INSTANCE = it }

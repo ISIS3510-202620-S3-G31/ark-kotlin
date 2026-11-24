@@ -23,6 +23,8 @@ import com.moviles.ark.domain.adapters.FortuneServiceAdapter
 import com.moviles.ark.domain.repositories.FortuneRepository
 import com.moviles.ark.data.remote.apis.FortuneServiceAdapterImpl
 import com.moviles.ark.data.repositories.FortuneRepositoryImpl
+import com.moviles.ark.data.local.FortunePreferencesManager
+import com.moviles.ark.data.local.FortuneCardExporter
 import com.moviles.ark.data.local.daos.FeedbackDao
 import com.moviles.ark.data.local.daos.ToolRecordDao
 import com.moviles.ark.data.local.sensors.AudioPlayerHelper
@@ -96,6 +98,8 @@ interface AppContainer {
     val fortuneCacheManager: FortuneCacheManager
     val fortuneServiceAdapter: FortuneServiceAdapter
     val fortuneRepository: FortuneRepository
+    val fortunePreferencesManager: FortunePreferencesManager
+    val fortuneCardExporter: FortuneCardExporter
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
