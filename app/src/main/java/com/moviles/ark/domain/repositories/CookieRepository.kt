@@ -64,6 +64,19 @@ interface CookieRepository {
     //borra la copia de la nube de una galleta borrada en el telefono (primero el documento, luego la imagen)
     suspend fun deleteRemoteCopy(userId: String, cookieId: String): Result<Unit>
 
+    //regalo aceptado: guarda la foto en privado (.tmp y luego .jpg) y crea la galleta con id = shareId, sin subir
+    //si el titulo ya existe recibe sufijo; si ya existe una galleta con ese id la devuelve (aceptar dos veces no duplica)
+    suspend fun addReceivedCookie(
+        id: String,
+        title: String,
+        text: String,
+        receivedFrom: String,
+        jpegBytes: ByteArray?,
+    ): Result<CookieModel>
+
+    //bytes del jpg de una galleta para regalarla (si no esta en el telefono se baja); null si no tiene imagen
+    suspend fun imageBytesFor(cookieId: String): Result<ByteArray?>
+
     //uid del usuario con sesion (semilla del sorteo del dia); null sin sesion
     fun currentUserId(): String?
 

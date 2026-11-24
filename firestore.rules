@@ -5,6 +5,8 @@ rules_version = '2';
 // - Retrocompatibilidad con age para el subequipo de Flutter
 // - Colecciones privadas actualizadas para Kotlin y Flutter
 // - Foto de perfil opcional de Kotlin en users/{uid} (avatarId, avatarSource, photoUrl)
+// - Edad minima de 13 anos en el registro (birthDate iso o age legado de flutter)
+// - Cookie Jar social (solo 18+): usernames, public_profiles, friend_requests, friendships, users/{uid}/blocked, shared_cookies
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -21,9 +23,46 @@ service cloud.firestore {
               && data.photoUrl.matches('https://firebasestorage[.]googleapis[.]com/.*')));
     }
 
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // fecha de hoy (utc) menos `years` anos como texto YYYY-MM-DD; las fechas iso se comparan bien como texto
+    function dateYearsAgo(years) {
+      let month = request.time.month();
+      let day = request.time.day();
+      return string(request.time.year() - years) + '-' + (month < 10 ? '0' : '') + string(month)
+        + '-' + (day < 10 ? '0' : '') + string(day);
+    }
+
+    function hasIsoBirthDate(data) {
+      return 'birthDate' in data && data.birthDate is string && data.birthDate.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}');
+    }
+
+    // la fecha manda; el age es respaldo para perfiles viejos de flutter que solo tienen la edad
+    function isAtLeast(data, years) {
+      return hasIsoBirthDate(data)
+        ? data.birthDate <= dateYearsAgo(years)
+        : ('age' in data && data.age is int && data.age >= years);
+    }
+
+    // registro: minimo 13 anos, con la fecha iso y con el age si viene; sin ninguno de los dos no se puede verificar
+    // al actualizar solo se revisa lo que cambia: los perfiles que ya existen se pueden editar sin tocar la fecha
+    // (por ejemplo el nombre o el avatar); el age que kotlin recalcula sale de la fecha, asi que con fecha iso no se revisa
+    function meetsMinAge(data, before) {
+      return before == null
+        ? (hasIsoBirthDate(data) || 'age' in data)
+          && (!hasIsoBirthDate(data) || data.birthDate <= dateYearsAgo(13))
+          && (!('age' in data) || data.age >= 13)
+        : (!('birthDate' in data) || data.birthDate == before.data.get('birthDate', null)
+            || (hasIsoBirthDate(data) ? data.birthDate <= dateYearsAgo(13) : ('age' in data && data.age >= 13)))
+          && (!('age' in data) || data.age == before.data.get('age', null) || hasIsoBirthDate(data) || data.age >= 13);
+    }
+
     // Profile saved by register: name, email, and birthDate (or legacy age from flutter)
     // The profile picture fields are optional, so every profile valid before is still valid
-    function isValidUser(data) {
+    // before es el documento actual (null al crearlo), para la edad minima
+    function isValidUser(data, before) {
       let profileKeys = data.keys().removeAll(['avatarId', 'avatarSource', 'photoUrl']);
       return (profileKeys.hasOnly(['name', 'birthDate', 'email']) ||
               profileKeys.hasOnly(['name', 'age', 'email']) ||
@@ -32,7 +71,53 @@ service cloud.firestore {
         && data.name is string && data.name.size() > 0 && data.name.size() <= 100
         && data.email is string && data.email.size() <= 254
         && (!('birthDate' in data) || (data.birthDate is string && data.birthDate.size() >= 8 && data.birthDate.size() <= 15))
-        && (!('age' in data) || (data.age is int && data.age >= 0 && data.age <= 120));
+        && (!('age' in data) || (data.age is int && data.age >= 0 && data.age <= 120))
+        && meetsMinAge(data, before);
+    }
+
+    // cookie jar social (amigos y regalos): solo para 18+
+    function userPath(uid) {
+      return /databases/$(database)/documents/users/$(uid);
+    }
+
+    function profilePath(uid) {
+      return /databases/$(database)/documents/public_profiles/$(uid);
+    }
+
+    function usernamePath(username) {
+      return /databases/$(database)/documents/usernames/$(username);
+    }
+
+    function requestPath(fromUid, toUid) {
+      return /databases/$(database)/documents/friend_requests/$(fromUid + '_' + toUid);
+    }
+
+    // id de la amistad: los dos uid ordenados, asi los dos llegan al mismo documento
+    function friendshipId(a, b) {
+      return a < b ? a + '_' + b : b + '_' + a;
+    }
+
+    function areFriends(a, b) {
+      return exists(/databases/$(database)/documents/friendships/$(friendshipId(a, b)));
+    }
+
+    // owner bloqueo a other: other no lo encuentra, no le pide amistad ni le regala
+    function hasBlocked(owner, other) {
+      return exists(/databases/$(database)/documents/users/$(owner)/blocked/$(other));
+    }
+
+    // users/{uid} con fecha de hoy menos 18 anos o antes (o age >= 18 en perfiles viejos)
+    function isAdult(uid) {
+      return exists(userPath(uid)) && isAtLeast(get(userPath(uid)).data, 18);
+    }
+
+    // el perfil publico solo se crea siendo 18+: tener perfil garantiza que el otro tambien lo es
+    function hasProfile(uid) {
+      return exists(profilePath(uid));
+    }
+
+    function isValidUsername(name) {
+      return name is string && name.matches('[a-z0-9_.]{3,20}');
     }
 
     match /users/{userId}/check_ins/{day} {
@@ -55,7 +140,16 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read, delete: if isOwner(userId);
-      allow create, update: if isOwner(userId) && isValidUser(request.resource.data);
+      allow create, update: if isOwner(userId) && isValidUser(request.resource.data, resource);
+
+      // usuarios que este usuario bloqueo; solo el los ve
+      match /blocked/{otherUid} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && otherUid != userId
+          && request.resource.data.keys().hasOnly(['username', 'blockedAt'])
+          && request.resource.data.username is string && request.resource.data.username.size() <= 20
+          && request.resource.data.blockedAt is int;
+      }
 
       // Private data of each user
       // Flutter: photos, breathing_sessions, tear_entries, tool_sessions, stats, feedback, analytics_events
@@ -68,6 +162,111 @@ service cloud.firestore {
                             'tool_interactions', 'stats_summary', 'useful_insights',
                             'tool_load_latency', 'screen_time', 'cookies'];
       }
+    }
+
+    // username unico: usernames/{username} -> {uid}; se crea con su perfil en una transaccion
+    // si el documento ya existe, crear es actualizar y eso no se permite: el nombre esta tomado
+    // busqueda por username exacto: get si, list no (nadie descarga la lista de usuarios)
+    match /usernames/{username} {
+      allow get: if signedIn() && (resource == null || !hasBlocked(resource.data.uid, request.auth.uid));
+      allow list: if false;
+      allow create: if signedIn() && isValidUsername(username)
+        && request.resource.data.keys().hasOnly(['uid'])
+        && request.resource.data.uid == request.auth.uid
+        && getAfter(profilePath(request.auth.uid)).data.username == username
+        && isAdult(request.auth.uid);
+      allow update: if false;
+      // se borra junto con el perfil publico (desactivar amigos)
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid
+        && !existsAfter(profilePath(request.auth.uid));
+    }
+
+    // perfil publico minimo: solo username y avatar; nombre, correo y fecha siguen privados en users/{uid}
+    match /public_profiles/{uid} {
+      allow get: if signedIn() && (resource == null || !hasBlocked(uid, request.auth.uid));
+      allow list: if false;
+      allow create: if isOwner(uid)
+        && request.resource.data.keys().hasOnly(['username', 'avatarId'])
+        && isValidUsername(request.resource.data.username)
+        && request.resource.data.avatarId is string && request.resource.data.avatarId.size() <= 40
+        && getAfter(usernamePath(request.resource.data.username)).data.uid == uid
+        && isAdult(uid);
+      // el username no cambia; el avatar si
+      allow update: if isOwner(uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['avatarId'])
+        && request.resource.data.avatarId is string && request.resource.data.avatarId.size() <= 40;
+      allow delete: if isOwner(uid) && !existsAfter(usernamePath(resource.data.username));
+    }
+
+    // solicitud de amistad friend_requests/{fromUid_toUid}: solo la leen los dos; aceptar o rechazar la borra
+    match /friend_requests/{requestId} {
+      allow get: if signedIn() && (resource == null || request.auth.uid in [resource.data.from, resource.data.to]);
+      allow list: if signedIn() && (resource.data.to == request.auth.uid || resource.data.from == request.auth.uid);
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['from', 'to', 'fromUsername', 'status', 'createdAt'])
+        && request.resource.data.from == request.auth.uid
+        && request.resource.data.to is string && request.resource.data.to != request.auth.uid
+        && requestId == request.auth.uid + '_' + request.resource.data.to
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdAt is int
+        && request.resource.data.fromUsername == get(profilePath(request.auth.uid)).data.username
+        && hasProfile(request.resource.data.to)
+        && !hasBlocked(request.resource.data.to, request.auth.uid)
+        && !areFriends(request.auth.uid, request.resource.data.to)
+        && isAdult(request.auth.uid);
+      allow update: if false;
+      allow delete: if signedIn() && request.auth.uid in [resource.data.from, resource.data.to];
+    }
+
+    // amistad friendships/{uidMenor_uidMayor} -> {members: [menor, mayor], since}
+    // la crea quien recibio la solicitud, borrandola en la misma transaccion; cualquiera de los dos la borra
+    match /friendships/{friendshipId} {
+      function otherMember(members) {
+        return members[0] == request.auth.uid ? members[1] : members[0];
+      }
+
+      allow get: if signedIn() && (resource == null || request.auth.uid in resource.data.members);
+      allow list: if signedIn() && request.auth.uid in resource.data.members;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['members', 'since'])
+        && request.resource.data.members is list && request.resource.data.members.size() == 2
+        && request.auth.uid in request.resource.data.members
+        && request.resource.data.members[0] < request.resource.data.members[1]
+        && friendshipId == request.resource.data.members[0] + '_' + request.resource.data.members[1]
+        && request.resource.data.since is int
+        && exists(requestPath(otherMember(request.resource.data.members), request.auth.uid))
+        && !existsAfter(requestPath(otherMember(request.resource.data.members), request.auth.uid))
+        && hasProfile(request.auth.uid)
+        && !hasBlocked(request.auth.uid, otherMember(request.resource.data.members))
+        && !hasBlocked(otherMember(request.resource.data.members), request.auth.uid)
+        && isAdult(request.auth.uid);
+      allow update: if false;
+      allow delete: if signedIn() && request.auth.uid in resource.data.members;
+    }
+
+    // regalo shared_cookies/{shareId}: copia de una galleta para un amigo; vence a los 7 dias
+    // la crea from si son amigos y to no lo bloqueo; la leen from y to; la borra to (aceptar o rechazar) o from (cancelar)
+    match /shared_cookies/{shareId} {
+      allow get: if signedIn() && (resource == null || request.auth.uid in [resource.data.from, resource.data.to]);
+      allow list: if signedIn() && (resource.data.to == request.auth.uid || resource.data.from == request.auth.uid);
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['from', 'fromUsername', 'to', 'title', 'text', 'hasImage', 'sentAt', 'expiresAt'])
+        && request.resource.data.from == request.auth.uid
+        && request.resource.data.to is string && request.resource.data.to != request.auth.uid
+        && request.resource.data.title is string && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 60
+        && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 280
+        && request.resource.data.hasImage is bool
+        && request.resource.data.sentAt is int
+        && request.resource.data.expiresAt is int
+        && request.resource.data.expiresAt > request.time.toMillis()
+        && request.resource.data.expiresAt <= request.time.toMillis() + 8 * 24 * 60 * 60 * 1000
+        && request.resource.data.fromUsername == get(profilePath(request.auth.uid)).data.username
+        && hasProfile(request.resource.data.to)
+        && areFriends(request.auth.uid, request.resource.data.to)
+        && !hasBlocked(request.resource.data.to, request.auth.uid)
+        && isAdult(request.auth.uid);
+      allow update: if false;
+      allow delete: if signedIn() && request.auth.uid in [resource.data.from, resource.data.to];
     }
   }
 }

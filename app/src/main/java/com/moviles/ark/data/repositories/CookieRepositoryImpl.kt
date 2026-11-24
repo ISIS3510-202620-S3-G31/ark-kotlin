@@ -394,6 +394,53 @@ class CookieRepositoryImpl(
         }
     }
 
+    //regalo aceptado (pasos 1 y 2 de la aceptacion): la foto ya se bajo a memoria; aqui se escribe {id}.jpg.tmp, se renombra
+    //a .jpg y se inserta la fila con isSynced = false; desde aqui la galleta es del usuario aunque se caiga la red
+    //y el sync la sube a su carpeta de la nube con el mismo id
+    override suspend fun addReceivedCookie(
+        id: String,
+        title: String,
+        text: String,
+        receivedFrom: String,
+        jpegBytes: ByteArray?,
+    ): Result<CookieModel> = withContext(Dispatchers.IO) {
+        runCatching {
+            val userId = currentUserId() ?: error("No user is logged in")
+            //ya se habia aceptado (por ejemplo se reintento): no se duplica
+            cookieDao.getCookie(id, userId)?.let { return@runCatching it.toModel() }
+            val imagePath = jpegBytes?.let { imageStore.save(id, it) }
+            val cookie = try {
+                titleMutex.withLock {
+                    insertWithUniqueTitle(userId, id, title, text.trim().take(CookieModel.MAX_TEXT_LENGTH), imagePath, receivedFrom)
+                }
+            } catch (e: Exception) {
+                if (imagePath != null) imageStore.delete(id)
+                throw e
+            }
+            Log.d(SYNC_TAG, "gift accepted id=$id from @$receivedFrom saved as \"${cookie.title}\" (hasImage=${cookie.hasImage})")
+            onCookieChanged()
+            cookie
+        }.onFailure { error ->
+            //tambien si se cancelo: no debe quedar ningun temporal
+            withContext(NonCancellable) { imageStore.deleteTemp(id) }
+            if (error !is CancellationException) {
+                CrashlyticsHelper.logNonFatal(componentName = "CookieRepository", action = "addReceivedCookie", throwable = error)
+            }
+        }
+    }
+
+    //para regalar: el jpg ya comprimido del archivo privado; si se desalojo se baja primero de la nube
+    override suspend fun imageBytesFor(cookieId: String): Result<ByteArray?> = withContext(Dispatchers.IO) {
+        runCatching {
+            val userId = currentUserId() ?: error("No user is logged in")
+            val cookie = cookieDao.getCookie(cookieId, userId)?.toModel() ?: error("This cookie no longer exists")
+            if (!cookie.hasImage) return@runCatching null
+            imageStore.readBytes(cookie.localImagePath)?.let { return@runCatching it }
+            val downloaded = downloadImage(cookieId).getOrThrow()
+            imageStore.readBytes(downloaded.localImagePath) ?: error("Couldn't read the picture of the cookie")
+        }
+    }
+
     override fun currentUserId(): String? = userIdProvider()
 
     override fun hasCameraPermission(): Boolean = cameraHelper?.hasCameraPermission() ?: false
@@ -423,7 +470,15 @@ class CookieRepositoryImpl(
     }
 
     //calcula el titulo libre y lo inserta; si el indice unico lo rechaza (otro titulo igual llego en medio) se recalcula
-    private suspend fun insertWithUniqueTitle(userId: String, id: String, title: String, text: String, imagePath: String?): CookieModel {
+    //receivedFrom: username de quien la regalo (null si es propia)
+    private suspend fun insertWithUniqueTitle(
+        userId: String,
+        id: String,
+        title: String,
+        text: String,
+        imagePath: String?,
+        receivedFrom: String? = null,
+    ): CookieModel {
         var lastError: SQLiteConstraintException? = null
         repeat(MAX_INSERT_ATTEMPTS) {
             val finalTitle = CookieModel.uniqueTitle(title, titleKeysOf(userId))
@@ -436,6 +491,7 @@ class CookieRepositoryImpl(
                 hasImage = imagePath != null,
                 localImagePath = imagePath,
                 lastOpenedAt = createdAt,
+                receivedFrom = receivedFrom,
                 createdAt = createdAt,
                 updatedAt = createdAt,
                 isSynced = false,

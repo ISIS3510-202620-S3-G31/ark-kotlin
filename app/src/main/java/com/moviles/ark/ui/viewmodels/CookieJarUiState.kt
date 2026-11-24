@@ -43,6 +43,21 @@ sealed interface CookieMessageAction {
     data class RetryImage(val cookieId: String) : CookieMessageAction
     //"Retry" de la bajada de galletas de la nube
     data object RetryRefresh : CookieMessageAction
+
+    //acciones de amigos y regalos: las atiende CookieSocialViewModel (y "View" la navegacion)
+    sealed interface Social : CookieMessageAction
+
+    //"View" de un regalo nuevo (M27, M28): abre la bandeja
+    data object ViewInbox : Social
+
+    //"Retry" de una accion de amigos que fallo por la red (M22)
+    data object RetrySocial : Social
+
+    //"Retry" de un regalo que no se envio (M24)
+    data class RetryGift(val cookieId: String, val friendUid: String) : Social
+
+    //"Retry" de un regalo que no se alcanzo a aceptar (M31)
+    data class RetryAccept(val shareId: String) : Social
 }
 
 //aviso de una sola vez (snackbar); action es lo que pasa al tocar su boton

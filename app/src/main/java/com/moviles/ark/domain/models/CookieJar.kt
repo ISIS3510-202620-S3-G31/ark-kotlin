@@ -79,4 +79,47 @@ object CookieMessages {
 
     //aviso antes de guardar cuando el titulo se va a guardar con sufijo
     fun willBeSavedAs(finalTitle: String) = "Will be saved as \"$finalTitle\""
+
+    //amigos y regalos (requieren red)
+    const val VIEW = "View"
+    //M18: algo social sin red
+    const val FRIENDS_NEED_INTERNET = "Friends and gifts need internet. Connect and try again"
+    //M20: el mismo texto si no existe o si esa persona te bloqueo, asi nadie descubre que lo bloquearon
+    const val NO_SUCH_USERNAME = "No one has that username"
+    //M22: se cayo la red durante una accion social
+    const val CONNECTION_LOST = "Connection lost. Nothing was changed"
+    //M24: se cayo la red al regalar
+    const val GIFT_NOT_SENT = "Connection lost. Your gift wasn't sent"
+    //M25: tocar 🎁 sin red
+    const val GIFTS_NEED_INTERNET = "Gifts need internet. Your cookie is still in your jar"
+    //M26 y M26b: cancelar un regalo enviado; si ya no existe el mensaje es neutro (no dice si se acepto, rechazo o vencio)
+    const val GIFT_CANCELED = "Gift canceled"
+    const val GIFT_CANNOT_CANCEL = "This gift can no longer be canceled"
+    //M29: bandeja sin red
+    const val GIFTS_NEED_CONNECTION = "Connect to the internet to see your gifts"
+    //M30b: aceptado en el telefono, falta borrarlo del backend
+    const val GIFT_SAVED_PENDING = "Gift saved on this phone. It will finish when you're back online"
+    //M31: se corto la red al aceptar, antes de guardarlo
+    const val GIFT_STILL_IN_INBOX = "Connection lost. The gift is still in your inbox"
+    //M32 y M33
+    const val GIFT_DECLINED = "Gift declined"
+    const val GIFT_EXPIRED = "This gift expired"
+
+    //M19
+    fun usernameTaken(name: String) = "@$name is taken. Try another one"
+
+    //M21
+    fun requestSent(name: String) = "Friend request sent to @$name ✓"
+
+    //M23: solo cuando el servidor confirmo el regalo
+    fun giftSent(name: String) = "Gift sent to @$name ✓"
+
+    //M27: regalo nuevo en vivo
+    fun newGift(name: String) = "New gift from @$name 🎁"
+
+    //M28: al abrir habia regalos esperando
+    fun giftsWaiting(count: Int) = if (count == 1) "You have 1 gift waiting 🎁" else "You have $count gifts waiting 🎁"
+
+    //M30
+    fun giftAccepted(title: String) = "\"$title\" is now in your jar 🍪"
 }

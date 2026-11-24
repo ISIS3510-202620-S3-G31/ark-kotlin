@@ -3,6 +3,7 @@ package com.moviles.ark.data
 import android.content.Context
 import android.graphics.Bitmap
 import androidx.room.Room
+import kotlinx.coroutines.flow.first
 import com.google.firebase.Firebase
 import com.google.firebase.analytics.analytics
 import com.google.firebase.auth.FirebaseAuth
@@ -13,6 +14,7 @@ import com.google.firebase.storage.FirebaseStorage
 import com.google.firebase.storage.storage
 import com.moviles.ark.data.workers.RemoteCookieDeleteWorker
 import com.moviles.ark.data.workers.RemotePhotoDeleteWorker
+import com.moviles.ark.data.workers.SharedImageDeleteWorker
 import com.moviles.ark.R
 import com.moviles.ark.data.local.ArkDatabase
 import com.moviles.ark.data.local.daos.FeedbackDao
@@ -43,9 +45,11 @@ import com.moviles.ark.domain.repositories.AuthRepository
 import com.moviles.ark.domain.repositories.BreathingRepository
 import com.moviles.ark.domain.repositories.CookieRepository
 import com.moviles.ark.domain.repositories.FeedbackRepository
+import com.moviles.ark.domain.repositories.FriendRepository
 import com.moviles.ark.domain.repositories.LocationRepository
 import com.moviles.ark.domain.repositories.MoodRepository
 import com.moviles.ark.domain.repositories.PhotoEntryRepository
+import com.moviles.ark.domain.repositories.SharedCookieRepository
 import com.moviles.ark.domain.repositories.StatsRepository
 import com.moviles.ark.domain.repositories.SyncRepository
 import com.moviles.ark.domain.repositories.ToolInteractionRepository
@@ -64,6 +68,8 @@ interface AppContainer {
     val photoRepository: PhotoEntryRepository
     val cookieRepository: CookieRepository
     val cookieImageLoader: CookieImageLoader<Bitmap>
+    val friendRepository: FriendRepository
+    val sharedCookieRepository: SharedCookieRepository
     val analyticsRepository: AnalyticsRepository
     val toolLatencyTracker: ToolLatencyTracker
     val screenTimeTracker: com.moviles.ark.domain.models.ScreenTimeTracker
@@ -155,6 +161,29 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             cloudStore = com.moviles.ark.data.remote.CookieCloudStore(firestore, storage),
             pendingRemoteDeletes = { RemoteCookieDeleteWorker.pendingCookieIds(context) },
             syncPreferences = com.moviles.ark.data.local.CookieSyncPreferences(context)
+        )
+    }
+    // amigos del cookie jar (solo 18+): usernames, perfiles publicos, solicitudes, amistades y bloqueos en firestore
+    override val friendRepository: FriendRepository by lazy {
+        com.moviles.ark.data.repositories.FriendRepositoryImpl(
+            cloud = com.moviles.ark.data.remote.FriendCloudStore(firestore),
+            userIdProvider = { auth.currentUser?.uid },
+            //el perfil publico lleva el avatar de la lista, nunca la foto
+            avatarIdProvider = {
+                com.moviles.ark.domain.models.Avatar.idOrDefault(userRepository.observeProfile().first()?.avatarId)
+            }
+        )
+    }
+    // regalos del cookie jar: bandeja en vivo desde firestore, regalos enviados en room, aceptados entran a cookieRepository
+    override val sharedCookieRepository: SharedCookieRepository by lazy {
+        com.moviles.ark.data.repositories.SharedCookieRepositoryImpl(
+            cloud = com.moviles.ark.data.remote.SharedCookieCloudStore(firestore, storage),
+            cookieRepository = cookieRepository,
+            sentGiftDao = database.sentGiftDao(),
+            userIdProvider = { auth.currentUser?.uid },
+            myUsername = { friendRepository.myUsername() },
+            //una foto de regalo que no se pudo borrar la borra workmanager cuando haya red
+            onOrphanImage = { userId, shareId -> SharedImageDeleteWorker.enqueue(context, userId, shareId) }
         )
     }
     // imagenes del cookie jar leidas del almacenamiento privado y decodificadas para la pantalla

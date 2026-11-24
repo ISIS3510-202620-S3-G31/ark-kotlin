@@ -156,7 +156,7 @@ private fun TabPill(text: String, selected: Boolean, modifier: Modifier, onClick
     }
 }
 
-//fila: titulo, 📷 si tiene imagen, ⏳ si falta subirla; en "Eaten" ademas devolver al jarro y borrar para siempre
+//fila: titulo, 📷 si tiene imagen, 🎁 si fue regalada, ⏳ si falta subirla; en "Eaten" ademas devolver al jarro y borrar para siempre
 @Composable
 private fun CookieRow(
     item: CookieListItem,
@@ -186,6 +186,15 @@ private fun CookieRow(
         if (item.hasImage) {
             Spacer(modifier = Modifier.width(8.dp))
             Text(text = "📷", style = MaterialTheme.typography.bodyLarge)
+        }
+        //llego como regalo de un amigo
+        if (item.receivedFrom != null) {
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "🎁",
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.semantics { contentDescription = "Gift from @${item.receivedFrom}" }
+            )
         }
         //pendiente de subir a la nube; las sincronizadas no muestran nada
         if (!item.isSynced) {

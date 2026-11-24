@@ -14,12 +14,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -42,7 +44,7 @@ import com.moviles.ark.ui.theme.PrimaryColor
 import com.moviles.ark.ui.theme.SecondaryColor
 import com.moviles.ark.ui.theme.TextColor
 
-//detalle de una galleta: titulo, texto, imagen y "Eat 🍪" (o "Return to jar" si ya se comio)
+//detalle de una galleta: titulo, texto, imagen y "Eat 🍪" (o "Return to jar" si ya se comio); "Gift 🎁" para 18+
 @Composable
 fun CookieDetailDialog(
     cookie: CookieModel,
@@ -53,6 +55,10 @@ fun CookieDetailDialog(
     onEat: () -> Unit,
     onReturnToJar: () -> Unit,
     onDismiss: () -> Unit,
+    //regalar (solo 18+): sin red el boton se ve apagado y al tocarlo se explica por que
+    canGift: Boolean = false,
+    isOnline: Boolean = true,
+    onGift: () -> Unit = {},
     //el dialogo es otra ventana y tapa los snackbars de la pantalla (y su "Retry"): se pintan tambien aqui
     snackbarHost: @Composable () -> Unit = {},
 ) {
@@ -86,6 +92,18 @@ fun CookieDetailDialog(
                     ) {
                         Icon(Icons.Default.Close, contentDescription = "Close", tint = TextColor)
                     }
+                }
+
+                //galleta que llego como regalo
+                cookie.receivedFrom?.let { from ->
+                    Text(
+                        text = "🎁 from @$from",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextColor.copy(alpha = 0.8f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp)
+                    )
                 }
 
                 if (cookie.hasImage) {
@@ -123,6 +141,25 @@ fun CookieDetailDialog(
                         ) {
                             Text("Return to jar", style = MaterialTheme.typography.labelLarge)
                         }
+                    }
+                }
+                if (canGift) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
+                        onClick = onGift,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = SecondaryColor.copy(alpha = if (isOnline) 1f else 0.4f),
+                            contentColor = TextColor
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp)
+                    ) {
+                        if (!isOnline) {
+                            Icon(Icons.Default.WifiOff, contentDescription = "No internet", tint = TextColor, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                        }
+                        Text("Gift 🎁", style = MaterialTheme.typography.labelLarge)
                     }
                 }
             }

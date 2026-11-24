@@ -351,6 +351,8 @@ class CookieJarViewModel(
             is CookieMessageAction.UndoEat -> onUndoEat(action.cookieId)
             is CookieMessageAction.RetryImage -> onCookieClick(action.cookieId)
             CookieMessageAction.RetryRefresh -> refreshFromCloud()
+            //amigos y regalos: los atiende CookieSocialViewModel
+            is CookieMessageAction.Social -> Unit
         }
     }
 

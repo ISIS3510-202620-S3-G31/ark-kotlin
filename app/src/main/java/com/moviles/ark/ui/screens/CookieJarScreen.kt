@@ -7,6 +7,17 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.material.icons.filled.CardGiftcard
+import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.WifiOff
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.moviles.ark.ui.components.GiftFriendPickerDialog
+import com.moviles.ark.ui.theme.AccentColor
+import com.moviles.ark.ui.viewmodels.CookieMessage
+import com.moviles.ark.ui.viewmodels.CookieMessageAction
+import com.moviles.ark.ui.viewmodels.CookieSocialViewModel
+import kotlinx.coroutines.flow.Flow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -66,31 +77,29 @@ import com.moviles.ark.ui.viewmodels.CookieJarUiState
 import com.moviles.ark.ui.viewmodels.CookieJarViewModel
 
 //conecta la pantalla del jarro con su viewmodel; al salir decide si se pide feedback
+//socialViewModel: amigos y regalos (solo 18+); lo comparten la pantalla de amigos y la bandeja
 @Composable
 fun CookieJarRoute(
     viewModel: CookieJarViewModel = viewModel(factory = CookieJarViewModel.Factory),
+    socialViewModel: CookieSocialViewModel = viewModel(factory = CookieSocialViewModel.Factory),
     onBack: (wasCompleted: Boolean, durationSeconds: Int) -> Unit,
     onNewCookie: () -> Unit,
+    onOpenFriends: () -> Unit = {},
+    onOpenInbox: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val social by socialViewModel.uiState.collectAsStateWithLifecycle()
+    //escuchar la bandeja mantiene vivo su listener (badge 🎁 en vivo) mientras se ve el jarro
+    val inbox by socialViewModel.inbox.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    //avisos de una sola vez; un mensaje igual al que ya se esta viendo no se repite
-    LaunchedEffect(viewModel) {
-        viewModel.messageFlow.collect { message ->
-            val current = snackbarHostState.currentSnackbarData
-            if (current?.visuals?.message == message.text) return@collect
-            //"offline" y "back online" no se hacen fila: el estado nuevo de la red reemplaza al viejo
-            if (message.isNetworkStatus && current?.visuals?.message in NETWORK_STATUS_TEXTS) current?.dismiss()
-            //cada aviso en su corrutina: el host los muestra en fila y el collect sigue escuchando
-            launch {
-                val result = snackbarHostState.showSnackbar(
-                    message = message.text,
-                    actionLabel = message.actionLabel,
-                    duration = if (message.isLong) SnackbarDuration.Long else SnackbarDuration.Short
-                )
-                if (result == SnackbarResult.ActionPerformed) message.action?.let(viewModel::onMessageAction)
-            }
+    //avisos del jarro y de amigos y regalos en el mismo host; "View" abre la bandeja
+    CookieMessagesEffect(viewModel.messageFlow, snackbarHostState) { action -> viewModel.onMessageAction(action) }
+    CookieMessagesEffect(socialViewModel.messageFlow, snackbarHostState) { action ->
+        when (action) {
+            CookieMessageAction.ViewInbox -> onOpenInbox()
+            is CookieMessageAction.Social -> socialViewModel.onMessageAction(action)
+            else -> viewModel.onMessageAction(action)
         }
     }
 
@@ -113,6 +122,13 @@ fun CookieJarRoute(
         onOpenList = viewModel::onOpenList,
         onNewCookie = onNewCookie,
         onCookieClick = { viewModel.onCookieClick(it.id) },
+        social = CookieJarSocialBar(
+            isVisible = social.isAdult,
+            isOnline = social.isOnline,
+            hasGifts = inbox.hasGifts,
+            onOpenFriends = onOpenFriends,
+            onOpenInbox = onOpenInbox,
+        ),
     )
 
     if (uiState.showList) {
@@ -138,6 +154,28 @@ fun CookieJarRoute(
             onEat = { viewModel.onEatCookie(cookie.id) },
             onReturnToJar = { viewModel.onReturnToJar(cookie.id) },
             onDismiss = viewModel::onDismissDetail,
+            //regalar solo 18+; sin red se ve deshabilitado y al tocarlo explica por que (M25)
+            canGift = social.isAdult,
+            isOnline = social.isOnline,
+            onGift = { socialViewModel.onGiftClick(cookie.id) },
+            snackbarHost = { CookieSnackbarHost(snackbarHostState) }
+        )
+    }
+
+    if (social.giftCookieId != null) {
+        GiftFriendPickerDialog(
+            isLoading = social.isPickerLoading,
+            needsActivation = social.pickerOverview != null && social.pickerOverview?.myProfile == null,
+            friends = social.pickerFriends,
+            sendingToUid = social.sendingToUid,
+            isOnline = social.isOnline,
+            onSend = socialViewModel::onSendGift,
+            onOpenFriends = {
+                socialViewModel.onDismissGiftPicker()
+                viewModel.onDismissDetail()
+                onOpenFriends()
+            },
+            onDismiss = socialViewModel::onDismissGiftPicker,
             snackbarHost = { CookieSnackbarHost(snackbarHostState) }
         )
     }
@@ -154,6 +192,42 @@ fun CookieJarRoute(
 //textos de los avisos de red (M1 y M2)
 private val NETWORK_STATUS_TEXTS = setOf(CookieMessages.WENT_OFFLINE, CookieMessages.BACK_ONLINE)
 
+//muestra los avisos de una sola vez de un viewmodel; un mensaje igual al que ya se esta viendo no se repite
+@Composable
+fun CookieMessagesEffect(
+    messages: Flow<CookieMessage>,
+    hostState: SnackbarHostState,
+    onAction: (CookieMessageAction) -> Unit,
+) {
+    LaunchedEffect(messages) {
+        messages.collect { message ->
+            val current = hostState.currentSnackbarData
+            if (current?.visuals?.message == message.text) return@collect
+            //"offline" y "back online" no se hacen fila: el estado nuevo de la red reemplaza al viejo
+            if (message.isNetworkStatus && current?.visuals?.message in NETWORK_STATUS_TEXTS) current?.dismiss()
+            //cada aviso en su corrutina: el host los muestra en fila y el collect sigue escuchando
+            launch {
+                val result = hostState.showSnackbar(
+                    message = message.text,
+                    actionLabel = message.actionLabel,
+                    duration = if (message.isLong) SnackbarDuration.Long else SnackbarDuration.Short
+                )
+                if (result == SnackbarResult.ActionPerformed) message.action?.let(onAction)
+            }
+        }
+    }
+}
+
+//botones de amigos y bandeja arriba del jarro (solo 18+)
+data class CookieJarSocialBar(
+    val isVisible: Boolean = false,
+    val isOnline: Boolean = true,
+    //badge 🎁 en vivo: hay regalos esperando
+    val hasGifts: Boolean = false,
+    val onOpenFriends: () -> Unit = {},
+    val onOpenInbox: () -> Unit = {},
+)
+
 //jarro con las galletas del dia, boton del listado encima y "+" para una galleta nueva
 @Composable
 fun CookieJarScreen(
@@ -163,6 +237,7 @@ fun CookieJarScreen(
     onOpenList: () -> Unit,
     onNewCookie: () -> Unit,
     onCookieClick: (CookieModel) -> Unit,
+    social: CookieJarSocialBar = CookieJarSocialBar(),
 ) {
     Scaffold(
         containerColor = BackgroundColor,
@@ -177,7 +252,26 @@ fun CookieJarScreen(
                 .navigationBarsPadding(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            CookieTopBar(title = "Cookie Jar", onBack = onBack)
+            CookieTopBar(title = "Cookie Jar", onBack = onBack) {
+                if (social.isVisible) {
+                    //la bandeja se abre aun sin red: alli se explica que se necesita conexion (M29)
+                    SocialIconButton(
+                        icon = Icons.Default.CardGiftcard,
+                        description = if (social.hasGifts) "Gifts waiting" else "Gifts",
+                        isOnline = social.isOnline,
+                        showBadge = social.hasGifts,
+                        onClick = social.onOpenInbox
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    SocialIconButton(
+                        icon = Icons.Default.People,
+                        description = "Friends",
+                        isOnline = social.isOnline,
+                        showBadge = false,
+                        onClick = social.onOpenFriends
+                    )
+                }
+            }
 
             //boton sobre el jarro: abre el listado de todas las galletas
             PillButton(
@@ -249,9 +343,9 @@ fun CookieSnackbarHost(hostState: SnackbarHostState) {
     }
 }
 
-//boton atras redondo secondary y titulo en H1, como en custom breathing
+//boton atras redondo secondary y titulo en H1, como en custom breathing; actions va a la derecha
 @Composable
-fun CookieTopBar(title: String, onBack: () -> Unit) {
+fun CookieTopBar(title: String, onBack: () -> Unit, actions: @Composable RowScope.() -> Unit = {}) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -279,8 +373,54 @@ fun CookieTopBar(title: String, onBack: () -> Unit) {
             style = MaterialTheme.typography.headlineLarge,
             color = TextColor,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
         )
+        actions()
+    }
+}
+
+//boton redondo de amigos o bandeja; sin red se ve apagado con wifi tachado, pero se puede tocar para saber por que
+@Composable
+fun SocialIconButton(
+    icon: ImageVector,
+    description: String,
+    isOnline: Boolean,
+    showBadge: Boolean,
+    onClick: () -> Unit,
+) {
+    Box(modifier = Modifier.size(48.dp)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(CircleShape)
+                .background(SecondaryColor.copy(alpha = if (isOnline) 1f else 0.4f))
+                .clickable(role = Role.Button, onClickLabel = description, onClick = onClick),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(imageVector = icon, contentDescription = description, tint = TextColor, modifier = Modifier.size(24.dp))
+        }
+        if (!isOnline) {
+            Icon(
+                imageVector = Icons.Default.WifiOff,
+                contentDescription = "No internet",
+                tint = TextColor,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .size(18.dp)
+                    .clip(CircleShape)
+                    .background(BackgroundLightColor)
+                    .padding(2.dp)
+            )
+        } else if (showBadge) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .size(14.dp)
+                    .clip(CircleShape)
+                    .background(AccentColor)
+            )
+        }
     }
 }
 
