@@ -1,4 +1,4 @@
--- Sesiones completadas de las herramientas (Sprint 4) y las preguntas que salen de ellas: BQ13.
+-- Sesiones completadas de las herramientas (Sprint 4) y las preguntas que salen de ellas: BQ13 y BQ14.
 --
 -- Uso: correr despues de views.sql y views_bq4_and_age.sql (usa tool_interactions, tool_name,
 -- test_accounts y la tabla tool_load_latency_raw_latest de la extension). Despues correr
@@ -179,3 +179,45 @@ SELECT
   c.is_test_account
 FROM completions_per_tool AS c
 CROSS JOIN the_4_weeks AS w;
+
+-- BQ14: cuanto se demoran los usuarios completando cada herramienta, en 3 rangos fijos:
+-- menos de 1 minuto (1 a 59 s), de 1 a 3 minutos (60 a 180 s) y mas de 3 minutos (mas de 180 s).
+-- Una fila por herramienta, rango, tipo de dispositivo y cuenta de prueba, con 0 en los rangos sin
+-- sesiones (asi la barra al 100 % siempre tiene los 3 pedazos en el mismo orden).
+-- Una duracion de 0 segundos, negativa o vacia es un error del reloj: no se puede clasificar, asi
+-- que no entra en los rangos y se cuenta aparte en invalid_duration_sessions.
+-- La respuesta se lee con device_type = 'Real phone' y is_test_account = false.
+CREATE OR REPLACE VIEW `ark-mobiles.ark_dashboards.bq14_tool_duration_brackets` AS
+WITH grouped AS (
+  SELECT
+    tool,
+    device_type,
+    is_test_account,
+    -- sesiones de cada rango, en el orden de los rangos
+    [COUNTIF(duration_s BETWEEN 1 AND 59),
+     COUNTIF(duration_s BETWEEN 60 AND 180),
+     COUNTIF(duration_s > 180)] AS by_bracket,
+    COUNTIF(duration_s IS NULL OR duration_s <= 0) AS invalid_duration_sessions,
+    MAX(happened_at) AS last_session_at
+  FROM `ark-mobiles.ark_dashboards.completed_tool_sessions`
+  WHERE in_last_4_weeks
+  GROUP BY 1, 2, 3
+)
+SELECT
+  g.tool,
+  b.duration_bracket,
+  b.bracket_order,
+  g.by_bracket[OFFSET(b.bracket_order - 1)] AS sessions,
+  -- porcentaje dentro de su herramienta (dispositivo y cuenta de prueba), no del total
+  ROUND(100 * SAFE_DIVIDE(g.by_bracket[OFFSET(b.bracket_order - 1)],
+    (SELECT SUM(n) FROM UNNEST(g.by_bracket) AS n)), 1) AS pct_of_tool_sessions,
+  g.invalid_duration_sessions,
+  g.last_session_at,
+  g.device_type,
+  g.is_test_account
+FROM grouped AS g
+CROSS JOIN UNNEST([
+  STRUCT(1 AS bracket_order, '1. Under 1 min' AS duration_bracket),
+  (2, '2. 1 to 3 min'),
+  (3, '3. Over 3 min')
+]) AS b;

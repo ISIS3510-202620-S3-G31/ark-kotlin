@@ -102,7 +102,7 @@ query*. Una corrida por colección.
 4. Correr `views_bq4_and_age.sql` (BQ4 y edad de los usuarios activos; usa las vistas de los
    dos pasos anteriores).
 5. Correr `views_tool_sessions.sql` (sesiones completadas de cada herramienta, con su celular y
-   su punto de entrada, y las vistas de BQ13; usa `tool_interactions`, `test_accounts` y la
+   su punto de entrada, y las vistas de BQ13 y BQ14; usa `tool_interactions`, `test_accounts` y la
    tabla de aperturas de Firestore).
 6. Correr `views_answers.sql` al final: escribe la respuesta de cada BQ como texto (ver
    "Respuestas en vivo" en la sección 5).
@@ -129,7 +129,8 @@ Quedan en el dataset `ark_dashboards`:
 | `bq_age_distribution` | edad de los usuarios activos en 30 días, por grupo de MinSalud y cuenta de prueba |
 | `completed_tool_sessions` | una fila por sesión completada de una herramienta (la foto del día, una por día), con su celular, punto de entrada, semana de lunes a domingo e `in_last_4_weeks` |
 | `bq13_weekly_tool_completions` | BQ13, sesiones completadas por herramienta en cada una de las últimas 4 semanas completas (con 0 en las semanas sin sesiones) |
-| `bq_answers` | una fila con la respuesta de cada BQ (`bq1_answer` … `bq13_answer`); las de BQ1 a BQ9 empiezan con la fecha del último dato |
+| `bq14_tool_duration_brackets` | BQ14, sesiones completadas por herramienta en 3 rangos de duración (menos de 1 min, 1 a 3 min, más de 3 min) |
+| `bq_answers` | una fila con la respuesta de cada BQ (`bq1_answer` … `bq14_answer`); las de BQ1 a BQ9 empiezan con la fecha del último dato |
 
 Los dos bloques "PASO 2" del final de `views_analytics.sql` ya se corrieron: `tool_load_latency`
 y `app_screen_time` leen de Firestore (llega en segundos) y de Analytics solo lo anterior a la
@@ -259,6 +260,21 @@ Las vistas leen las aperturas directo de la tabla de Firestore (`tool_load_laten
 y cada una lee `completed_tool_sessions` una sola vez (la respuesta también lee su vista una sola
 vez): BigQuery recalcula una vista cada vez que se nombra, y la vista `tool_load_latency` recorre
 todos los eventos de Analytics. Así cada consulta tarda alrededor de 1 s.
+
+### Página BQ14 Tool Session Completion Duration
+
+Fuente `bq14_tool_duration_brackets`. Pregunta: ¿cuánto se demoran los usuarios completando cada
+herramienta? Rangos fijos: menos de 1 min (1 a 59 s), 1 a 3 min (60 a 180 s) y más de 3 min.
+Mismo periodo y unidad que BQ13. Una duración de 0 s o negativa es un error del reloj: no entra en
+los rangos y se cuenta en `invalid_duration_sessions`.
+
+1. Controles `device_type` (por defecto `Real phone`) e `is_test_account` (por defecto `false`).
+2. Barras horizontales **apiladas al 100 %**: dimensión `tool`, desglose `duration_bracket`
+   (orden ascendente), métrica `SUM(sessions)`. La herramienta con más "más de 3 min" es la que
+   más le cuesta terminar al usuario.
+3. Anillo `duration_bracket` × `SUM(sessions)`: el reparto de todas las herramientas juntas.
+4. Scorecard `SUM(sessions)`: sesiones analizadas.
+5. Respuesta en vivo: tabla de una celda con `bq14_answer`.
 
 Los campos nuevos (`entry_point`, `first_open`, `app_screen_time`, `user_id`, las colecciones
 `tool_load_latency` y `screen_time`) solo llegan desde la versión de la app que los trae; antes

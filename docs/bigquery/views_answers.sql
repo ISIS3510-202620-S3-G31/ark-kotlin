@@ -56,6 +56,42 @@ bq13 AS (
       CONCAT(' Sporadic (a single week): ', sporadic_tools, '.'))) AS answer
   FROM bq13_parts
 ),
+-- BQ14: cuanto se demoran completando cada herramienta, en 3 rangos (ultimas 4 semanas completas)
+bq14 AS (
+  SELECT CONCAT(
+    `ark-mobiles.ark_dashboards.as_of`(last_session_at),
+    FORMAT('Of %d completed sessions in the last 4 complete weeks: ', total),
+    (SELECT STRING_AGG(CONCAT(LOWER(SUBSTR(duration_bracket, 4)), ' ',
+       CAST(CAST(ROUND(100 * SAFE_DIVIDE(n, total)) AS INT64) AS STRING), '%'), ', ' ORDER BY bracket_order)
+     FROM (SELECT r.duration_bracket, r.bracket_order, SUM(r.sessions) AS n
+           FROM UNNEST(items) AS r GROUP BY 1, 2)),
+    '. Most common per tool: ',
+    -- el rango con mas sesiones de cada herramienta
+    (SELECT STRING_AGG(CONCAT(tool, ' ', LOWER(SUBSTR(duration_bracket, 4)), ' (',
+       CAST(CAST(ROUND(pct_of_tool_sessions) AS INT64) AS STRING), '%)'), ', ' ORDER BY tool)
+     FROM (SELECT * FROM UNNEST(items) AS r WHERE r.sessions > 0
+           QUALIFY ROW_NUMBER() OVER (PARTITION BY r.tool ORDER BY r.sessions DESC, r.bracket_order) = 1)),
+    '. ',
+    -- la que mas sesiones de mas de 3 minutos tiene: la que mas le cuesta terminar al usuario
+    COALESCE((
+      SELECT CONCAT('Takes longest: ', r.tool, ' (', CAST(CAST(ROUND(r.pct_of_tool_sessions) AS INT64) AS STRING),
+        '% of its sessions over 3 min).')
+      FROM UNNEST(items) AS r
+      WHERE r.bracket_order = 3 AND r.sessions > 0
+      ORDER BY r.pct_of_tool_sessions DESC, r.sessions DESC
+      LIMIT 1), 'No tool took over 3 min.'),
+    IF(invalid > 0, FORMAT(' %d sessions with a duration of 0 s or less were left out.', invalid), '')) AS answer
+  FROM (
+    SELECT
+      ARRAY_AGG(STRUCT(tool, duration_bracket, bracket_order, sessions, pct_of_tool_sessions)) AS items,
+      SUM(sessions) AS total,
+      -- invalid_duration_sessions se repite en los 3 rangos de cada herramienta: se cuenta una vez
+      SUM(IF(bracket_order = 1, invalid_duration_sessions, 0)) AS invalid,
+      MAX(last_session_at) AS last_session_at
+    FROM `ark-mobiles.ark_dashboards.bq14_tool_duration_brackets`
+    WHERE device_type = 'Real phone' AND NOT is_test_account
+  )
+),
 -- BQ1: herramienta mas lenta en abrir (mediana) y las demas
 bq1_rows AS (
   SELECT
@@ -181,4 +217,5 @@ SELECT
   (SELECT answer FROM bq7) AS bq7_answer,
   (SELECT answer FROM bq8) AS bq8_answer,
   (SELECT answer FROM bq9) AS bq9_answer,
-  (SELECT answer FROM bq13) AS bq13_answer;
+  (SELECT answer FROM bq13) AS bq13_answer,
+  (SELECT answer FROM bq14) AS bq14_answer;
