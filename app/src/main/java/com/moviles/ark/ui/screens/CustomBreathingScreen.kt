@@ -128,7 +128,9 @@ fun CustomBreathingRoute(
     //avisos de una sola vez del viewmodel (por ejemplo sin internet); uno nuevo reemplaza al que se estaba mostrando
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(viewModel) {
-        viewModel.messages.collectLatest { message -> snackbarHostState.showSnackbar(message) }
+        viewModel.messages.collectLatest { message ->
+            snackbarHostState.showSnackbar(message)
+        }
     }
 
     CustomBreathingScreen(
@@ -180,7 +182,11 @@ fun CustomBreathingScreen(
         containerColor = BackgroundColor,
         contentColor = TextColor,
         //con la hoja de musica abierta el aviso se muestra dentro de ella: aqui abajo quedaria tapado por la hoja
-        snackbarHost = { if (!uiState.showTrackSelector) BreathingSnackbarHost(hostState = snackbarHostState) }
+        snackbarHost = {
+            if (!uiState.showTrackSelector) {
+                BreathingSnackbarHost(hostState = snackbarHostState)
+            }
+        }
     ) { innerPadding ->
         //el scaffold ya deja el espacio de la barra de estado y la de navegacion
         Column(
@@ -662,48 +668,70 @@ private fun AmbientMusicSheet(
     ) {
         //el aviso flota sobre la parte baja de la hoja, igual que lo haria sobre la pantalla
         Box(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 20.dp, end = 20.dp, bottom = 24.dp)
-            ) {
-                Text(
-                    text = "Ambient music",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = TextColor,
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                )
-                Text(
-                    text = "Tap a track to play or pause it. It loops while you breathe.",
-                    style = SecondaryTextStyle,
-                    color = TextColor.copy(alpha = 0.7f),
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 12.dp)
-                )
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(builtInTracks, key = { it.id }) { track ->
-                        TrackRow(track = track, uiState = uiState, onClick = { onTrackTapped(track) })
-                    }
-                    if (moreTracks.isNotEmpty()) {
-                        item(key = "more_tracks_label") {
-                            SectionLabel(text = if (moreTracks.all { it.isAvailableOffline }) "Saved on this phone" else "From Jamendo")
-                        }
-                        items(moreTracks, key = { it.id }) { track ->
-                            TrackRow(track = track, uiState = uiState, onClick = { onTrackTapped(track) })
-                        }
-                    }
-                    item(key = "tracks_status") {
-                        TracksStatus(
-                            isLoading = uiState.isLoadingTracks,
-                            loadFailed = uiState.tracksLoadFailed,
-                            onRetry = onRetry
-                        )
-                    }
-                }
-            }
+            AmbientMusicList(
+                uiState = uiState,
+                builtInTracks = builtInTracks,
+                moreTracks = moreTracks,
+                onTrackTapped = onTrackTapped,
+                onRetry = onRetry
+            )
             BreathingSnackbarHost(
                 hostState = snackbarHostState,
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
+        }
+    }
+}
+
+//contenido de la hoja: titulo, ayuda y la lista de pistas con su estado de carga abajo
+@Composable
+private fun AmbientMusicList(
+    uiState: BreathingUiState,
+    builtInTracks: List<AmbientTrackModel>,
+    moreTracks: List<AmbientTrackModel>,
+    onTrackTapped: (AmbientTrackModel) -> Unit,
+    onRetry: () -> Unit
+) {
+    //si todas las de abajo ya estan descargadas es porque no hay internet y se muestran las del telefono
+    val allMoreTracksAreSaved = moreTracks.all { it.isAvailableOffline }
+    val moreTracksTitle = if (allMoreTracksAreSaved) "Saved on this phone" else "From Jamendo"
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 20.dp, end = 20.dp, bottom = 24.dp)
+    ) {
+        Text(
+            text = "Ambient music",
+            style = MaterialTheme.typography.headlineSmall,
+            color = TextColor,
+            modifier = Modifier.padding(horizontal = 16.dp)
+        )
+        Text(
+            text = "Tap a track to play or pause it. It loops while you breathe.",
+            style = SecondaryTextStyle,
+            color = TextColor.copy(alpha = 0.7f),
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 12.dp)
+        )
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(builtInTracks, key = { it.id }) { track ->
+                TrackRow(track = track, uiState = uiState, onClick = { onTrackTapped(track) })
+            }
+            if (moreTracks.isNotEmpty()) {
+                item(key = "more_tracks_label") {
+                    SectionLabel(text = moreTracksTitle)
+                }
+                items(moreTracks, key = { it.id }) { track ->
+                    TrackRow(track = track, uiState = uiState, onClick = { onTrackTapped(track) })
+                }
+            }
+            item(key = "tracks_status") {
+                TracksStatus(
+                    isLoading = uiState.isLoadingTracks,
+                    loadFailed = uiState.tracksLoadFailed,
+                    onRetry = onRetry
+                )
+            }
         }
     }
 }
@@ -740,12 +768,15 @@ private fun TrackRow(track: AmbientTrackModel, uiState: BreathingUiState, onClic
     val isUnplayable = track.id == uiState.unplayableTrackId
     val needsInternet = !uiState.canPlay(track)
     //la que sigue sonando con lo que alcanzo a cargar se puede pausar aunque se haya ido la red
-    val isEnabled = !needsInternet || isPlaying || isBuffering
+    val canBeTapped = !needsInternet || isPlaying || isBuffering
     val details = listOf(track.artist, formatTrackDuration(track.durationSeconds)).filter { it.isNotBlank() }.joinToString(" · ")
-    val statusText = when {
-        isUnplayable -> UNPLAYABLE_TRACK_MESSAGE
-        needsInternet -> NEEDS_INTERNET_TRACK_MESSAGE
-        else -> details
+    //debajo del titulo: primero el error, despues si necesita internet y si no el artista y la duracion
+    val statusText = if (isUnplayable) {
+        UNPLAYABLE_TRACK_MESSAGE
+    } else if (needsInternet) {
+        NEEDS_INTERNET_TRACK_MESSAGE
+    } else {
+        details
     }
 
     Row(
@@ -757,12 +788,12 @@ private fun TrackRow(track: AmbientTrackModel, uiState: BreathingUiState, onClic
             .background(if (isPlaying || isBuffering) SecondaryColor else BackgroundColor)
             .border(1.dp, if (isSelected) SecondaryColor else BackgroundColor, RoundedCornerShape(32.dp))
             .clickable(
-                enabled = isEnabled,
+                enabled = canBeTapped,
                 role = Role.Button,
                 onClickLabel = if (isPlaying || isBuffering) "Pause ${track.title}" else "Play ${track.title}",
                 onClick = onClick
             )
-            .alpha(if (isEnabled) 1f else DISABLED_ALPHA)
+            .alpha(if (canBeTapped) 1f else DISABLED_ALPHA)
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -784,23 +815,29 @@ private fun TrackRow(track: AmbientTrackModel, uiState: BreathingUiState, onClic
                 overflow = TextOverflow.Ellipsis
             )
         }
-        if (track.isAvailableOffline) {
-            Spacer(modifier = Modifier.width(8.dp))
-            Icon(
-                imageVector = Icons.Filled.OfflinePin,
-                contentDescription = "Available offline",
-                tint = TextColor,
-                modifier = Modifier.size(18.dp)
-            )
-        } else if (needsInternet) {
-            Spacer(modifier = Modifier.width(8.dp))
-            Icon(
-                imageVector = Icons.Filled.CloudOff,
-                contentDescription = "Not available offline",
-                tint = TextColor,
-                modifier = Modifier.size(18.dp)
-            )
-        }
+        TrackOfflineBadge(isAvailableOffline = track.isAvailableOffline, needsInternet = needsInternet)
+    }
+}
+
+//icono a la derecha de la fila: pin si suena sin internet, nube tachada si ahora no se puede reproducir
+@Composable
+private fun TrackOfflineBadge(isAvailableOffline: Boolean, needsInternet: Boolean) {
+    if (isAvailableOffline) {
+        Spacer(modifier = Modifier.width(8.dp))
+        Icon(
+            imageVector = Icons.Filled.OfflinePin,
+            contentDescription = "Available offline",
+            tint = TextColor,
+            modifier = Modifier.size(18.dp)
+        )
+    } else if (needsInternet) {
+        Spacer(modifier = Modifier.width(8.dp))
+        Icon(
+            imageVector = Icons.Filled.CloudOff,
+            contentDescription = "Not available offline",
+            tint = TextColor,
+            modifier = Modifier.size(18.dp)
+        )
     }
 }
 

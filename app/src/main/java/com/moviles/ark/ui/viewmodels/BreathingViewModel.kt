@@ -81,31 +81,51 @@ class BreathingViewModel(
     private fun observeConnectivity() {
         viewModelScope.launch {
             connectivity.collect { isConnected ->
-                val wasOnline = _uiState.value.isOnline
-                _uiState.update { it.copy(isOnline = isConnected) }
-                if (isConnected == wasOnline) return@collect
-                if (isConnected) onBackOnline() else onWentOffline()
+                onConnectivityChanged(isConnected)
             }
         }
     }
 
+    private fun onConnectivityChanged(isConnected: Boolean) {
+        val wasOnline = _uiState.value.isOnline
+        _uiState.update { it.copy(isOnline = isConnected) }
+
+        //el observer puede repetir el mismo valor; solo se reacciona cuando de verdad cambia
+        if (isConnected == wasOnline) return
+
+        if (isConnected) {
+            onBackOnline()
+        } else {
+            onWentOffline()
+        }
+    }
+
     //se fue la red (o se entro sin ella): se avisa una vez que solo suenan las pistas descargadas
-    //y si una pista de jamendo seguia cargando por streaming se suelta de una vez en vez de esperar el error
     private fun onWentOffline() {
         _messages.trySend(OFFLINE_MUSIC_NOTICE)
+        stopRemoteTrackThatWasLoading()
+    }
+
+    //si una pista de jamendo seguia cargando por streaming se suelta de una vez en vez de esperar el error
+    private fun stopRemoteTrackThatWasLoading() {
         val state = _uiState.value
-        val selected = state.selectedTrack ?: return
-        if (state.isTrackBuffering && !state.canPlay(selected)) {
-            playbackJob?.cancel()
-            audioPlayerHelper?.pause()
-            onTrackPlaybackFailed(selected, wasStreaming = true)
-        }
+        val selectedTrack = state.selectedTrack
+        if (selectedTrack == null) return
+        if (!state.isTrackBuffering) return
+        //si la pista ya esta en el telefono puede seguir cargando sin internet
+        if (state.canPlay(selectedTrack)) return
+
+        playbackJob?.cancel()
+        audioPlayerHelper?.pause()
+        onTrackPlaybackFailed(selectedTrack, wasStreaming = true)
     }
 
     //volvio la red: el aviso de que no se pudo reproducir era por la conexion, y si jamendo no respondio se pide otra vez
     private fun onBackOnline() {
         _uiState.update { it.copy(unplayableTrackId = null) }
-        if (_uiState.value.tracksLoadFailed) loadAmbientTracks()
+        if (_uiState.value.tracksLoadFailed) {
+            loadAmbientTracks()
+        }
     }
 
     //carga las canciones relajantes desde el repositorio de respiracion (jamendo o, sin conexion, la cache)
@@ -117,7 +137,7 @@ class BreathingViewModel(
         viewModelScope.launch {
             //primero las que ya estan en el telefono: sin internet jamendo puede tardar varios segundos en fallar
             val offlineTracks = repository.getOfflineTracks()
-            _uiState.update { current -> current.copy(ambientTracks = (current.ambientTracks + offlineTracks).distinctBy { it.id }) }
+            addOfflineTracksToList(offlineTracks)
             val catalog = repository.getAmbientTracks()
             _uiState.update { current ->
                 current.copy(
@@ -130,6 +150,20 @@ class BreathingViewModel(
                     tracksLoadFailed = !catalog.isOnline
                 )
             }
+        }
+    }
+
+    //agrega a la lista de la hoja las pistas del telefono que todavia no estaban, sin mover las que ya se ven
+    private fun addOfflineTracksToList(offlineTracks: List<AmbientTrackModel>) {
+        _uiState.update { current ->
+            val tracksToShow = current.ambientTracks.toMutableList()
+            for (offlineTrack in offlineTracks) {
+                val alreadyShown = tracksToShow.any { it.id == offlineTrack.id }
+                if (!alreadyShown) {
+                    tracksToShow.add(offlineTrack)
+                }
+            }
+            current.copy(ambientTracks = tracksToShow)
         }
     }
 
@@ -174,6 +208,8 @@ class BreathingViewModel(
         //la misma pista que estaba en pausa sigue desde donde iba
         if (track.id == loadedTrackId && audioPlayer.resume()) return
 
+        //si la pista no esta en el telefono suena por streaming desde jamendo
+        val isStreaming = !track.isAvailableOffline
         playbackJob = viewModelScope.launch {
             val audioUrl = breathingRepository?.resolveTrackAudio(track) ?: track.audioUrl
             loadedTrackId = track.id
@@ -182,7 +218,7 @@ class BreathingViewModel(
                 onPlaybackStateChanged = { isPlaying ->
                     _uiState.update { it.copy(isMusicPlaying = isPlaying, isTrackBuffering = false) }
                 },
-                onError = { onTrackPlaybackFailed(track, wasStreaming = !track.isAvailableOffline) }
+                onError = { onTrackPlaybackFailed(track, wasStreaming = isStreaming) }
             )
             //mientras suena por streaming se guarda en la cache del disco para que quede disponible sin internet
             if (!track.isAvailableOffline) saveTrackForOffline(track)
@@ -210,13 +246,26 @@ class BreathingViewModel(
     //si sonaba por streaming y mientras tanto termino de descargarse, sigue sonando desde el archivo del telefono
     private fun onTrackPlaybackFailed(track: AmbientTrackModel, wasStreaming: Boolean) {
         loadedTrackId = null
-        val state = _uiState.value
-        val savedTrack = state.ambientTracks.firstOrNull { it.id == track.id }
-        if (wasStreaming && savedTrack?.isAvailableOffline == true && state.selectedTrack?.id == track.id) {
-            playTrack(savedTrack)
-            return
+        if (wasStreaming) {
+            val downloadedTrack = findDownloadedCopy(track)
+            if (downloadedTrack != null) {
+                playTrack(downloadedTrack)
+                return
+            }
         }
         _uiState.update { it.copy(isMusicPlaying = false, isTrackBuffering = false, unplayableTrackId = track.id) }
+    }
+
+    //busca la misma pista en la lista ya marcada como descargada; null si no se descargo
+    //o si el usuario ya eligio otra (en ese caso no se vuelve a poner esta)
+    private fun findDownloadedCopy(track: AmbientTrackModel): AmbientTrackModel? {
+        val state = _uiState.value
+        if (state.selectedTrack?.id != track.id) return null
+
+        val trackInList = state.ambientTracks.firstOrNull { it.id == track.id }
+        if (trackInList == null) return null
+        if (!trackInList.isAvailableOffline) return null
+        return trackInList
     }
 
     //abre la hoja con las pistas; si la ultima carga fallo (por ejemplo se abrio sin internet) se vuelve a intentar

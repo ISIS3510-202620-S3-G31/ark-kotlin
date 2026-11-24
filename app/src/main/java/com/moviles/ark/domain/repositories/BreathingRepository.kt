@@ -14,7 +14,12 @@ interface BreathingRepository {
     suspend fun getAmbientTracks(): AmbientTrackCatalog
 
     //pistas que ya estan en el telefono (la de la app y las de la cache del disco); no espera a jamendo
-    suspend fun getOfflineTracks(): List<AmbientTrackModel> = listOfNotNull(defaultTrack)
+    suspend fun getOfflineTracks(): List<AmbientTrackModel> {
+        //por defecto solo la pista de la app, si hay una
+        val bundledTrack = defaultTrack
+        if (bundledTrack == null) return emptyList()
+        return listOf(bundledTrack)
+    }
 
     //uri para reproducir la pista: el archivo en cache si existe o la url remota para empezar por streaming
     suspend fun resolveTrackAudio(track: AmbientTrackModel): String = track.audioUrl

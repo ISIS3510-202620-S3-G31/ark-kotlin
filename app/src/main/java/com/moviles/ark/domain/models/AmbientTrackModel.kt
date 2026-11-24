@@ -13,7 +13,10 @@ data class AmbientTrackModel(
 ) {
     //con internet suena cualquier pista; sin internet solo la de la app y las descargadas,
     //las demas solo existen en jamendo y pedirlas por streaming sin red solo daria error
-    fun isPlayable(isOnline: Boolean): Boolean = isOnline || isAvailableOffline
+    fun isPlayable(isOnline: Boolean): Boolean {
+        if (isOnline) return true
+        return isAvailableOffline
+    }
 }
 
 //lista de musica para la hoja: la pista de la app primero y luego las de jamendo o las guardadas en cache
