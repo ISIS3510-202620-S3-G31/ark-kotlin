@@ -17,6 +17,52 @@ class FortuneCacheManager(context: Context) {
     private val deckFile = File(context.cacheDir, "fortune_deck.json")
     private val recentCapacity = 5
 
+    //lee una lista de galletas desde un archivo json en el almacenamiento
+    private fun readCookiesFromFile(file: File): List<FortuneModel> {
+        if (!file.exists()) return emptyList()
+        return try {
+            val content = file.readText()
+            val array = JSONArray(content)
+            val result = mutableListOf<FortuneModel>()
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                val id = obj.getInt("id")
+                result.add(
+                    FortuneModel(
+                        id = id,
+                        quote = obj.getString("quote"),
+                        category = obj.optString("category", "Wisdom"),
+                        luckyNumber = obj.optInt("luckyNumber", 7),
+                        isFavorite = isFavorite(id),
+                        savedAt = obj.optLong("savedAt", System.currentTimeMillis())
+                    )
+                )
+            }
+            result
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    //escribe una lista de galletas en formato json a un archivo en disco
+    private fun writeCookiesToFile(file: File, cookies: List<FortuneModel>) {
+        try {
+            val array = JSONArray()
+            for (item in cookies) {
+                val obj = JSONObject()
+                obj.put("id", item.id)
+                obj.put("quote", item.quote)
+                obj.put("category", item.category)
+                obj.put("luckyNumber", item.luckyNumber)
+                obj.put("savedAt", item.savedAt)
+                array.put(obj)
+            }
+            file.writeText(array.toString())
+        } catch (_: Exception) {
+            //si no se puede escribir en disco se omite silenciosamente
+        }
+    }
+
     //carga en memoria los ids de favoritos desde room al iniciar
     fun loadFavoriteIds(ids: List<Int>) {
         favoritesCache.clear()
@@ -41,105 +87,70 @@ class FortuneCacheManager(context: Context) {
 
     //lee las galletas recientes guardadas en disco
     @Synchronized
-    fun getRecentCookies(): List<FortuneModel> {
-        if (!recentFile.exists()) return emptyList()
-        return try {
-            val content = recentFile.readText()
-            val array = JSONArray(content)
-            val result = mutableListOf<FortuneModel>()
-            for (i in 0 until array.length()) {
-                val obj = array.getJSONObject(i)
-                val id = obj.getInt("id")
-                result.add(
-                    FortuneModel(
-                        id = id,
-                        quote = obj.getString("quote"),
-                        category = obj.optString("category", "Wisdom"),
-                        luckyNumber = obj.optInt("luckyNumber", 7),
-                        isFavorite = isFavorite(id),
-                        savedAt = obj.optLong("savedAt", System.currentTimeMillis())
-                    )
-                )
-            }
-            result
-        } catch (_: Exception) {
-            emptyList()
-        }
-    }
+    fun getRecentCookies(): List<FortuneModel> = readCookiesFromFile(recentFile)
 
     //agrega una galleta al carrusel de recientes usando politica lru de maximo 5 elementos
     @Synchronized
     fun addRecentCookie(cookie: FortuneModel): List<FortuneModel> {
         val current = getRecentCookies().toMutableList()
-        //removemos si ya estaba para moverla a la primera posicion
         current.removeAll { it.id == cookie.id }
         current.add(0, cookie)
-        //desalojamos las mas viejas si supera la capacidad de 5
         val trimmed = if (current.size > recentCapacity) current.take(recentCapacity) else current
-        try {
-            val array = JSONArray()
-            for (item in trimmed) {
-                val obj = JSONObject()
-                obj.put("id", item.id)
-                obj.put("quote", item.quote)
-                obj.put("category", item.category)
-                obj.put("luckyNumber", item.luckyNumber)
-                obj.put("savedAt", item.savedAt)
-                array.put(obj)
-            }
-            recentFile.writeText(array.toString())
-        } catch (_: Exception) {
-            //si falla la escritura en disco no bloqueamos la interfaz
-        }
+        writeCookiesToFile(recentFile, trimmed)
         return trimmed
+    }
+
+    //frases de reserva offline por defecto por si el usuario abre la app sin internet
+    private val defaultReserveQuotes = listOf(
+        "Peace begins with a deep breath and a quiet mind.",
+        "Small daily steps lead to life-changing results.",
+        "Trust the timing of your life and keep moving forward.",
+        "Your kindness to yourself is your greatest superpower.",
+        "Happiness is not by chance, but by conscious daily choice."
+    )
+
+    //obtiene una frase de respaldo seguro del conjunto por defecto
+    fun getDefaultFallback(): FortuneModel {
+        val quote = defaultReserveQuotes.random()
+        val id = FortuneModel.generateId(quote)
+        return FortuneModel(id = id, quote = quote, category = "Wisdom", isFavorite = isFavorite(id))
     }
 
     //lee las galletas candidatas guardadas en disco como reserva offline
     @Synchronized
     fun getDeck(): List<FortuneModel> {
-        if (!deckFile.exists()) return emptyList()
-        return try {
-            val content = deckFile.readText()
-            val array = JSONArray(content)
-            val result = mutableListOf<FortuneModel>()
-            for (i in 0 until array.length()) {
-                val obj = array.getJSONObject(i)
-                val id = obj.getInt("id")
-                result.add(
-                    FortuneModel(
-                        id = id,
-                        quote = obj.getString("quote"),
-                        category = obj.optString("category", "Wisdom"),
-                        luckyNumber = obj.optInt("luckyNumber", 7),
-                        isFavorite = isFavorite(id),
-                        savedAt = obj.optLong("savedAt", System.currentTimeMillis())
-                    )
-                )
+        if (!deckFile.exists()) {
+            val defaults = defaultReserveQuotes.map { quote ->
+                val id = FortuneModel.generateId(quote)
+                FortuneModel(id = id, quote = quote, category = "Wisdom", isFavorite = isFavorite(id))
             }
-            result
-        } catch (_: Exception) {
-            emptyList()
+            saveDeck(defaults)
+            return defaults
         }
+        return readCookiesFromFile(deckFile)
+    }
+
+    //retorna cuantas galletas quedan en el deck de reserva de disco
+    @Synchronized
+    fun getDeckCount(): Int = getDeck().size
+
+    //agrega galletas nuevas traidas de la red a la reserva en disco sin duplicar frases
+    @Synchronized
+    fun appendDeck(newCookies: List<FortuneModel>) {
+        val current = getDeck().toMutableList()
+        val existingQuotes = current.map { it.quote }.toSet()
+        for (cookie in newCookies) {
+            if (!existingQuotes.contains(cookie.quote)) {
+                current.add(cookie)
+            }
+        }
+        saveDeck(current)
     }
 
     //guarda la baraja de galletas de reserva en disco
     @Synchronized
     fun saveDeck(cookies: List<FortuneModel>) {
-        try {
-            val array = JSONArray()
-            for (item in cookies) {
-                val obj = JSONObject()
-                obj.put("id", item.id)
-                obj.put("quote", item.quote)
-                obj.put("category", item.category)
-                obj.put("luckyNumber", item.luckyNumber)
-                obj.put("savedAt", item.savedAt)
-                array.put(obj)
-            }
-            deckFile.writeText(array.toString())
-        } catch (_: Exception) {
-            //si no se puede escribir la reserva en disco se omite silenciosamente
-        }
+        writeCookiesToFile(deckFile, cookies)
     }
 
     //saca una galleta de la reserva offline para mostrarla al usuario
