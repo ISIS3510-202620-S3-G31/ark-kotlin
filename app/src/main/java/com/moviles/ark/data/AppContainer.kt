@@ -76,6 +76,7 @@ interface AppContainer {
     val feedbackRepository: FeedbackRepository
     val breathingRepository: BreathingRepository
     val screamTankRepository: com.moviles.ark.domain.repositories.ScreamTankRepository
+    val wishRepository: com.moviles.ark.domain.repositories.WishRepository
     val audioPlayerHelper: AudioPlayerHelper
     val hapticFeedback: com.moviles.ark.domain.adapters.HapticFeedbackAdapter
     val networkConnectivityObserver: NetworkConnectivityObserver
@@ -208,6 +209,11 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             auth = auth,
             onInteractionSaved = { syncManager.requestSync() }
         )
+    }
+    // farol de deseos: por ahora los deseos viven en memoria; luego se cambia por la version con room y lru
+    // es uno solo para toda la app, asi los deseos no se pierden al salir y volver a entrar a la herramienta
+    override val wishRepository: com.moviles.ark.domain.repositories.WishRepository by lazy {
+        com.moviles.ark.data.repositories.InMemoryWishRepository()
     }
     override val audioPlayerHelper: AudioPlayerHelper by lazy { AudioPlayerHelper(context) }
     // vibracion de la respiracion guiada
