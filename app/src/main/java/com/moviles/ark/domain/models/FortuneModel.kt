@@ -21,5 +21,6 @@ data class FortuneModel(
 data class FortuneCrackResult(
     val fortune: FortuneModel,
     val isFromOfflineReserve: Boolean,
-    val remainingChances: Int
+    val remainingChances: Int,
+    val sourceMessage: String = if (isFromOfflineReserve) "Local Wisdom Reserve" else "Fresh Online Wisdom"
 )
