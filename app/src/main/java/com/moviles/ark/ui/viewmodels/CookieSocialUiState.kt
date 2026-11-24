@@ -44,6 +44,8 @@ data class CookieSocialUiState(
 ) {
     val isFriendsOn: Boolean get() = overview?.myProfile != null
     val pickerFriends: List<Friend> get() = pickerOverview?.friends.orEmpty()
+    //ya cargo el selector y no ha activado amigos: no tiene username para firmar el regalo
+    val pickerNeedsActivation: Boolean get() = pickerOverview != null && pickerOverview.myProfile == null
 }
 
 //estado de la bandeja

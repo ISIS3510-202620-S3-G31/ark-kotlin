@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,8 +27,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Icon
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -52,9 +51,13 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.moviles.ark.domain.models.BlockedUser
 import com.moviles.ark.domain.models.CookieMessages
 import com.moviles.ark.domain.models.FoundUser
+import com.moviles.ark.domain.models.Friend
 import com.moviles.ark.domain.models.FriendRelation
+import com.moviles.ark.domain.models.FriendRequest
+import com.moviles.ark.domain.models.PublicProfile
 import com.moviles.ark.domain.models.SentGift
 import com.moviles.ark.ui.components.avatarDrawable
 import com.moviles.ark.ui.theme.AccentColor
@@ -80,8 +83,11 @@ fun CookieFriendsRoute(socialViewModel: CookieSocialViewModel, onBack: () -> Uni
     val snackbarHostState = remember { SnackbarHostState() }
 
     CookieMessagesEffect(socialViewModel.messageFlow, snackbarHostState) { action ->
-        if (action is CookieMessageAction.Social) socialViewModel.onMessageAction(action)
+        if (action is CookieMessageAction.Social) {
+            socialViewModel.onMessageAction(action)
+        }
     }
+    //al abrir se carga la pantalla del servidor
     DisposableEffect(Unit) {
         socialViewModel.onFriendsOpened()
         onDispose { socialViewModel.onFriendsClosed() }
@@ -107,7 +113,9 @@ fun CookieFriendsRoute(socialViewModel: CookieSocialViewModel, onBack: () -> Uni
         )
     )
 
-    uiState.confirm?.let { confirm ->
+    //confirmacion antes de desactivar, quitar un amigo o bloquear
+    val confirm = uiState.confirm
+    if (confirm != null) {
         SocialConfirmDialog(confirm = confirm, onConfirm = socialViewModel::onConfirm, onDismiss = socialViewModel::onDismissConfirm)
     }
 }
@@ -122,12 +130,13 @@ data class FriendsActions(
     val onSearchResultAction: (FoundUser) -> Unit = {},
     val onAcceptRequest: (String) -> Unit = {},
     val onDeclineRequest: (String) -> Unit = {},
-    val onRemoveFriend: (com.moviles.ark.domain.models.Friend) -> Unit = {},
+    val onRemoveFriend: (Friend) -> Unit = {},
     val onBlock: (uid: String, username: String) -> Unit = { _, _ -> },
     val onUnblock: (String) -> Unit = {},
     val onCancelGift: (String) -> Unit = {},
 )
 
+//una lista con secciones; buscar, solicitudes, amigos y bloqueados solo salen con amigos activados
 @Composable
 fun CookieFriendsScreen(
     uiState: CookieSocialUiState,
@@ -135,6 +144,11 @@ fun CookieFriendsScreen(
     onBack: () -> Unit,
     actions: FriendsActions,
 ) {
+    val requests = uiState.overview?.requests.orEmpty()
+    val friends = uiState.overview?.friends.orEmpty()
+    val blocked = uiState.overview?.blocked.orEmpty()
+    val searchResult = uiState.searchResult
+
     Scaffold(
         containerColor = BackgroundColor,
         contentWindowInsets = WindowInsets(0),
@@ -152,63 +166,117 @@ fun CookieFriendsScreen(
                 contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                profileSection(uiState, actions)
+                item(key = "profile") { ProfileCard(uiState, actions) }
+
                 if (uiState.isFriendsOn) {
-                    searchSection(uiState, actions)
-                    requestsSection(uiState, actions)
-                    friendsSection(uiState, actions)
+                    //buscar por username exacto
+                    item(key = "search_title") { SectionTitle("Find a friend") }
+                    item(key = "search") { SearchRow(uiState, actions) }
+                    if (searchResult != null) {
+                        item(key = "search_result") { SearchResultRow(searchResult, uiState, actions) }
+                    }
+
+                    //solicitudes que me llegaron
+                    if (requests.isNotEmpty()) {
+                        item(key = "requests_title") { SectionTitle("Friend requests") }
+                        items(requests, key = { "request_${it.fromUid}" }) { request ->
+                            FriendRequestRow(request, uiState, actions)
+                        }
+                    }
+
+                    //mis amigos
+                    item(key = "friends_title") { SectionTitle("Friends (${friends.size})") }
+                    if (friends.isEmpty()) {
+                        item(key = "friends_empty") { HintText("No friends yet. Search for someone by their exact username.") }
+                    }
+                    items(friends, key = { "friend_${it.uid}" }) { friend ->
+                        FriendRow(friend, uiState, actions)
+                    }
                 }
-                sentGiftsSection(uiState, actions)
-                if (uiState.isFriendsOn) blockedSection(uiState, actions)
+
+                //regalos enviados: solo en este telefono, por eso salen aunque amigos este apagado
+                if (uiState.sentGifts.isNotEmpty()) {
+                    item(key = "sent_title") { SectionTitle("Sent gifts") }
+                    items(uiState.sentGifts, key = { "sent_${it.shareId}" }) { gift ->
+                        SentGiftRow(gift, uiState, actions)
+                    }
+                }
+
+                if (uiState.isFriendsOn && blocked.isNotEmpty()) {
+                    item(key = "blocked_title") { SectionTitle("Blocked") }
+                    items(blocked, key = { "blocked_${it.uid}" }) { user ->
+                        BlockedRow(user, uiState, actions)
+                    }
+                }
             }
         }
     }
 }
 
-private fun LazyListScope.profileSection(uiState: CookieSocialUiState, actions: FriendsActions) {
-    val profile = uiState.overview?.myProfile
-    item(key = "profile") {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(20.dp))
-                .background(BackgroundLightColor)
-                .padding(16.dp)
-        ) {
-            when {
-                profile != null -> {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        AvatarCircle(profile.avatarId, 48)
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("@${profile.username}", style = MaterialTheme.typography.titleLarge, color = TextColor)
-                            Text(
-                                "Others only see your username and avatar.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = TextColor.copy(alpha = 0.8f)
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    TextButton(onClick = actions.onDeactivate, modifier = Modifier.align(Alignment.End)) {
-                        Text("Turn off friends", style = MaterialTheme.typography.labelLarge, color = TextColor)
-                    }
-                }
-                uiState.overview != null -> ActivateFriends(uiState, actions)
-                uiState.isLoadingFriends || uiState.isOnline -> Box(
-                    modifier = Modifier.fillMaxWidth().height(96.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator(color = SecondaryColor, modifier = Modifier.size(32.dp))
-                }
-                //sin red no se sabe si ya activo amigos: no se ofrece activarlos otra vez
-                else -> Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.WifiOff, contentDescription = null, tint = TextColor, modifier = Modifier.size(24.dp))
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(CookieMessages.FRIENDS_NEED_INTERNET, style = MaterialTheme.typography.bodyLarge, color = TextColor)
-                }
+//tarjeta de arriba: mi perfil, activar amigos, cargando o sin red
+@Composable
+private fun ProfileCard(uiState: CookieSocialUiState, actions: FriendsActions) {
+    val myProfile = uiState.overview?.myProfile
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(BackgroundLightColor)
+            .padding(16.dp)
+    ) {
+        if (myProfile != null) {
+            MyProfileRow(myProfile)
+            Spacer(modifier = Modifier.height(8.dp))
+            TextButton(onClick = actions.onDeactivate, modifier = Modifier.align(Alignment.End)) {
+                Text("Turn off friends", style = MaterialTheme.typography.labelLarge, color = TextColor)
             }
+        } else if (uiState.overview != null) {
+            //ya cargo y no tiene perfil: se ofrece activar amigos
+            ActivateFriends(uiState, actions)
+        } else if (uiState.isLoadingFriends || uiState.isOnline) {
+            LoadingBox()
+        } else {
+            //sin red no se sabe si ya activo amigos: no se ofrece activarlos otra vez
+            FriendsOfflineNotice()
         }
+    }
+}
+
+//mi avatar y mi username: es lo unico que ven los demas
+@Composable
+private fun MyProfileRow(myProfile: PublicProfile) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        AvatarCircle(myProfile.avatarId, 48)
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text("@${myProfile.username}", style = MaterialTheme.typography.titleLarge, color = TextColor)
+            Text(
+                "Others only see your username and avatar.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextColor.copy(alpha = 0.8f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun LoadingBox() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(96.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        CircularProgressIndicator(color = SecondaryColor, modifier = Modifier.size(32.dp))
+    }
+}
+
+@Composable
+private fun FriendsOfflineNotice() {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Default.WifiOff, contentDescription = null, tint = TextColor, modifier = Modifier.size(24.dp))
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(CookieMessages.FRIENDS_NEED_INTERNET, style = MaterialTheme.typography.bodyLarge, color = TextColor)
     }
 }
 
@@ -233,9 +301,10 @@ private fun ActivateFriends(uiState: CookieSocialUiState, actions: FriendsAction
         enabled = !uiState.isActivating,
         onDone = actions.onActivate,
     )
-    uiState.usernameError?.let {
+    val usernameError = uiState.usernameError
+    if (usernameError != null) {
         Spacer(modifier = Modifier.height(4.dp))
-        Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+        Text(usernameError, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
     }
     Spacer(modifier = Modifier.height(12.dp))
     SocialPill(
@@ -248,89 +317,112 @@ private fun ActivateFriends(uiState: CookieSocialUiState, actions: FriendsAction
     )
 }
 
-private fun LazyListScope.searchSection(uiState: CookieSocialUiState, actions: FriendsActions) {
-    item(key = "search_title") { SectionTitle("Find a friend") }
-    item(key = "search") {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(modifier = Modifier.weight(1f)) {
-                SocialTextField(
-                    value = uiState.searchInput,
-                    onValueChange = actions.onSearchChange,
-                    label = "Exact username",
-                    enabled = !uiState.isSearching,
-                    onDone = actions.onSearch,
-                )
-            }
-            Spacer(modifier = Modifier.width(8.dp))
-            SocialPill(text = "Search", color = SecondaryColor, isOnline = uiState.isOnline, isBusy = uiState.isSearching, onClick = actions.onSearch)
+@Composable
+private fun SearchRow(uiState: CookieSocialUiState, actions: FriendsActions) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(modifier = Modifier.weight(1f)) {
+            SocialTextField(
+                value = uiState.searchInput,
+                onValueChange = actions.onSearchChange,
+                label = "Exact username",
+                enabled = !uiState.isSearching,
+                onDone = actions.onSearch,
+            )
         }
-    }
-    uiState.searchResult?.let { found ->
-        item(key = "search_result") {
-            val (label, enabled) = when (found.relation) {
-                FriendRelation.NONE -> "Add friend" to true
-                FriendRelation.REQUESTED -> "Requested" to false
-                FriendRelation.WANTS_TO_BE_FRIENDS -> "Accept" to true
-                FriendRelation.FRIENDS -> "Friends ✓" to false
-                FriendRelation.BLOCKED_BY_ME -> "Unblock" to true
-                FriendRelation.YOU -> "That's you" to false
-            }
-            PersonRow(avatarId = found.profile.avatarId, username = found.profile.username) {
-                SocialPill(
-                    text = label,
-                    color = PrimaryColor,
-                    isOnline = uiState.isOnline,
-                    isBusy = found.profile.uid in uiState.busyIds,
-                    enabled = enabled,
-                    onClick = { actions.onSearchResultAction(found) }
-                )
-            }
-        }
+        Spacer(modifier = Modifier.width(8.dp))
+        SocialPill(
+            text = "Search",
+            color = SecondaryColor,
+            isOnline = uiState.isOnline,
+            isBusy = uiState.isSearching,
+            onClick = actions.onSearch
+        )
     }
 }
 
-private fun LazyListScope.requestsSection(uiState: CookieSocialUiState, actions: FriendsActions) {
-    val requests = uiState.overview?.requests.orEmpty()
-    if (requests.isEmpty()) return
-    item(key = "requests_title") { SectionTitle("Friend requests") }
-    items(requests, key = { "request_${it.fromUid}" }) { request ->
-        val busy = request.fromUid in uiState.busyIds
-        Column {
-            PersonRow(avatarId = null, username = request.fromUsername) {
-                SocialPill("Accept", PrimaryColor, uiState.isOnline, onClick = { actions.onAcceptRequest(request.fromUid) }, isBusy = busy)
-                Spacer(modifier = Modifier.width(6.dp))
-                SocialPill("Decline", SecondaryColor, uiState.isOnline, onClick = { actions.onDeclineRequest(request.fromUid) }, enabled = !busy)
-            }
-            TextButton(onClick = { actions.onBlock(request.fromUid, request.fromUsername) }) {
-                Text("Block @${request.fromUsername}", style = MaterialTheme.typography.labelLarge, color = AccentColor)
-            }
-        }
+//la persona encontrada; el boton depende de la relacion con ella
+@Composable
+private fun SearchResultRow(found: FoundUser, uiState: CookieSocialUiState, actions: FriendsActions) {
+    PersonRow(avatarId = found.profile.avatarId, username = found.profile.username) {
+        SocialPill(
+            text = searchButtonText(found.relation),
+            color = PrimaryColor,
+            isOnline = uiState.isOnline,
+            isBusy = found.profile.uid in uiState.busyIds,
+            enabled = isSearchButtonEnabled(found.relation),
+            onClick = { actions.onSearchResultAction(found) }
+        )
     }
 }
 
-private fun LazyListScope.friendsSection(uiState: CookieSocialUiState, actions: FriendsActions) {
-    val friends = uiState.overview?.friends.orEmpty()
-    item(key = "friends_title") { SectionTitle("Friends (${friends.size})") }
-    if (friends.isEmpty()) {
-        item(key = "friends_empty") { HintText("No friends yet. Search for someone by their exact username.") }
+private fun searchButtonText(relation: FriendRelation): String {
+    return when (relation) {
+        FriendRelation.NONE -> "Add friend"
+        FriendRelation.REQUESTED -> "Requested"
+        FriendRelation.WANTS_TO_BE_FRIENDS -> "Accept"
+        FriendRelation.FRIENDS -> "Friends ✓"
+        FriendRelation.BLOCKED_BY_ME -> "Unblock"
+        FriendRelation.YOU -> "That's you"
     }
-    items(friends, key = { "friend_${it.uid}" }) { friend ->
-        val busy = friend.uid in uiState.busyIds
-        PersonRow(avatarId = friend.avatarId, username = friend.username) {
-            SocialPill("Remove", SecondaryColor, uiState.isOnline, onClick = { actions.onRemoveFriend(friend) }, isBusy = busy)
+}
+
+//solo se puede tocar si hay algo que hacer: agregar, aceptar o desbloquear
+private fun isSearchButtonEnabled(relation: FriendRelation): Boolean {
+    return relation == FriendRelation.NONE ||
+        relation == FriendRelation.WANTS_TO_BE_FRIENDS ||
+        relation == FriendRelation.BLOCKED_BY_ME
+}
+
+@Composable
+private fun FriendRequestRow(request: FriendRequest, uiState: CookieSocialUiState, actions: FriendsActions) {
+    val isBusy = request.fromUid in uiState.busyIds
+    Column {
+        PersonRow(avatarId = null, username = request.fromUsername) {
+            SocialPill(
+                text = "Accept",
+                color = PrimaryColor,
+                isOnline = uiState.isOnline,
+                onClick = { actions.onAcceptRequest(request.fromUid) },
+                isBusy = isBusy
+            )
             Spacer(modifier = Modifier.width(6.dp))
-            SocialPill("Block", AccentColor, uiState.isOnline, onClick = { actions.onBlock(friend.uid, friend.username) }, enabled = !busy)
+            SocialPill(
+                text = "Decline",
+                color = SecondaryColor,
+                isOnline = uiState.isOnline,
+                onClick = { actions.onDeclineRequest(request.fromUid) },
+                enabled = !isBusy
+            )
+        }
+        TextButton(onClick = { actions.onBlock(request.fromUid, request.fromUsername) }) {
+            Text("Block @${request.fromUsername}", style = MaterialTheme.typography.labelLarge, color = AccentColor)
         }
     }
 }
 
-//regalos enviados: solo en este telefono; siempre dicen "Sent ✓" (el remitente no sabe si se acepto o rechazo)
-private fun LazyListScope.sentGiftsSection(uiState: CookieSocialUiState, actions: FriendsActions) {
-    if (uiState.sentGifts.isEmpty()) return
-    item(key = "sent_title") { SectionTitle("Sent gifts") }
-    items(uiState.sentGifts, key = { "sent_${it.shareId}" }) { gift -> SentGiftRow(gift, uiState, actions) }
+@Composable
+private fun FriendRow(friend: Friend, uiState: CookieSocialUiState, actions: FriendsActions) {
+    val isBusy = friend.uid in uiState.busyIds
+    PersonRow(avatarId = friend.avatarId, username = friend.username) {
+        SocialPill(
+            text = "Remove",
+            color = SecondaryColor,
+            isOnline = uiState.isOnline,
+            onClick = { actions.onRemoveFriend(friend) },
+            isBusy = isBusy
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        SocialPill(
+            text = "Block",
+            color = AccentColor,
+            isOnline = uiState.isOnline,
+            onClick = { actions.onBlock(friend.uid, friend.username) },
+            enabled = !isBusy
+        )
+    }
 }
 
+//regalo enviado: siempre dice "Sent ✓" (el remitente no sabe si se acepto o rechazo)
 @Composable
 private fun SentGiftRow(gift: SentGift, uiState: CookieSocialUiState, actions: FriendsActions) {
     Row(
@@ -349,26 +441,36 @@ private fun SentGiftRow(gift: SentGift, uiState: CookieSocialUiState, actions: F
                 color = TextColor.copy(alpha = 0.7f)
             )
         }
+        //despues de 7 dias el regalo ya no existe: no se ofrece cancelar
         if (gift.canCancel(System.currentTimeMillis())) {
             Spacer(modifier = Modifier.width(8.dp))
-            SocialPill("Cancel", SecondaryColor, uiState.isOnline, onClick = { actions.onCancelGift(gift.shareId) }, isBusy = gift.shareId in uiState.busyIds)
-        }
-    }
-}
-
-private fun LazyListScope.blockedSection(uiState: CookieSocialUiState, actions: FriendsActions) {
-    val blocked = uiState.overview?.blocked.orEmpty()
-    if (blocked.isEmpty()) return
-    item(key = "blocked_title") { SectionTitle("Blocked") }
-    items(blocked, key = { "blocked_${it.uid}" }) { user ->
-        PersonRow(avatarId = null, username = user.username) {
-            SocialPill("Unblock", SecondaryColor, uiState.isOnline, onClick = { actions.onUnblock(user.uid) }, isBusy = user.uid in uiState.busyIds)
+            SocialPill(
+                text = "Cancel",
+                color = SecondaryColor,
+                isOnline = uiState.isOnline,
+                onClick = { actions.onCancelGift(gift.shareId) },
+                isBusy = gift.shareId in uiState.busyIds
+            )
         }
     }
 }
 
 @Composable
-private fun PersonRow(avatarId: String?, username: String, trailing: @Composable () -> Unit) {
+private fun BlockedRow(user: BlockedUser, uiState: CookieSocialUiState, actions: FriendsActions) {
+    PersonRow(avatarId = null, username = user.username) {
+        SocialPill(
+            text = "Unblock",
+            color = SecondaryColor,
+            isOnline = uiState.isOnline,
+            onClick = { actions.onUnblock(user.uid) },
+            isBusy = user.uid in uiState.busyIds
+        )
+    }
+}
+
+//fila de una persona: avatar (si se conoce), @username y los botones a la derecha
+@Composable
+private fun PersonRow(avatarId: String?, username: String, buttons: @Composable () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -390,7 +492,7 @@ private fun PersonRow(avatarId: String?, username: String, trailing: @Composable
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f)
         )
-        trailing()
+        buttons()
     }
 }
 
@@ -400,7 +502,9 @@ private fun AvatarCircle(avatarId: String, sizeDp: Int) {
         painter = painterResource(avatarDrawable(avatarId)),
         contentDescription = null,
         contentScale = ContentScale.Crop,
-        modifier = Modifier.size(sizeDp.dp).clip(CircleShape)
+        modifier = Modifier
+            .size(sizeDp.dp)
+            .clip(CircleShape)
     )
 }
 
@@ -415,6 +519,7 @@ private fun SocialTextField(value: String, onValueChange: (String) -> Unit, labe
         modifier = Modifier.fillMaxWidth(),
         textStyle = MaterialTheme.typography.bodyLarge.copy(color = TextColor),
         label = { Text(label, style = LocalTextStyle.current.copy(fontFamily = FigtreeFontFamily)) },
+        //usernames en minuscula y sin autocorrector; "Done" del teclado hace lo mismo que el boton
         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false, imeAction = ImeAction.Done),
         keyboardActions = KeyboardActions(onDone = { onDone() }),
         colors = OutlinedTextFieldDefaults.colors(
@@ -440,18 +545,25 @@ private fun HintText(text: String) {
 //confirmacion antes de desactivar amigos, quitar un amigo o bloquear
 @Composable
 private fun SocialConfirmDialog(confirm: SocialConfirm, onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    val (title, body, action) = when (confirm) {
-        SocialConfirm.Deactivate -> Triple(
-            "Turn off friends?",
-            "Your username and public profile will be deleted. Friends won't find you or send you gifts. Your cookies stay in your jar.",
-            "Turn off"
-        )
-        is SocialConfirm.RemoveFriend -> Triple("Remove @${confirm.username}?", "You won't be able to send each other gifts.", "Remove")
-        is SocialConfirm.Block -> Triple(
-            "Block @${confirm.username}?",
-            "They won't find you, send you friend requests or gifts. They are not told.",
-            "Block"
-        )
+    val title: String
+    val body: String
+    val confirmText: String
+    when (confirm) {
+        SocialConfirm.Deactivate -> {
+            title = "Turn off friends?"
+            body = "Your username and public profile will be deleted. Friends won't find you or send you gifts. Your cookies stay in your jar."
+            confirmText = "Turn off"
+        }
+        is SocialConfirm.RemoveFriend -> {
+            title = "Remove @${confirm.username}?"
+            body = "You won't be able to send each other gifts."
+            confirmText = "Remove"
+        }
+        is SocialConfirm.Block -> {
+            title = "Block @${confirm.username}?"
+            body = "They won't find you, send you friend requests or gifts. They are not told."
+            confirmText = "Block"
+        }
     }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -459,12 +571,20 @@ private fun SocialConfirmDialog(confirm: SocialConfirm, onConfirm: () -> Unit, o
         title = { Text(title, style = MaterialTheme.typography.headlineSmall, color = TextColor) },
         text = { Text(body, style = MaterialTheme.typography.bodyLarge, color = TextColor) },
         confirmButton = {
-            TextButton(onClick = onConfirm) { Text(action, style = MaterialTheme.typography.labelLarge, color = AccentColor) }
+            TextButton(onClick = onConfirm) {
+                Text(confirmText, style = MaterialTheme.typography.labelLarge, color = AccentColor)
+            }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel", style = MaterialTheme.typography.labelLarge, color = TextColor) }
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", style = MaterialTheme.typography.labelLarge, color = TextColor)
+            }
         }
     )
 }
 
-private fun dayLabel(millis: Long): String = SimpleDateFormat("MMM d", Locale.US).format(Date(millis))
+//fecha corta del regalo enviado, por ejemplo "Nov 24"
+private fun dayLabel(millis: Long): String {
+    val format = SimpleDateFormat("MMM d", Locale.US)
+    return format.format(Date(millis))
+}

@@ -59,9 +59,8 @@ class CookieJarViewModel(
     private val _uiState = MutableStateFlow(CookieJarUiState(isOnline = isOnlineNow()))
     val uiState: StateFlow<CookieJarUiState> = _uiState.asStateFlow()
 
-    //true con internet; la ui habilita o deshabilita con esto lo que necesita red (amigos y regalos)
-    private val _isOnline = MutableStateFlow(isOnlineNow())
-    val isOnline: StateFlow<Boolean> = _isOnline.asStateFlow()
+    //true con internet, sin esperar; de aqui salen los avisos de red con debounce
+    private val isOnlineFlow = MutableStateFlow(isOnlineNow())
 
     //avisos de una sola vez: con un StateFlow se repetirian al girar la pantalla
     private val messages = Channel<CookieMessage>(Channel.BUFFERED)
@@ -80,11 +79,14 @@ class CookieJarViewModel(
     private var dailyDownloadJob: Job? = null
     //imagenes del jarro que no se pudieron bajar en esta visita; se reintentan cuando vuelve la red
     private val failedDownloads = mutableSetOf<String>()
-    //estado de la red ya anunciado (despues del debounce)
-    private var announcedOnline = isOnlineNow()
+    //ultimo estado de la red que se aviso (despues del debounce)
+    private var lastAnnouncedOnline = isOnlineNow()
     //hubo galletas sin subir mientras no habia red: al terminar de subirlas se avisa M3
-    private var announceBackup = false
-    private var backupDoneBeforeAnnounce = false
+    private var mustSayAllBackedUp = false
+    //la subida termino antes de avisar "back online": el M3 espera al M2
+    private var backupFinishedBeforeBackOnline = false
+    //cuantas galletas faltaban por subir la vez anterior
+    private var previousPendingUploads = 0
 
     init {
         observeCookies()
@@ -139,19 +141,28 @@ class CookieJarViewModel(
     //⏳ arriba del jarro; cuando se termina de subir lo que se guardo sin red se avisa M3
     private fun observePendingUploads() {
         viewModelScope.launch {
-            var previous = 0
             cookieRepository.observePendingUploads()
                 .catch { }
-                .collect { count ->
-                    _uiState.update { it.copy(pendingUploads = count) }
-                    if (count > 0 && !_isOnline.value) announceBackup = true
-                    if (count == 0 && previous > 0 && announceBackup) {
-                        //el M3 va despues del M2: si la subida termino antes del debounce se espera al M2
-                        if (announcedOnline) announceBackedUpAfterRefresh() else backupDoneBeforeAnnounce = true
-                    }
-                    previous = count
-                }
+                .collect { count -> onPendingUploadsChanged(count) }
         }
+    }
+
+    private fun onPendingUploadsChanged(count: Int) {
+        _uiState.update { it.copy(pendingUploads = count) }
+        //se guardo algo sin red: cuando se termine de subir hay que decirlo
+        if (count > 0 && !isOnlineFlow.value) {
+            mustSayAllBackedUp = true
+        }
+        val justFinishedUploading = count == 0 && previousPendingUploads > 0
+        if (justFinishedUploading && mustSayAllBackedUp) {
+            //el M3 va despues del M2: si la subida termino antes del debounce se espera al M2
+            if (lastAnnouncedOnline) {
+                sayAllBackedUpAfterRefresh()
+            } else {
+                backupFinishedBeforeBackOnline = true
+            }
+        }
+        previousPendingUploads = count
     }
 
     //todos los avisos pasan por aqui; el log deja ver en logcat que aviso salio y cuando
@@ -162,35 +173,40 @@ class CookieJarViewModel(
 
     //la bajada de cambios puede dejar algo nuevo por subir (un titulo con sufijo): el M3 se dice solo si sigue todo subido
     //se pregunta a room (no al estado de la pantalla, que puede ir un paso atras); si quedo algo, el M3 sale al subirlo
-    private fun announceBackedUpAfterRefresh() {
-        backupDoneBeforeAnnounce = false
+    private fun sayAllBackedUpAfterRefresh() {
+        backupFinishedBeforeBackOnline = false
         viewModelScope.launch {
+            //primero se espera a que termine la bajada de la nube
             refreshJob?.join()
-            if (announceBackup && cookieRepository.pendingUploadCount() == 0) sendBackedUp()
+            if (mustSayAllBackedUp && cookieRepository.pendingUploadCount() == 0) {
+                mustSayAllBackedUp = false
+                backupFinishedBeforeBackOnline = false
+                say(CookieMessage(CookieMessages.ALL_BACKED_UP))
+            }
         }
     }
 
-    private suspend fun sendBackedUp() {
-        announceBackup = false
-        backupDoneBeforeAnnounce = false
-        say(CookieMessage(CookieMessages.ALL_BACKED_UP))
-    }
-
     //estado de la red sin esperar: los botones que necesitan red cambian al instante
-    //si la red se cae mientras baja la imagen del detalle, la descarga se cancela (no queda archivo a medias) y se avisa
     private fun observeConnectivity() {
         viewModelScope.launch {
             connectivity.collect { online ->
-                _isOnline.value = online
+                isOnlineFlow.value = online
                 _uiState.update { it.copy(isOnline = online) }
                 if (!online && isDownloadingDetail) {
-                    val cookieId = _uiState.value.selectedCookie?.id
-                    imageJob?.cancel()
-                    isDownloadingDetail = false
-                    _uiState.update { it.copy(isImageLoading = false, imageNotice = CookieMessages.PICTURE_WHEN_ONLINE) }
-                    if (cookieId != null) say(retryImageMessage(cookieId))
+                    stopDetailDownload()
                 }
             }
+        }
+    }
+
+    //la red se cayo mientras bajaba la imagen del detalle: la descarga se cancela (no queda archivo a medias) y se avisa
+    private suspend fun stopDetailDownload() {
+        val cookieId = _uiState.value.selectedCookie?.id
+        imageJob?.cancel()
+        isDownloadingDetail = false
+        _uiState.update { it.copy(isImageLoading = false, imageNotice = CookieMessages.PICTURE_WHEN_ONLINE) }
+        if (cookieId != null) {
+            say(retryImageMessage(cookieId))
         }
     }
 
@@ -198,26 +214,40 @@ class CookieJarViewModel(
     @OptIn(FlowPreview::class)
     private fun observeNetworkChanges() {
         viewModelScope.launch {
-            _isOnline.debounce(NETWORK_DEBOUNCE_MS).distinctUntilChanged().collect { online ->
-                if (online == announcedOnline) return@collect
-                announcedOnline = online
-                if (online) onBackOnline() else say(CookieMessage(CookieMessages.WENT_OFFLINE, isLong = true, isNetworkStatus = true))
-            }
+            isOnlineFlow
+                .debounce(NETWORK_DEBOUNCE_MS)
+                .distinctUntilChanged()
+                .collect { online -> onNetworkSettled(online) }
+        }
+    }
+
+    //la red lleva 2 s igual: se avisa solo si cambio respecto al ultimo aviso
+    private suspend fun onNetworkSettled(online: Boolean) {
+        if (online == lastAnnouncedOnline) return
+        lastAnnouncedOnline = online
+        if (online) {
+            onBackOnline()
+        } else {
+            say(CookieMessage(CookieMessages.WENT_OFFLINE, isLong = true, isNetworkStatus = true))
         }
     }
 
     //volvio la red: el SyncManager ya pidio la subida; aqui se bajan los cambios y las imagenes que faltaban
     private suspend fun onBackOnline() {
         say(CookieMessage(CookieMessages.BACK_ONLINE, isNetworkStatus = true))
-        if (_uiState.value.pendingUploads > 0) announceBackup = true
+        if (_uiState.value.pendingUploads > 0) {
+            mustSayAllBackedUp = true
+        }
         failedDownloads.clear()
         refreshFromCloud()
-        if (backupDoneBeforeAnnounce) announceBackedUpAfterRefresh()
+        if (backupFinishedBeforeBackOnline) {
+            sayAllBackedUpAfterRefresh()
+        }
         //si el detalle sigue abierto sin su imagen, se baja sola
         val state = _uiState.value
-        val open = state.selectedCookie
-        if (open != null && open.hasImage && state.selectedImage == null && imageJob?.isActive != true) {
-            onCookieClick(open.id)
+        val openCookie = state.selectedCookie
+        if (openCookie != null && openCookie.hasImage && state.selectedImage == null && imageJob?.isActive != true) {
+            onCookieClick(openCookie.id)
         }
     }
 
@@ -225,47 +255,77 @@ class CookieJarViewModel(
     fun refreshFromCloud() {
         if (refreshJob?.isActive == true) return
         refreshJob = viewModelScope.launch {
-            if (!_isOnline.value) {
-                //telefono nuevo sin red: el jarro esta vacio porque las galletas siguen en la nube
-                val isEmpty = runCatching { cookieRepository.observeCookies().first().isEmpty() }.getOrDefault(false)
-                if (isEmpty && !cookieRepository.hasDownloadedFromCloud()) {
-                    say(
-                        CookieMessage(
-                            CookieMessages.COOKIES_IN_CLOUD,
-                            actionLabel = CookieMessages.RETRY,
-                            isLong = true,
-                            action = CookieMessageAction.RetryRefresh
-                        )
-                    )
-                }
-                return@launch
+            if (isOnlineFlow.value) {
+                downloadChangesFromCloud()
+            } else {
+                warnIfCookiesAreOnlyInCloud()
             }
-            cookieRepository.refreshFromCloud()
-                .onSuccess { result ->
-                    if (result.arrived > 0) say(CookieMessage(CookieMessages.arrivedFromOtherDevices(result.arrived)))
-                    result.renamed.forEach { (title, finalTitle) ->
-                        say(CookieMessage(CookieMessages.existedOnTwoPhones(title, finalTitle), isLong = true))
-                    }
-                }
-                .onFailure { error ->
-                    if (error is CancellationException) throw error
-                    //sin red ya avisa M1; con red es una red lenta o que miente
-                    if (_isOnline.value) say(CookieMessage(CookieMessages.SYNC_FAILED))
-                }
+        }
+    }
+
+    //telefono nuevo sin red: el jarro esta vacio porque las galletas siguen en la nube (M16 con "Retry")
+    private suspend fun warnIfCookiesAreOnlyInCloud() {
+        //si room falla se toma como no vacio y no se avisa nada
+        val isJarEmpty = try {
+            cookieRepository.observeCookies().first().isEmpty()
+        } catch (e: Exception) {
+            false
+        }
+        if (isJarEmpty && !cookieRepository.hasDownloadedFromCloud()) {
+            say(
+                CookieMessage(
+                    CookieMessages.COOKIES_IN_CLOUD,
+                    actionLabel = CookieMessages.RETRY,
+                    isLong = true,
+                    action = CookieMessageAction.RetryRefresh
+                )
+            )
+        }
+    }
+
+    private suspend fun downloadChangesFromCloud() {
+        val result = cookieRepository.refreshFromCloud()
+        if (result.isFailure) {
+            val error = result.exceptionOrNull()
+            if (error is CancellationException) throw error
+            //sin red ya avisa M1; con red es una red lenta o que miente
+            if (isOnlineFlow.value) {
+                say(CookieMessage(CookieMessages.SYNC_FAILED))
+            }
+            return
+        }
+        val refresh = result.getOrThrow()
+        if (refresh.arrived > 0) {
+            say(CookieMessage(CookieMessages.arrivedFromOtherDevices(refresh.arrived)))
+        }
+        //titulos que existian en los dos telefonos: la mas nueva quedo con sufijo
+        for (renamedPair in refresh.renamed) {
+            val title = renamedPair.first
+            val finalTitle = renamedPair.second
+            say(CookieMessage(CookieMessages.existedOnTwoPhones(title, finalTitle), isLong = true))
         }
     }
 
     //imagenes que faltan de las 10 del dia (llegaron de otro telefono o se desalojaron): se bajan una por una
     private fun downloadTodayImages() {
-        if (!_isOnline.value || dailyDownloadJob?.isActive == true) return
-        val missing = _uiState.value.jarCookies.filter { it.hasImage && !it.hasLocalImage() && it.id !in failedDownloads }
+        if (!isOnlineFlow.value || dailyDownloadJob?.isActive == true) return
+        val missing = mutableListOf<CookieModel>()
+        for (cookie in _uiState.value.jarCookies) {
+            val needsDownload = cookie.hasImage && !cookie.hasLocalImage()
+            if (needsDownload && cookie.id !in failedDownloads) {
+                missing.add(cookie)
+            }
+        }
         if (missing.isEmpty()) return
         dailyDownloadJob = viewModelScope.launch {
             for (cookie in missing) {
-                if (!_isOnline.value) break
-                cookieRepository.downloadImage(cookie.id).onFailure { error ->
+                if (!isOnlineFlow.value) break
+                val result = cookieRepository.downloadImage(cookie.id)
+                if (result.isFailure) {
+                    val error = result.exceptionOrNull()
                     if (error is CancellationException) throw error
-                    failedDownloads += cookie.id
+                    //no se vuelve a intentar hasta que vuelva la red
+                    failedDownloads.add(cookie.id)
                 }
             }
             //ya hay imagenes bajadas (desalojables) en el disco
@@ -300,44 +360,56 @@ class CookieJarViewModel(
 
     private suspend fun showImage(cookie: CookieModel) {
         if (!cookie.hasImage) return
-        var current = cookie
         //la imagen pudo quedar en memoria aunque ya no este en el disco
-        val cached = imageLoader.load(cookie)
-        if (cached == null && !cookie.hasLocalImage()) {
-            //descarga perezosa: la imagen esta en la nube y no en el telefono
-            if (!_isOnline.value) {
-                _uiState.update { it.copy(isImageLoading = false, imageNotice = CookieMessages.PICTURE_WHEN_ONLINE) }
-                say(CookieMessage(CookieMessages.PICTURE_NEEDS_INTERNET))
-                return
-            }
-            isDownloadingDetail = true
-            val result = cookieRepository.downloadImage(cookie.id)
-            isDownloadingDetail = false
-            current = result.getOrElse { error ->
-                if (error is CancellationException) throw error
-                _uiState.update { it.copy(isImageLoading = false, imageNotice = CookieMessages.PICTURE_NOT_LOADED) }
-                say(retryImageMessage(cookie.id))
-                return
-            }
-            cookieRepository.enforceImageBudget(cachedDailyIds)
+        val cachedImage = imageLoader.load(cookie)
+        var cookieWithImage = cookie
+        if (cachedImage == null && !cookie.hasLocalImage()) {
+            val downloadedCookie = downloadDetailImage(cookie)
+            if (downloadedCookie == null) return
+            cookieWithImage = downloadedCookie
         }
-        val image = cached ?: imageLoader.load(current)
+        val image = if (cachedImage != null) cachedImage else imageLoader.load(cookieWithImage)
         _uiState.update { state ->
-            if (state.selectedCookie?.id != cookie.id) state
-            else state.copy(
-                selectedImage = image,
-                isImageLoading = false,
-                imageNotice = if (image == null) CookieMessages.PICTURE_NOT_LOADED else null
-            )
+            //si mientras tanto se abrio otra galleta, no se toca su detalle
+            if (state.selectedCookie?.id != cookie.id) {
+                state
+            } else {
+                val notice = if (image == null) CookieMessages.PICTURE_NOT_LOADED else null
+                state.copy(selectedImage = image, isImageLoading = false, imageNotice = notice)
+            }
         }
     }
 
-    private fun retryImageMessage(cookieId: String) = CookieMessage(
-        CookieMessages.PICTURE_FAILED,
-        actionLabel = CookieMessages.RETRY,
-        isLong = true,
-        action = CookieMessageAction.RetryImage(cookieId)
-    )
+    //descarga perezosa: la imagen esta en la nube y no en el telefono
+    //devuelve la galleta con su ruta local, o null si no se pudo (y ya se aviso)
+    private suspend fun downloadDetailImage(cookie: CookieModel): CookieModel? {
+        if (!isOnlineFlow.value) {
+            _uiState.update { it.copy(isImageLoading = false, imageNotice = CookieMessages.PICTURE_WHEN_ONLINE) }
+            say(CookieMessage(CookieMessages.PICTURE_NEEDS_INTERNET))
+            return null
+        }
+        isDownloadingDetail = true
+        val result = cookieRepository.downloadImage(cookie.id)
+        isDownloadingDetail = false
+        if (result.isFailure) {
+            val error = result.exceptionOrNull()
+            if (error is CancellationException) throw error
+            _uiState.update { it.copy(isImageLoading = false, imageNotice = CookieMessages.PICTURE_NOT_LOADED) }
+            say(retryImageMessage(cookie.id))
+            return null
+        }
+        cookieRepository.enforceImageBudget(cachedDailyIds)
+        return result.getOrThrow()
+    }
+
+    private fun retryImageMessage(cookieId: String): CookieMessage {
+        return CookieMessage(
+            CookieMessages.PICTURE_FAILED,
+            actionLabel = CookieMessages.RETRY,
+            isLong = true,
+            action = CookieMessageAction.RetryImage(cookieId)
+        )
+    }
 
     fun onDismissDetail() {
         imageJob?.cancel()
@@ -397,7 +469,7 @@ class CookieJarViewModel(
             cookieRepository.deleteForever(item.id).onSuccess {
                 imageLoader.forget(item.id)
                 if (_uiState.value.selectedCookie?.id == item.id) onDismissDetail()
-                if (!_isOnline.value) say(CookieMessage(CookieMessages.DELETED_OFFLINE, isLong = true))
+                if (!isOnlineFlow.value) say(CookieMessage(CookieMessages.DELETED_OFFLINE, isLong = true))
             }
         }
     }
@@ -412,7 +484,7 @@ class CookieJarViewModel(
             if (cookie.title != cleanTyped) {
                 say(CookieMessage(CookieMessages.renamed(cleanTyped, cookie.title), isLong = true))
             }
-            if (!_isOnline.value) {
+            if (!isOnlineFlow.value) {
                 say(CookieMessage(CookieMessages.SAVED_OFFLINE, isLong = true))
             } else if (cookie.title == cleanTyped) {
                 say(CookieMessage(CookieMessages.ADDED))

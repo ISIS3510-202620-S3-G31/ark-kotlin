@@ -74,51 +74,80 @@ fun GiftFriendPickerDialog(
                     color = TextColor.copy(alpha = 0.8f)
                 )
                 Spacer(modifier = Modifier.height(16.dp))
-                when {
-                    isLoading -> Box(modifier = Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = SecondaryColor, modifier = Modifier.size(32.dp))
-                    }
-                    needsActivation || friends.isEmpty() -> {
-                        Text(
-                            text = if (needsActivation) "Turn on friends to send gifts." else "You have no friends yet. Add one by their username.",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = TextColor,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp)
-                        )
-                        Button(
-                            onClick = onOpenFriends,
-                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryColor, contentColor = TextColor),
-                            modifier = Modifier.fillMaxWidth().height(52.dp)
-                        ) {
-                            Text("Go to friends", style = MaterialTheme.typography.labelLarge)
-                        }
-                    }
-                    else -> LazyColumn(
-                        modifier = Modifier.heightIn(max = 360.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(friends, key = { it.uid }) { friend ->
-                            FriendGiftRow(
-                                friend = friend,
-                                isSending = sendingToUid == friend.uid,
-                                enabled = sendingToUid == null,
-                                isOnline = isOnline,
-                                onClick = { onSend(friend) }
-                            )
-                        }
-                    }
+                if (isLoading) {
+                    PickerLoading()
+                } else if (needsActivation || friends.isEmpty()) {
+                    //sin username o sin amigos no hay a quien regalar: se lleva a la pantalla de amigos
+                    NoOneToGift(needsActivation = needsActivation, onOpenFriends = onOpenFriends)
+                } else {
+                    FriendsToGiftList(friends = friends, sendingToUid = sendingToUid, isOnline = isOnline, onSend = onSend)
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 TextButton(onClick = onDismiss, enabled = sendingToUid == null, modifier = Modifier.align(Alignment.End)) {
                     Text("Close", style = MaterialTheme.typography.labelLarge, color = TextColor)
                 }
             }
+            //el dialogo es otra ventana y tapa los snackbars de la pantalla: se pintan tambien aqui
             Box(modifier = Modifier.align(Alignment.BottomCenter)) { snackbarHost() }
         }
     }
 }
 
+@Composable
+private fun PickerLoading() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(120.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        CircularProgressIndicator(color = SecondaryColor, modifier = Modifier.size(32.dp))
+    }
+}
+
+@Composable
+private fun NoOneToGift(needsActivation: Boolean, onOpenFriends: () -> Unit) {
+    val message = if (needsActivation) "Turn on friends to send gifts." else "You have no friends yet. Add one by their username."
+    Text(
+        text = message,
+        style = MaterialTheme.typography.bodyLarge,
+        color = TextColor,
+        textAlign = TextAlign.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 16.dp)
+    )
+    Button(
+        onClick = onOpenFriends,
+        colors = ButtonDefaults.buttonColors(containerColor = PrimaryColor, contentColor = TextColor),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(52.dp)
+    ) {
+        Text("Go to friends", style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+//mientras se envia a uno, los demas se apagan
+@Composable
+private fun FriendsToGiftList(friends: List<Friend>, sendingToUid: String?, isOnline: Boolean, onSend: (Friend) -> Unit) {
+    LazyColumn(
+        modifier = Modifier.heightIn(max = 360.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        items(friends, key = { it.uid }) { friend ->
+            FriendGiftRow(
+                friend = friend,
+                isSending = sendingToUid == friend.uid,
+                enabled = sendingToUid == null,
+                isOnline = isOnline,
+                onClick = { onSend(friend) }
+            )
+        }
+    }
+}
+
+//un amigo: avatar, @username y "Send" (o el spinner mientras se envia)
 @Composable
 private fun FriendGiftRow(friend: Friend, isSending: Boolean, enabled: Boolean, isOnline: Boolean, onClick: () -> Unit) {
     Row(
@@ -135,7 +164,9 @@ private fun FriendGiftRow(friend: Friend, isSending: Boolean, enabled: Boolean, 
             painter = painterResource(avatarDrawable(friend.avatarId)),
             contentDescription = null,
             contentScale = ContentScale.Crop,
-            modifier = Modifier.size(36.dp).clip(CircleShape)
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
         )
         Spacer(modifier = Modifier.width(12.dp))
         Text(
@@ -149,10 +180,12 @@ private fun FriendGiftRow(friend: Friend, isSending: Boolean, enabled: Boolean, 
         if (isSending) {
             CircularProgressIndicator(color = SecondaryColor, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
         } else {
+            //apagado sin red o mientras se envia a otro
+            val sendAlpha = if (enabled && isOnline) 1f else 0.4f
             Text(
                 text = "Send",
                 style = MaterialTheme.typography.labelLarge,
-                color = TextColor.copy(alpha = if (enabled && isOnline) 1f else 0.4f)
+                color = TextColor.copy(alpha = sendAlpha)
             )
         }
     }

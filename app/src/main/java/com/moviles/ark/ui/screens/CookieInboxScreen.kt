@@ -62,7 +62,9 @@ fun CookieInboxRoute(socialViewModel: CookieSocialViewModel, onBack: () -> Unit)
     val snackbarHostState = remember { SnackbarHostState() }
 
     CookieMessagesEffect(socialViewModel.messageFlow, snackbarHostState) { action ->
-        if (action is CookieMessageAction.Social) socialViewModel.onMessageAction(action)
+        if (action is CookieMessageAction.Social) {
+            socialViewModel.onMessageAction(action)
+        }
     }
     //mientras esta abierta se borran los vencidos y se avisa si uno vence (M33)
     DisposableEffect(Unit) {
@@ -107,35 +109,77 @@ fun CookieInboxScreen(
         ) {
             CookieTopBar(title = "Gifts", onBack = onBack)
             when (inbox.status) {
-                InboxStatus.LOADING, InboxStatus.HIDDEN -> CenterBox {
-                    CircularProgressIndicator(color = SecondaryColor, modifier = Modifier.size(32.dp))
-                }
-                InboxStatus.OFFLINE -> CenterBox {
-                    Icon(Icons.Default.WifiOff, contentDescription = null, tint = TextColor, modifier = Modifier.size(32.dp))
-                    Spacer(modifier = Modifier.height(12.dp))
-                    CenterText(CookieMessages.GIFTS_NEED_CONNECTION)
-                }
-                InboxStatus.READY -> if (inbox.gifts.isEmpty()) {
-                    CenterBox { CenterText("No gifts right now.\nWhen a friend sends you a cookie, it shows up here.") }
-                } else {
-                    LazyColumn(
-                        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        items(inbox.gifts, key = { it.shareId }) { gift ->
-                            GiftCard(
-                                gift = gift,
-                                now = inbox.now,
-                                isOnline = isOnline,
-                                isAccepting = gift.shareId in acceptingIds,
-                                isDeclining = gift.shareId in decliningIds,
-                                onAccept = { onAccept(gift) },
-                                onDecline = { onDecline(gift) },
-                            )
-                        }
+                InboxStatus.LOADING, InboxStatus.HIDDEN -> InboxLoading()
+                //la bandeja vive en el backend: sin red no hay nada que mostrar
+                InboxStatus.OFFLINE -> InboxOffline()
+                InboxStatus.READY -> {
+                    if (inbox.gifts.isEmpty()) {
+                        InboxEmpty()
+                    } else {
+                        GiftList(
+                            gifts = inbox.gifts,
+                            now = inbox.now,
+                            isOnline = isOnline,
+                            acceptingIds = acceptingIds,
+                            decliningIds = decliningIds,
+                            onAccept = onAccept,
+                            onDecline = onDecline,
+                        )
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun InboxLoading() {
+    CenterBox {
+        CircularProgressIndicator(color = SecondaryColor, modifier = Modifier.size(32.dp))
+    }
+}
+
+@Composable
+private fun InboxOffline() {
+    CenterBox {
+        Icon(Icons.Default.WifiOff, contentDescription = null, tint = TextColor, modifier = Modifier.size(32.dp))
+        Spacer(modifier = Modifier.height(12.dp))
+        CenterText(CookieMessages.GIFTS_NEED_CONNECTION)
+    }
+}
+
+@Composable
+private fun InboxEmpty() {
+    CenterBox {
+        CenterText("No gifts right now.\nWhen a friend sends you a cookie, it shows up here.")
+    }
+}
+
+//regalos del mas nuevo al mas viejo; mientras uno se acepta o se rechaza sus dos botones se apagan
+@Composable
+private fun GiftList(
+    gifts: List<SharedCookie>,
+    now: Long,
+    isOnline: Boolean,
+    acceptingIds: Set<String>,
+    decliningIds: Set<String>,
+    onAccept: (SharedCookie) -> Unit,
+    onDecline: (SharedCookie) -> Unit,
+) {
+    LazyColumn(
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        items(gifts, key = { it.shareId }) { gift ->
+            GiftCard(
+                gift = gift,
+                now = now,
+                isOnline = isOnline,
+                isAccepting = gift.shareId in acceptingIds,
+                isDeclining = gift.shareId in decliningIds,
+                onAccept = { onAccept(gift) },
+                onDecline = { onDecline(gift) },
+            )
         }
     }
 }
@@ -164,20 +208,17 @@ private fun GiftCard(
         Spacer(modifier = Modifier.height(4.dp))
         Text(text = gift.text, style = MaterialTheme.typography.bodyLarge, color = TextColor)
         Spacer(modifier = Modifier.height(8.dp))
-        val details = buildList {
-            if (gift.hasImage) add("📷 includes a picture")
-            val days = gift.daysLeft(now)
-            add(if (days == 1) "Expires in 1 day" else "Expires in $days days")
-        }
-        Text(text = details.joinToString(" · "), style = MaterialTheme.typography.bodyMedium, color = TextColor.copy(alpha = 0.7f))
+        Text(text = giftDetails(gift, now), style = MaterialTheme.typography.bodyMedium, color = TextColor.copy(alpha = 0.7f))
         Spacer(modifier = Modifier.height(12.dp))
+        //mientras se acepta o se rechaza no se puede tocar ninguno de los dos
+        val buttonsEnabled = !isAccepting && !isDeclining
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             SocialPill(
                 text = "Accept",
                 color = PrimaryColor,
                 isOnline = isOnline,
                 isBusy = isAccepting,
-                enabled = !isAccepting && !isDeclining,
+                enabled = buttonsEnabled,
                 onClick = onAccept,
                 modifier = Modifier.weight(1f)
             )
@@ -186,7 +227,7 @@ private fun GiftCard(
                 color = SecondaryColor,
                 isOnline = isOnline,
                 isBusy = isDeclining,
-                enabled = !isAccepting && !isDeclining,
+                enabled = buttonsEnabled,
                 onClick = onDecline,
                 modifier = Modifier.weight(1f)
             )
@@ -205,27 +246,38 @@ fun SocialPill(
     isBusy: Boolean = false,
     enabled: Boolean = true,
 ) {
+    //apagado (mas transparente) sin red o si no aplica
+    val pillAlpha = if (isOnline && enabled) 1f else 0.4f
     Row(
         modifier = modifier
             .height(44.dp)
             .clip(RoundedCornerShape(22.dp))
-            .background(color.copy(alpha = if (isOnline && enabled) 1f else 0.4f))
+            .background(color.copy(alpha = pillAlpha))
             .clickable(enabled = enabled && !isBusy, role = Role.Button, onClick = onClick)
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center
     ) {
-        when {
-            isBusy -> CircularProgressIndicator(color = TextColor, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
-            else -> {
-                if (!isOnline) {
-                    Icon(Icons.Default.WifiOff, contentDescription = "No internet", tint = TextColor, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                }
-                Text(text = text, style = MaterialTheme.typography.labelLarge, color = TextColor)
+        if (isBusy) {
+            CircularProgressIndicator(color = TextColor, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+        } else {
+            if (!isOnline) {
+                Icon(Icons.Default.WifiOff, contentDescription = "No internet", tint = TextColor, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
             }
+            Text(text = text, style = MaterialTheme.typography.labelLarge, color = TextColor)
         }
     }
+}
+
+//linea gris del regalo, por ejemplo "📷 includes a picture · Expires in 3 days"
+private fun giftDetails(gift: SharedCookie, now: Long): String {
+    val daysLeft = gift.daysLeft(now)
+    val expiresText = if (daysLeft == 1) "Expires in 1 day" else "Expires in $daysLeft days"
+    if (gift.hasImage) {
+        return "📷 includes a picture · $expiresText"
+    }
+    return expiresText
 }
 
 @Composable

@@ -95,15 +95,9 @@ fun CookieDetailDialog(
                 }
 
                 //galleta que llego como regalo
-                cookie.receivedFrom?.let { from ->
-                    Text(
-                        text = "🎁 from @$from",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextColor.copy(alpha = 0.8f),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 4.dp)
-                    )
+                val receivedFrom = cookie.receivedFrom
+                if (receivedFrom != null) {
+                    ReceivedFromText(receivedFrom)
                 }
 
                 if (cookie.hasImage) {
@@ -145,26 +139,47 @@ fun CookieDetailDialog(
                 }
                 if (canGift) {
                     Spacer(modifier = Modifier.height(12.dp))
-                    Button(
-                        onClick = onGift,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = SecondaryColor.copy(alpha = if (isOnline) 1f else 0.4f),
-                            contentColor = TextColor
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp)
-                    ) {
-                        if (!isOnline) {
-                            Icon(Icons.Default.WifiOff, contentDescription = "No internet", tint = TextColor, modifier = Modifier.size(20.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                        }
-                        Text("Gift 🎁", style = MaterialTheme.typography.labelLarge)
-                    }
+                    GiftButton(isOnline = isOnline, onGift = onGift)
                 }
             }
+            //los avisos van encima del dialogo, abajo
             Box(modifier = Modifier.align(Alignment.BottomCenter)) { snackbarHost() }
         }
+    }
+}
+
+//"🎁 from @amigo" debajo del titulo
+@Composable
+private fun ReceivedFromText(fromUsername: String) {
+    Text(
+        text = "🎁 from @$fromUsername",
+        style = MaterialTheme.typography.bodyMedium,
+        color = TextColor.copy(alpha = 0.8f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp)
+    )
+}
+
+//"Gift 🎁": sin red se ve apagado con wifi tachado, pero se puede tocar (el aviso explica por que)
+@Composable
+private fun GiftButton(isOnline: Boolean, onGift: () -> Unit) {
+    val buttonAlpha = if (isOnline) 1f else 0.4f
+    Button(
+        onClick = onGift,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = SecondaryColor.copy(alpha = buttonAlpha),
+            contentColor = TextColor
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(52.dp)
+    ) {
+        if (!isOnline) {
+            Icon(Icons.Default.WifiOff, contentDescription = "No internet", tint = TextColor, modifier = Modifier.size(20.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+        }
+        Text("Gift 🎁", style = MaterialTheme.typography.labelLarge)
     }
 }
 
