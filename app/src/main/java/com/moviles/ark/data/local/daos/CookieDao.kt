@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import com.moviles.ark.data.local.entities.CookieEntity
+import com.moviles.ark.data.local.entities.CookieImageRow
 import com.moviles.ark.data.local.entities.CookieListRow
 import com.moviles.ark.data.remote.CrashlyticsHelper
 import kotlinx.coroutines.flow.Flow
@@ -108,4 +109,12 @@ interface CookieDao {
     //despues de subir: se guarda la url y se marca sincronizada solo si nadie la cambio mientras subia
     @Query("UPDATE cookies SET isSynced = 1, remoteImageUrl = :remoteImageUrl WHERE id = :id AND updatedAt = :uploadedVersion")
     suspend fun markAsSynced(id: String, remoteImageUrl: String?, uploadedVersion: Long): Int
+
+    //imagenes que estan en el telefono (de cualquier cuenta: el presupuesto es de toda la carpeta), la menos usada primero
+    @Query("SELECT id, lastOpenedAt, isSynced FROM cookies WHERE localImagePath IS NOT NULL ORDER BY lastOpenedAt ASC")
+    suspend fun getImagesOnPhone(): List<CookieImageRow>
+
+    //al desalojar la imagen solo se olvida la ruta local: hasImage y remoteImageUrl se conservan para volver a bajarla
+    @Query("UPDATE cookies SET localImagePath = NULL WHERE id = :id")
+    suspend fun clearLocalImage(id: String)
 }

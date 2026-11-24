@@ -6,23 +6,57 @@ import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.media.ExifInterface
 import android.net.Uri
+import android.util.Log
 import com.moviles.ark.domain.adapters.CookieImageLoader
 import com.moviles.ark.domain.models.CookieModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
 
-//lee la imagen de una galleta desde el almacenamiento privado y la decodifica para pintarla
+//lee la imagen de una galleta y la decodifica para pintarla; orden de lectura: memoria (LruCache) -> filesDir
+//solo las 10 galletas del dia se quedan en memoria; las demas se decodifican cada vez que se abren
 //decodificar es trabajo de cpu: va en Dispatchers.Default; leer el archivo va en Dispatchers.IO (dentro del store)
 class CookieImageLoaderImpl(
     private val context: Context,
     private val imageStore: CookiePrivateImageStore,
+    private val memoryCache: CookieMemoryCache = CookieMemoryCache(),
 ) : CookieImageLoader<Bitmap> {
 
+    //ids de las galletas del jarro de hoy: las unicas que se guardan en la cache de memoria
+    @Volatile private var dailyIds: Set<String> = emptySet()
+
     override suspend fun load(cookie: CookieModel): Bitmap? {
+        if (!cookie.hasImage) return null
+        memoryCache.get(cookie.id)?.let { return it }
         if (!cookie.hasLocalImage()) return null
-        val bytes = imageStore.readBytes(cookie.localImagePath) ?: return null
-        return decode(bytes)
+        val started = System.nanoTime()
+        val bitmap = imageStore.readBytes(cookie.localImagePath)?.let { decode(it) } ?: return null
+        val elapsedMs = (System.nanoTime() - started) / 1_000_000
+        if (cookie.id in dailyIds) {
+            memoryCache.put(cookie.id, bitmap)
+            Log.d(CookieMemoryCache.TAG, "disk read id=${cookie.id} in $elapsedMs ms, kept in memory (today's jar)")
+        } else {
+            Log.d(CookieMemoryCache.TAG, "disk read id=${cookie.id} in $elapsedMs ms, not kept (not in today's jar)")
+        }
+        return bitmap
+    }
+
+    //decodifica en paralelo (Dispatchers.Default) las del jarro de hoy que aun no estan en memoria
+    override suspend fun prefetch(dailyCookies: List<CookieModel>) {
+        dailyIds = dailyCookies.map { it.id }.toSet()
+        val missing = dailyCookies.filter { it.hasLocalImage() && !memoryCache.contains(it.id) }
+        if (missing.isEmpty()) return
+        Log.d(CookieMemoryCache.TAG, "prefetch ${missing.size} pictures of today's jar")
+        coroutineScope {
+            missing.map { cookie -> async { load(cookie) } }.awaitAll()
+        }
+    }
+
+    override fun forget(cookieId: String) {
+        memoryCache.remove(cookieId)
     }
 
     override suspend fun loadPreview(sourceUri: String): Bitmap? = withContext(Dispatchers.IO) {
@@ -58,8 +92,9 @@ class CookieImageLoaderImpl(
     }
 
     companion object {
-        //lado mayor con el que se muestra la imagen en el detalle
-        const val DISPLAY_SIDE_PX = 1080
+        //lado mayor minimo con el que se decodifica para el detalle: una imagen de 1440 px baja a 720 (inSampleSize 2)
+        //y ocupa ~1,5 mb en ram en vez de ~6 mb, asi las 10 del dia caben en 1/8 de la memoria de la app
+        const val DISPLAY_SIDE_PX = 720
         //la vista previa del formulario es pequena
         const val PREVIEW_SIDE_PX = 480
     }
