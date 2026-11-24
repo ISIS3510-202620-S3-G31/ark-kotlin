@@ -2,8 +2,8 @@
 -- actualice solo (un cuadro de texto de Data Studio no puede mostrar datos).
 -- Una sola fila con una columna por pregunta. En cada pagina se muestra con una tabla de una
 -- celda (sin encabezado ni paginacion). Cada respuesta empieza con la fecha y hora del ultimo dato
--- que la alimenta, en hora de Bogota (menos BQ13 y BQ14, que empiezan directo con el dato). Solo
--- celulares reales y sin cuentas de prueba.
+-- que la alimenta, en hora de Bogota (menos BQ13, BQ14 y BQ15, que empiezan directo con el dato).
+-- Solo celulares reales y sin cuentas de prueba.
 --
 -- Uso: correr despues de views.sql, views_analytics.sql, views_bq4_and_age.sql,
 -- views_stats_visits.sql y views_tool_sessions.sql (lee sus vistas).
@@ -110,33 +110,57 @@ bq14 AS (
     IF(invalid > 0, FORMAT(' %d sessions with a duration of 0 s or less were left out.', invalid), '')) AS answer
   FROM bq14_parts
 ),
--- BQ15: desde que entrada se abren las herramientas que se completan (ultimas 4 semanas completas)
+-- BQ15: desde que entrada se abren las herramientas que se completan (ultimas 4 semanas completas).
+-- lee la vista una sola vez y suma las sesiones de cada entrada (todas las herramientas juntas)
+bq15_entries AS (
+  SELECT
+    entry_order,
+    entry_point_label,
+    entry_group,
+    has_entry_point,
+    SUM(sessions) AS entry_sessions
+  FROM `ark-mobiles.ark_dashboards.bq15_entry_points`
+  WHERE device_type = 'Real phone' AND NOT is_test_account
+  GROUP BY entry_order, entry_point_label, entry_group, has_entry_point
+),
+-- a cada entrada le pega el total con entrada registrada (la base de los porcentajes); va con
+-- OVER () y no con otro SELECT sobre bq15_entries para no leer la vista dos veces
+bq15_entries_with_total AS (
+  SELECT
+    entry_order,
+    entry_point_label,
+    entry_group,
+    has_entry_point,
+    entry_sessions,
+    SUM(IF(has_entry_point, entry_sessions, 0)) OVER () AS recorded
+  FROM bq15_entries
+),
+-- las partes del texto, cada una en su columna
+bq15_parts AS (
+  SELECT
+    MAX(recorded) AS recorded,
+    -- "Tools catalog 60% (12)", de la entrada mas usada a la menos usada
+    STRING_AGG(IF(has_entry_point,
+      CONCAT(entry_point_label, ' ',
+        CAST(CAST(ROUND(100 * SAFE_DIVIDE(entry_sessions, recorded)) AS INT64) AS STRING), '% (',
+        CAST(entry_sessions AS STRING), ')'),
+      NULL), ', ' ORDER BY entry_sessions DESC, entry_order) AS per_entry,
+    SUM(IF(entry_group = 'Home card', entry_sessions, 0)) AS home,
+    SUM(IF(has_entry_point, 0, entry_sessions)) AS not_recorded
+  FROM bq15_entries_with_total
+),
+-- arma el texto con las partes
 bq15 AS (
   SELECT CONCAT(
-    `ark-mobiles.ark_dashboards.as_of`(last_session_at),
     FORMAT('Of %d completed sessions with a recorded entry point (last 4 complete weeks): ', recorded),
-    (SELECT STRING_AGG(CONCAT(entry_point_label, ' ',
-       CAST(CAST(ROUND(100 * SAFE_DIVIDE(n, recorded)) AS INT64) AS STRING), '% (', CAST(n AS STRING), ')'),
-       ', ' ORDER BY n DESC, entry_order)
-     FROM (SELECT r.entry_point_label, r.entry_order, SUM(r.sessions) AS n
-           FROM UNNEST(items) AS r WHERE r.has_entry_point GROUP BY 1, 2)),
+    per_entry,
     '. The three Home cards together: ',
     CAST(CAST(ROUND(100 * SAFE_DIVIDE(home, recorded)) AS INT64) AS STRING),
     '%.',
     IF(not_recorded > 0,
       FORMAT(' %d more sessions have no recorded entry point (older app versions).', not_recorded),
       '')) AS answer
-  FROM (
-    SELECT
-      ARRAY_AGG(STRUCT(entry_point_label, entry_order, has_entry_point, sessions)) AS items,
-      -- total con entrada registrada: la base de los porcentajes
-      SUM(IF(has_entry_point, sessions, 0)) AS recorded,
-      SUM(IF(entry_group = 'Home card', sessions, 0)) AS home,
-      SUM(IF(has_entry_point, 0, sessions)) AS not_recorded,
-      MAX(last_session_at) AS last_session_at
-    FROM `ark-mobiles.ark_dashboards.bq15_entry_points`
-    WHERE device_type = 'Real phone' AND NOT is_test_account
-  )
+  FROM bq15_parts
 ),
 -- BQ1: herramienta mas lenta en abrir (mediana) y las demas
 bq1_rows AS (
