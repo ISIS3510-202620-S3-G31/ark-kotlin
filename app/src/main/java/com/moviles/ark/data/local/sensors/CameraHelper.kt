@@ -43,6 +43,13 @@ class CameraHelper(private val context: Context) {
         }
     }
 
+    //borra una foto temporal creada por createPictureUri; solo las de este FileProvider
+    fun deletePicture(uri: String): Boolean {
+        val parsed = Uri.parse(uri)
+        if (parsed.authority != "${context.packageName}.fileprovider") return false
+        return context.contentResolver.delete(parsed, null, null) > 0
+    }
+
     //mantiene compatibilidad hacia atras
     fun createTempPictureUri(): Uri? = createPictureUri()
 }

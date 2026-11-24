@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Air
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Cookie
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Mic
@@ -373,6 +374,7 @@ private fun getCatalogToolIcon(toolId: String): ImageVector {
         "scream_tank" -> Icons.Default.Mic
         "body_mapping" -> Icons.Default.AccessibilityNew
         "emotion_detective" -> Icons.Default.Psychology
+        "cookie_jar" -> Icons.Default.Cookie
         else -> Icons.Default.AutoAwesome
     }
 }

@@ -48,3 +48,10 @@ data class CookieListRow(
     val receivedFrom: String?,
     val isSynced: Boolean,
 )
+
+//imagen guardada en el telefono, para el desalojo del presupuesto
+data class CookieImageRow(
+    val id: String,
+    val lastOpenedAt: Long,
+    val isSynced: Boolean,
+)

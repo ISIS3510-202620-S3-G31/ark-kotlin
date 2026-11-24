@@ -27,10 +27,12 @@ import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.ui.components.BottomNavItem
 import com.moviles.ark.ui.components.BottomNavigationBar
 import com.moviles.ark.ui.components.OfflineBannerComponent
+import com.moviles.ark.ui.screens.CookieJarRoute
 import com.moviles.ark.ui.screens.CustomBreathingRoute
 import com.moviles.ark.ui.screens.HomeRoute
 import com.moviles.ark.ui.screens.LoginRoute
 import com.moviles.ark.ui.screens.MoodCheckInScreen
+import com.moviles.ark.ui.screens.NewCookieRoute
 import com.moviles.ark.ui.screens.PhotoOfTheDayRoute
 import com.moviles.ark.ui.screens.PostToolFeedbackRoute
 import com.moviles.ark.ui.screens.ProfileRoute
@@ -40,6 +42,7 @@ import com.moviles.ark.ui.screens.StatsScreen
 import com.moviles.ark.ui.screens.ToolsCatalogRoute
 import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.viewmodels.AppViewModel
+import com.moviles.ark.ui.viewmodels.CookieJarViewModel
 
 @Composable
 fun AppNavigation(
@@ -121,6 +124,7 @@ fun AppNavigation(
                             "photo_of_the_day" -> navController.navigate("photo_of_the_day_screen")
                             "custom_breathing" -> navController.navigate("custom_breathing_screen")
                             "scream_tank" -> navController.navigate("scream_tank_screen")
+                            "cookie_jar" -> navController.navigate("cookie_jar_screen")
                             //el catalogo es una pestana: se abre igual que desde la barra para no dejar el stack trabado
                             "tools_catalog_screen" -> navController.navigateToTab("tools_catalog_screen")
                         }
@@ -147,6 +151,7 @@ fun AppNavigation(
                             "photo_of_the_day" -> navController.navigate("photo_of_the_day_screen")
                             "custom_breathing" -> navController.navigate("custom_breathing_screen")
                             "scream_tank" -> navController.navigate("scream_tank_screen")
+                            "cookie_jar" -> navController.navigate("cookie_jar_screen")
                         }
                     }
                 )
@@ -205,6 +210,33 @@ fun AppNavigation(
                         navController.popBackStack()
                     }
                 })
+            }
+            //cookie jar; si se creo o se comio alguna galleta navega a feedback y si no vuelve sin feedback
+            composable("cookie_jar_screen") {
+                CookieJarRoute(
+                    onBack = { wasCompleted, duration ->
+                        if (wasCompleted) {
+                            navController.navigate("post_tool_feedback/cookie_jar?duration=$duration") {
+                                popUpTo("cookie_jar_screen") { inclusive = true }
+                            }
+                        } else {
+                            navController.popBackStack()
+                        }
+                    },
+                    onNewCookie = { navController.navigate("new_cookie_screen") }
+                )
+            }
+            //galleta nueva: comparte el viewmodel del jarro para que el aviso de guardado se vea alla
+            composable("new_cookie_screen") { backStackEntry ->
+                val jarEntry = remember(backStackEntry) { navController.getBackStackEntry("cookie_jar_screen") }
+                val jarViewModel: CookieJarViewModel = viewModel(jarEntry, factory = CookieJarViewModel.Factory)
+                NewCookieRoute(
+                    onBack = { navController.popBackStack() },
+                    onSaved = { typedTitle, cookie ->
+                        jarViewModel.onCookieSaved(typedTitle, cookie)
+                        navController.popBackStack()
+                    }
+                )
             }
             composable("checkin_screen") {
                 MoodCheckInScreen(

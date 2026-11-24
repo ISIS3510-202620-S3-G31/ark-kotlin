@@ -33,4 +33,20 @@ interface CookieRepository {
 
     //anota cuando se abrio, para borrar primero las imagenes menos usadas
     suspend fun markOpened(cookieId: String)
+
+    //aplica el presupuesto de imagenes del telefono (50/15 mb) desalojando por lru las ya subidas
+    //protectedIds son las del jarro de hoy, que nunca se desalojan
+    suspend fun enforceImageBudget(protectedIds: Set<String>)
+
+    //uid del usuario con sesion (semilla del sorteo del dia); null sin sesion
+    fun currentUserId(): String?
+
+    //true si el usuario ya dio permiso de camara
+    fun hasCameraPermission(): Boolean
+
+    //crea el archivo temporal donde la camara deja la foto y devuelve su direccion; null si no se pudo crear
+    fun createCaptureUri(): String?
+
+    //borra la foto temporal de la camara: la galleta ya guardo su propia copia comprimida
+    suspend fun discardCapture(uri: String)
 }
