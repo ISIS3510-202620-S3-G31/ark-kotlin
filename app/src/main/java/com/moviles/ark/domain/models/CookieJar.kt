@@ -1,7 +1,6 @@
 package com.moviles.ark.domain.models
 
 import com.moviles.ark.domain.exceptions.NotEnoughSpaceException
-import java.util.Random
 
 //reglas del jarro: cuantas galletas se dibujan y cuales salen hoy
 object CookieJar {
@@ -13,11 +12,20 @@ object CookieJar {
     //las 10 con el numero mas bajo; comer o crear una galleta no cambia el sorteo de las demas
     //dayKey es la fecha del telefono en formato yyyy-MM-dd
     fun dailyPick(cookies: List<CookieModel>, userId: String, dayKey: String): List<CookieModel> {
-        val daySeed = "$userId|$dayKey".hashCode().toLong()
+        val daySeed = mix("$userId|$dayKey".hashCode().toLong())
         return cookies
             .filter { it.isActive }
-            .sortedWith(compareBy<CookieModel> { Random(daySeed * 31 + it.id.hashCode()).nextLong() }.thenBy { it.id })
+            .sortedWith(compareBy<CookieModel> { mix(daySeed xor mix(it.id.hashCode().toLong())) }.thenBy { it.id })
             .take(CAPACITY)
+    }
+
+    //revuelve los bits de un numero (splitmix64): dos entradas parecidas dan salidas que no se parecen,
+    //asi ids casi iguales no quedan juntos en el sorteo
+    private fun mix(value: Long): Long {
+        var z = value + -0x61c8864680b583ebL
+        z = (z xor (z ushr 30)) * -0x40a7b892e31b1a47L
+        z = (z xor (z ushr 27)) * -0x6b2fb644ecceee15L
+        return z xor (z ushr 31)
     }
 }
 

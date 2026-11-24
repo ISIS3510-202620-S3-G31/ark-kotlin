@@ -8,7 +8,7 @@ import java.io.IOException
 
 //aqui se guarda en almacenamiento privado: las imagenes del cookie jar son archivos filesDir/cookies/{id}.jpg
 //solo la app los puede leer (no van a la galeria ni piden permisos); room guarda la ruta en la tabla cookies
-//esta clase es la unica que toca esos archivos: guardar, leer, borrar y medir cuanto ocupan
+//esta clase es la unica que toca esos archivos: guardar, leer, borrar (tambien al desalojar) y medir cuanto ocupan
 class CookiePrivateImageStore(filesDir: File) {
 
     private val directory = File(filesDir, DIR_NAME)
@@ -57,6 +57,11 @@ class CookiePrivateImageStore(filesDir: File) {
     //bytes que ocupan todas las imagenes de galletas en el telefono
     suspend fun usedBytes(): Long = withContext(Dispatchers.IO) {
         directory.listFiles()?.filter { it.isFile && it.name.endsWith(JPG_SUFFIX) }?.sumOf { it.length() } ?: 0L
+    }
+
+    //bytes de la imagen de una galleta; 0 si no esta
+    suspend fun sizeOf(cookieId: String): Long = withContext(Dispatchers.IO) {
+        fileOf(cookieId).takeIf { it.isFile }?.length() ?: 0L
     }
 
     //espacio libre del almacenamiento interno, para elegir el presupuesto de imagenes

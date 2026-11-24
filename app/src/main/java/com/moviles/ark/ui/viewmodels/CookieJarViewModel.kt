@@ -60,6 +60,8 @@ class CookieJarViewModel(
     //true si en esta visita se creo, se comio o se devolvio una galleta
     private var hasInteracted = false
     private var imageJob: Job? = null
+    //ids del jarro de hoy la ultima vez que se calentaron las caches
+    private var cachedDailyIds: Set<String> = emptySet()
 
     init {
         observeCookies()
@@ -82,7 +84,20 @@ class CookieJarViewModel(
                         val selected = state.selectedCookie?.let { open -> cookies.find { it.id == open.id } }
                         state.copy(isLoading = false, jarCookies = daily, selectedCookie = selected ?: state.selectedCookie)
                     }
+                    warmCaches(daily)
                 }
+        }
+    }
+
+    //cuando cambian las del jarro de hoy: sus imagenes pasan a memoria (LruCache) y se revisa el presupuesto del disco
+    //sin bloquear la pantalla: la decodificacion va en Dispatchers.Default y el desalojo en Dispatchers.IO
+    private fun warmCaches(daily: List<CookieModel>) {
+        val ids = daily.map { it.id }.toSet()
+        if (ids == cachedDailyIds) return
+        cachedDailyIds = ids
+        viewModelScope.launch {
+            imageLoader.prefetch(daily)
+            cookieRepository.enforceImageBudget(ids)
         }
     }
 
@@ -161,6 +176,7 @@ class CookieJarViewModel(
         _uiState.update { it.copy(pendingDelete = null) }
         viewModelScope.launch {
             cookieRepository.deleteForever(item.id).onSuccess {
+                imageLoader.forget(item.id)
                 if (_uiState.value.selectedCookie?.id == item.id) onDismissDetail()
             }
         }
@@ -170,6 +186,8 @@ class CookieJarViewModel(
     fun onCookieSaved(typedTitle: String, cookie: CookieModel) {
         hasInteracted = true
         viewModelScope.launch {
+            //una imagen nueva puede pasar el presupuesto del disco
+            if (cookie.hasImage) cookieRepository.enforceImageBudget(cachedDailyIds)
             val cleanTyped = CookieModel.cleanTitle(typedTitle)
             if (cookie.title != cleanTyped) {
                 messages.send(CookieMessage(CookieMessages.renamed(cleanTyped, cookie.title), isLong = true))
