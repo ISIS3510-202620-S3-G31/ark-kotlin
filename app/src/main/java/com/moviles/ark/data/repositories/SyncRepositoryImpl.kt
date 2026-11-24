@@ -18,6 +18,7 @@ import com.moviles.ark.data.remote.CrashlyticsHelper
 import com.moviles.ark.data.remote.dtos.documentId
 import com.moviles.ark.data.remote.dtos.toDto
 import com.moviles.ark.data.workers.RemotePhotoDeleteWorker
+import com.moviles.ark.domain.models.CookieUploadResult
 import com.moviles.ark.domain.models.ProfileSyncResult
 import com.moviles.ark.domain.repositories.SyncRepository
 import kotlinx.coroutines.CancellationException
@@ -44,7 +45,11 @@ class SyncRepositoryImpl(
     //sube el perfil y la foto de perfil que se cambiaron sin internet (UserRepository.syncPendingProfile)
     private val syncPendingProfile: suspend () -> ProfileSyncResult = { ProfileSyncResult() },
     //true si el perfil o la foto de perfil tienen cambios sin subir (UserRepository.hasPendingProfileChanges)
-    private val hasPendingProfile: suspend () -> Boolean = { false }
+    private val hasPendingProfile: suspend () -> Boolean = { false },
+    //sube las galletas del cookie jar pendientes, imagen y documento (CookieRepository.uploadPending)
+    private val syncPendingCookies: suspend () -> CookieUploadResult = { CookieUploadResult() },
+    //cuantas galletas faltan por subir (CookieRepository.pendingUploadCount)
+    private val pendingCookieCount: suspend () -> Int = { 0 }
 ) : SyncRepository {
 
     //una sola subida a la vez: el check-in pide subida al guardarse y el SyncManager al volver la red
@@ -84,7 +89,8 @@ class SyncRepositoryImpl(
             emotionCheckInDao.getUnsyncedCheckIns(userId).size +
             feedbackDao.getUnsyncedFeedback(userId).size +
             (statsDailyVisitDao?.getUnsyncedVisits(userId)?.size ?: 0) +
-            (if (hasPendingProfile()) 1 else 0)
+            (if (hasPendingProfile()) 1 else 0) +
+            pendingCookieCount()
     }
 
     //cuantas filas se subieron y cuantas fallaron; con fallos el sync devuelve error y el SyncWorker reintenta con espera
@@ -236,7 +242,15 @@ class SyncRepositoryImpl(
             tally.failed += result.failed
         }
 
-        // 6. Sincronizar fotos pendientes (isSynced = 0)
+        // 6. Subir las galletas del cookie jar pendientes (isSynced = 0): primero la imagen y luego el documento
+        //las cuenta el repositorio de galletas; si alguna falla el SyncWorker reintenta con backoff
+        tally.step("syncCookies", currentUserId) {
+            val result = syncPendingCookies()
+            tally.synced += result.synced
+            tally.failed += result.failed
+        }
+
+        // 7. Sincronizar fotos pendientes (isSynced = 0)
         //solo las del usuario con sesion: las reglas de firestore no dejan escribir en la carpeta de otro;
         //las de otra cuenta esperan a que esa cuenta vuelva a entrar
         tally.step("syncPhotos", currentUserId) {

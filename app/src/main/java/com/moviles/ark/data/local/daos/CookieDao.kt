@@ -59,6 +59,10 @@ interface CookieDao {
     @Query("SELECT * FROM cookies WHERE id = :id AND userId = :userId LIMIT 1")
     suspend fun getCookie(id: String, userId: String): CookieEntity?
 
+    //la galleta del usuario que ya usa un titulo (para los titulos repetidos entre dos telefonos)
+    @Query("SELECT * FROM cookies WHERE userId = :userId AND titleKey = :titleKey LIMIT 1")
+    suspend fun getByTitleKey(userId: String, titleKey: String): CookieEntity?
+
     //llaves de todos los titulos del usuario (activas y comidas) para calcular el sufijo de un titulo repetido
     @Query("SELECT titleKey FROM cookies WHERE userId = :userId")
     suspend fun getTitleKeys(userId: String): List<String>
@@ -109,6 +113,45 @@ interface CookieDao {
     //despues de subir: se guarda la url y se marca sincronizada solo si nadie la cambio mientras subia
     @Query("UPDATE cookies SET isSynced = 1, remoteImageUrl = :remoteImageUrl WHERE id = :id AND updatedAt = :uploadedVersion")
     suspend fun markAsSynced(id: String, remoteImageUrl: String?, uploadedVersion: Long): Int
+
+    //cuantas galletas del usuario faltan por subir; room vuelve a emitir con cada cambio (el ⏳ de la pantalla)
+    @Query("SELECT COUNT(*) FROM cookies WHERE userId = :userId AND isSynced = 0")
+    fun observeUnsyncedCount(userId: String): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM cookies WHERE userId = :userId AND isSynced = 0")
+    suspend fun countUnsynced(userId: String): Int
+
+    //todas las galletas del usuario, para compararlas con las de la nube
+    @Query("SELECT * FROM cookies WHERE userId = :userId")
+    suspend fun getAllCookies(userId: String): List<CookieEntity>
+
+    //la imagen ya esta en storage: se guarda la url aunque la galleta haya cambiado mientras subia
+    @Query("UPDATE cookies SET remoteImageUrl = :remoteImageUrl WHERE id = :id")
+    suspend fun setRemoteImageUrl(id: String, remoteImageUrl: String)
+
+    //la imagen se bajo de la nube al archivo privado
+    @Query("UPDATE cookies SET localImagePath = :localImagePath WHERE id = :id AND userId = :userId")
+    suspend fun setLocalImage(id: String, userId: String, localImagePath: String): Int
+
+    //gano la version de la nube (last write wins): se copian sus datos, queda sincronizada y se conserva la imagen local
+    //solo si la fila no cambio desde que se leyo (seenVersion)
+    @Query(
+        """UPDATE cookies SET title = :title, titleKey = :titleKey, text = :text, state = :state, hasImage = :hasImage,
+           remoteImageUrl = :remoteImageUrl, updatedAt = :updatedAt, isSynced = 1
+           WHERE id = :id AND userId = :userId AND updatedAt = :seenVersion"""
+    )
+    suspend fun applyRemote(
+        id: String, userId: String, title: String, titleKey: String, text: String, state: String,
+        hasImage: Boolean, remoteImageUrl: String?, updatedAt: Long, seenVersion: Long,
+    ): Int
+
+    //titulo repetido entre dos telefonos: la galleta recibe el sufijo y queda pendiente de subir el titulo nuevo
+    @Query("UPDATE cookies SET title = :title, titleKey = :titleKey, updatedAt = :updatedAt, isSynced = 0 WHERE id = :id AND userId = :userId")
+    suspend fun rename(id: String, userId: String, title: String, titleKey: String, updatedAt: Long): Int
+
+    //borrada en otro telefono: solo si seguia sincronizada y sin cambios desde que se leyo
+    @Query("DELETE FROM cookies WHERE id = :id AND userId = :userId AND isSynced = 1 AND updatedAt = :seenVersion")
+    suspend fun deleteIfUnchanged(id: String, userId: String, seenVersion: Long): Int
 
     //imagenes que estan en el telefono (de cualquier cuenta: el presupuesto es de toda la carpeta), la menos usada primero
     @Query("SELECT id, lastOpenedAt, isSynced FROM cookies WHERE localImagePath IS NOT NULL ORDER BY lastOpenedAt ASC")

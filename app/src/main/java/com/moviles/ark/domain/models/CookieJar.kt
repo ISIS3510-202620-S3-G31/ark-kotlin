@@ -38,6 +38,38 @@ object CookieMessages {
     const val NOT_ENOUGH_SPACE = NotEnoughSpaceException.MESSAGE
     const val EATEN = "Cookie eaten 🍪"
     const val UNDO = "Undo"
+    const val RETRY = "Retry"
+
+    //conectividad eventual: se perdio la red con la herramienta abierta y cuando vuelve
+    const val WENT_OFFLINE = "You're offline. Your cookie jar still works; gifts and friends will wait"
+    const val BACK_ONLINE = "Back online. Syncing your cookies…"
+    //ya no queda nada por subir
+    const val ALL_BACKED_UP = "All your cookies are backed up ✓"
+    //borrar para siempre sin red
+    const val DELETED_OFFLINE = "Deleted from this phone. It will be deleted from the cloud when you're back online"
+    //la imagen no esta en el telefono y no hay red
+    const val PICTURE_NEEDS_INTERNET = "Connect to the internet to see this picture"
+    //fallo la descarga de la imagen
+    const val PICTURE_FAILED = "Couldn't load the picture. Check your connection"
+    //telefono nuevo (nunca bajo sus galletas) sin red
+    const val COOKIES_IN_CLOUD = "Your cookies are in the cloud. Connect to the internet to bring them here"
+    //la bajada de cambios fallo con red (red lenta)
+    const val SYNC_FAILED = "Couldn't sync right now. We'll keep trying"
+
+    //en el detalle, en lugar de la imagen que no esta en el telefono
+    const val PICTURE_WHEN_ONLINE = "The picture will show when you're back online"
+    const val PICTURE_NOT_LOADED = "Couldn't load the picture"
+
+    //llegaron galletas de otro telefono de la misma cuenta
+    fun arrivedFromOtherDevices(count: Int) =
+        if (count == 1) "1 cookie arrived from your other devices" else "$count cookies arrived from your other devices"
+
+    //dos telefonos crearon el mismo titulo sin red
+    fun existedOnTwoPhones(title: String, finalTitle: String) = "\"$title\" existed on two phones. One is now \"$finalTitle\""
+
+    //arriba del jarro mientras haya galletas sin subir
+    fun waitingToUpload(count: Int) =
+        if (count == 1) "⏳ 1 cookie waiting to upload" else "⏳ $count cookies waiting to upload"
 
     //el titulo ya existia y se guardo con sufijo
     fun renamed(typedTitle: String, finalTitle: String) = "\"$typedTitle\" already exists. Saved as \"$finalTitle\""

@@ -32,6 +32,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -154,7 +156,7 @@ private fun TabPill(text: String, selected: Boolean, modifier: Modifier, onClick
     }
 }
 
-//fila: titulo, 📷 si tiene imagen; en "Eaten" ademas devolver al jarro y borrar para siempre
+//fila: titulo, 📷 si tiene imagen, ⏳ si falta subirla; en "Eaten" ademas devolver al jarro y borrar para siempre
 @Composable
 private fun CookieRow(
     item: CookieListItem,
@@ -184,6 +186,15 @@ private fun CookieRow(
         if (item.hasImage) {
             Spacer(modifier = Modifier.width(8.dp))
             Text(text = "📷", style = MaterialTheme.typography.bodyLarge)
+        }
+        //pendiente de subir a la nube; las sincronizadas no muestran nada
+        if (!item.isSynced) {
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "⏳",
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.semantics { contentDescription = "Waiting to upload" }
+            )
         }
         if (isEaten) {
             IconButton(onClick = onReturnToJar) {

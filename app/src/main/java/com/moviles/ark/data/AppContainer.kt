@@ -11,6 +11,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.firestore
 import com.google.firebase.storage.FirebaseStorage
 import com.google.firebase.storage.storage
+import com.moviles.ark.data.workers.RemoteCookieDeleteWorker
 import com.moviles.ark.data.workers.RemotePhotoDeleteWorker
 import com.moviles.ark.R
 import com.moviles.ark.data.local.ArkDatabase
@@ -139,13 +140,21 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         )
     }
     // cookie jar: datos en room (tabla cookies) e imagen comprimida en filesDir/cookies, por usuario (uid de firebase)
+    // con copia en firestore users/{uid}/cookies y storage users/{uid}/cookies/{id}.jpg
     override val cookieRepository: CookieRepository by lazy {
         CookieRepositoryImpl(
             cookieDao = database.cookieDao(),
             imageStore = cookieImageStore,
             imageCompressor = com.moviles.ark.data.local.CookieImageCompressor(context),
             cameraHelper = com.moviles.ark.data.local.sensors.CameraHelper(context),
-            userIdProvider = { auth.currentUser?.uid }
+            userIdProvider = { auth.currentUser?.uid },
+            //cada cambio (crear, comer, devolver) pide una subida; sin red queda en workmanager para cuando vuelva
+            onCookieChanged = { syncManager.requestSync() },
+            //borrar para siempre: la copia de la nube se borra con workmanager aunque se cierre la app
+            onRemoteDeleteNeeded = { userId, cookieId -> RemoteCookieDeleteWorker.enqueue(context, userId, cookieId) },
+            cloudStore = com.moviles.ark.data.remote.CookieCloudStore(firestore, storage),
+            pendingRemoteDeletes = { RemoteCookieDeleteWorker.pendingCookieIds(context) },
+            syncPreferences = com.moviles.ark.data.local.CookieSyncPreferences(context)
         )
     }
     // imagenes del cookie jar leidas del almacenamiento privado y decodificadas para la pantalla
@@ -221,7 +230,9 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             feedbackDao = database.feedbackDao(),
             statsDailyVisitDao = database.statsDailyVisitDao(),
             syncPendingProfile = { userRepository.syncPendingProfile() },
-            hasPendingProfile = { userRepository.hasPendingProfileChanges() }
+            hasPendingProfile = { userRepository.hasPendingProfileChanges() },
+            syncPendingCookies = { cookieRepository.uploadPending() },
+            pendingCookieCount = { cookieRepository.pendingUploadCount() }
         )
     }
     override val syncManager: SyncManager by lazy {

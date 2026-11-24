@@ -48,85 +48,92 @@ fun CookieDetailDialog(
     cookie: CookieModel,
     image: Bitmap?,
     isImageLoading: Boolean,
+    //texto en lugar de la imagen si no esta en el telefono (sin red o si fallo la descarga)
+    imageNotice: String?,
     onEat: () -> Unit,
     onReturnToJar: () -> Unit,
     onDismiss: () -> Unit,
+    //el dialogo es otra ventana y tapa los snackbars de la pantalla (y su "Retry"): se pintan tambien aqui
+    snackbarHost: @Composable () -> Unit = {},
 ) {
     Dialog(onDismissRequest = onDismiss) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(28.dp))
-                .background(BackgroundColor)
-                .verticalScroll(rememberScrollState())
-                .padding(20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-                Text(
-                    text = cookie.title,
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = TextColor,
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(top = 8.dp)
-                )
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .background(TextColor.copy(alpha = 0.08f))
-                        .clickable(role = Role.Button, onClickLabel = "Close", onClick = onDismiss),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Default.Close, contentDescription = "Close", tint = TextColor)
+        Box {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(28.dp))
+                    .background(BackgroundColor)
+                    .verticalScroll(rememberScrollState())
+                    .padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                    Text(
+                        text = cookie.title,
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = TextColor,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(top = 8.dp)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(TextColor.copy(alpha = 0.08f))
+                            .clickable(role = Role.Button, onClickLabel = "Close", onClick = onDismiss),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = TextColor)
+                    }
                 }
-            }
 
-            if (cookie.hasImage) {
+                if (cookie.hasImage) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    CookieImage(image = image, isLoading = isImageLoading, notice = imageNotice)
+                }
+
                 Spacer(modifier = Modifier.height(16.dp))
-                CookieImage(image = image, isLoading = isImageLoading)
-            }
+                Text(
+                    text = cookie.text,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = TextColor,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(24.dp))
 
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = cookie.text,
-                style = MaterialTheme.typography.bodyLarge,
-                color = TextColor,
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                if (cookie.isActive) {
-                    Button(
-                        onClick = onEat,
-                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryColor, contentColor = TextColor),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp)
-                    ) {
-                        Text("Eat 🍪", style = MaterialTheme.typography.labelLarge)
-                    }
-                } else {
-                    Button(
-                        onClick = onReturnToJar,
-                        colors = ButtonDefaults.buttonColors(containerColor = SecondaryColor, contentColor = TextColor),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp)
-                    ) {
-                        Text("Return to jar", style = MaterialTheme.typography.labelLarge)
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                    if (cookie.isActive) {
+                        Button(
+                            onClick = onEat,
+                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryColor, contentColor = TextColor),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp)
+                        ) {
+                            Text("Eat 🍪", style = MaterialTheme.typography.labelLarge)
+                        }
+                    } else {
+                        Button(
+                            onClick = onReturnToJar,
+                            colors = ButtonDefaults.buttonColors(containerColor = SecondaryColor, contentColor = TextColor),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp)
+                        ) {
+                            Text("Return to jar", style = MaterialTheme.typography.labelLarge)
+                        }
                     }
                 }
             }
+            Box(modifier = Modifier.align(Alignment.BottomCenter)) { snackbarHost() }
         }
     }
 }
 
 //la imagen guardada en el telefono; si no esta (se desalojo o esta en la nube) se avisa en su lugar
 @Composable
-private fun CookieImage(image: Bitmap?, isLoading: Boolean) {
+private fun CookieImage(image: Bitmap?, isLoading: Boolean, notice: String?) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -144,7 +151,7 @@ private fun CookieImage(image: Bitmap?, isLoading: Boolean) {
             )
             isLoading -> CircularProgressIndicator(color = SecondaryColor, modifier = Modifier.size(32.dp))
             else -> Text(
-                text = "The picture isn't on this phone",
+                text = notice ?: "The picture isn't on this phone",
                 style = MaterialTheme.typography.bodyLarge,
                 color = TextColor.copy(alpha = 0.7f),
                 textAlign = TextAlign.Center,

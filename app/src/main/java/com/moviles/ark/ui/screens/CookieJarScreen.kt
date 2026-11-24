@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
+import com.moviles.ark.domain.models.CookieMessages
 import com.moviles.ark.domain.models.CookieModel
 import com.moviles.ark.ui.components.CookieDetailDialog
 import com.moviles.ark.ui.components.CookieJarDrawing
@@ -77,7 +78,10 @@ fun CookieJarRoute(
     //avisos de una sola vez; un mensaje igual al que ya se esta viendo no se repite
     LaunchedEffect(viewModel) {
         viewModel.messageFlow.collect { message ->
-            if (snackbarHostState.currentSnackbarData?.visuals?.message == message.text) return@collect
+            val current = snackbarHostState.currentSnackbarData
+            if (current?.visuals?.message == message.text) return@collect
+            //"offline" y "back online" no se hacen fila: el estado nuevo de la red reemplaza al viejo
+            if (message.isNetworkStatus && current?.visuals?.message in NETWORK_STATUS_TEXTS) current?.dismiss()
             //cada aviso en su corrutina: el host los muestra en fila y el collect sigue escuchando
             launch {
                 val result = snackbarHostState.showSnackbar(
@@ -85,7 +89,7 @@ fun CookieJarRoute(
                     actionLabel = message.actionLabel,
                     duration = if (message.isLong) SnackbarDuration.Long else SnackbarDuration.Short
                 )
-                if (result == SnackbarResult.ActionPerformed) message.undoEatId?.let(viewModel::onUndoEat)
+                if (result == SnackbarResult.ActionPerformed) message.action?.let(viewModel::onMessageAction)
             }
         }
     }
@@ -130,9 +134,11 @@ fun CookieJarRoute(
             cookie = cookie,
             image = uiState.selectedImage,
             isImageLoading = uiState.isImageLoading,
+            imageNotice = uiState.imageNotice,
             onEat = { viewModel.onEatCookie(cookie.id) },
             onReturnToJar = { viewModel.onReturnToJar(cookie.id) },
-            onDismiss = viewModel::onDismissDetail
+            onDismiss = viewModel::onDismissDetail,
+            snackbarHost = { CookieSnackbarHost(snackbarHostState) }
         )
     }
 
@@ -144,6 +150,9 @@ fun CookieJarRoute(
         )
     }
 }
+
+//textos de los avisos de red (M1 y M2)
+private val NETWORK_STATUS_TEXTS = setOf(CookieMessages.WENT_OFFLINE, CookieMessages.BACK_ONLINE)
 
 //jarro con las galletas del dia, boton del listado encima y "+" para una galleta nueva
 @Composable
@@ -178,6 +187,16 @@ fun CookieJarScreen(
                 leading = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = null, tint = TextColor) },
                 modifier = Modifier.padding(top = 8.dp)
             )
+
+            //galletas guardadas solo en el telefono: se ve todo el tiempo, no solo mientras dura un snackbar
+            uiState.pendingLabel?.let { label ->
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextColor.copy(alpha = 0.8f),
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
 
             Box(
                 modifier = Modifier
