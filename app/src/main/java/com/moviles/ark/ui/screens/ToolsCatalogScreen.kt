@@ -375,6 +375,7 @@ private fun getCatalogToolIcon(toolId: String): ImageVector {
         "body_mapping" -> Icons.Default.AccessibilityNew
         "emotion_detective" -> Icons.Default.Psychology
         "cookie_jar" -> Icons.Default.Cookie
+        "fortune_cookie" -> Icons.Default.AutoAwesome
         else -> Icons.Default.AutoAwesome
     }
 }

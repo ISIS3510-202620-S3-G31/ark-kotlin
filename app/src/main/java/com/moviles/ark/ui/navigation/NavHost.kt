@@ -29,6 +29,8 @@ import com.moviles.ark.ui.components.BottomNavigationBar
 import com.moviles.ark.ui.components.OfflineBannerComponent
 import com.moviles.ark.ui.screens.CookieJarRoute
 import com.moviles.ark.ui.screens.CustomBreathingRoute
+import com.moviles.ark.ui.screens.FavoriteFortunesRoute
+import com.moviles.ark.ui.screens.FortuneCookieRoute
 import com.moviles.ark.ui.screens.HomeRoute
 import com.moviles.ark.ui.screens.LoginRoute
 import com.moviles.ark.ui.screens.MoodCheckInScreen
@@ -125,6 +127,7 @@ fun AppNavigation(
                             "custom_breathing" -> navController.navigate("custom_breathing_screen")
                             "scream_tank" -> navController.navigate("scream_tank_screen")
                             "cookie_jar" -> navController.navigate("cookie_jar_screen")
+                            "fortune_cookie" -> navController.navigate("fortune_cookie_screen")
                             //el catalogo es una pestana: se abre igual que desde la barra para no dejar el stack trabado
                             "tools_catalog_screen" -> navController.navigateToTab("tools_catalog_screen")
                         }
@@ -152,6 +155,7 @@ fun AppNavigation(
                             "custom_breathing" -> navController.navigate("custom_breathing_screen")
                             "scream_tank" -> navController.navigate("scream_tank_screen")
                             "cookie_jar" -> navController.navigate("cookie_jar_screen")
+                            "fortune_cookie" -> navController.navigate("fortune_cookie_screen")
                         }
                     }
                 )
@@ -236,6 +240,27 @@ fun AppNavigation(
                         jarViewModel.onCookieSaved(typedTitle, cookie)
                         navController.popBackStack()
                     }
+                )
+            }
+            //herramienta fortune cookie; al terminar navega a feedback y si no vuelve sin feedback
+            composable("fortune_cookie_screen") {
+                FortuneCookieRoute(
+                    onBack = { wasCompleted, duration ->
+                        if (wasCompleted) {
+                            navController.navigate("post_tool_feedback/fortune_cookie?duration=$duration") {
+                                popUpTo("fortune_cookie_screen") { inclusive = true }
+                            }
+                        } else {
+                            navController.popBackStack()
+                        }
+                    },
+                    onOpenFavorites = { navController.navigate("favorite_fortunes_screen") }
+                )
+            }
+            //pantalla de favoritos y galeria de tarjetas guardadas
+            composable("favorite_fortunes_screen") {
+                FavoriteFortunesRoute(
+                    onBack = { navController.popBackStack() }
                 )
             }
             composable("checkin_screen") {

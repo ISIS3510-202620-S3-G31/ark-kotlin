@@ -62,5 +62,13 @@
     "category": "behavioral_activation",
     "format": "text",
     "iconName": "ic_tool_cookie_jar"
+  },
+  {
+    "id": "fortune_cookie",
+    "name": "Fortune cookie",
+    "description": "Crack daily cookies for wisdom, advice, and lucky numbers.",
+    "category": "emotional_awareness",
+    "format": "touch",
+    "iconName": "ic_tool_fortune_cookie"
   }
 ]
