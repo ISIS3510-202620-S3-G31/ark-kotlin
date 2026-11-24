@@ -1,4 +1,4 @@
--- Sesiones completadas de las herramientas (Sprint 4) y las preguntas que salen de ellas: BQ13 y BQ14.
+-- Sesiones completadas de las herramientas (Sprint 4) y las preguntas que salen de ellas: BQ13, BQ14 y BQ15.
 --
 -- Uso: correr despues de views.sql y views_bq4_and_age.sql (usa tool_interactions, tool_name,
 -- test_accounts y la tabla tool_load_latency_raw_latest de la extension). Despues correr
@@ -243,3 +243,48 @@ SELECT
   device_type,
   is_test_account
 FROM tool_brackets;
+
+-- BQ15: desde que entrada se abren las herramientas que se completan: las tres tarjetas del Home
+-- (recomendacion, "Leave it to chance" y clima) o el catalogo (pestana Tools o "Browse full
+-- catalog"). La app la guarda en cada apertura (entryPoint de tool_load_latency).
+-- Una fila por entrada, herramienta, tipo de dispositivo y cuenta de prueba, con 0 en las entradas
+-- sin sesiones. Las sesiones sin apertura registrada (versiones de la app anteriores al 27 de
+-- octubre, o abiertas hace mas de 3 horas) van como 'Not recorded' y no se mezclan con las demas.
+-- La respuesta se lee con device_type = 'Real phone' y is_test_account = false.
+CREATE OR REPLACE VIEW `ark-mobiles.ark_dashboards.bq15_entry_points` AS
+WITH grouped AS (
+  SELECT
+    tool,
+    device_type,
+    is_test_account,
+    -- sesiones de cada entrada, en el orden de la lista de abajo; una entrada que la app no
+    -- conoce todavia tambien cuenta como no registrada
+    [COUNTIF(entry_point = 'recommendation'),
+     COUNTIF(entry_point = 'surprise_me'),
+     COUNTIF(entry_point = 'weather'),
+     COUNTIF(entry_point = 'catalog'),
+     COUNTIF(entry_point IS NULL
+       OR entry_point NOT IN ('recommendation', 'surprise_me', 'weather', 'catalog'))] AS by_entry,
+    MAX(happened_at) AS last_session_at
+  FROM `ark-mobiles.ark_dashboards.completed_tool_sessions`
+  WHERE in_last_4_weeks
+  GROUP BY 1, 2, 3
+)
+SELECT
+  e.entry_point_label,
+  e.entry_group,
+  e.entry_order,
+  e.entry_order < 5 AS has_entry_point,
+  g.tool,
+  g.by_entry[OFFSET(e.entry_order - 1)] AS sessions,
+  g.last_session_at,
+  g.device_type,
+  g.is_test_account
+FROM grouped AS g
+CROSS JOIN UNNEST([
+  STRUCT(1 AS entry_order, 'Home: recommendation card' AS entry_point_label, 'Home card' AS entry_group),
+  (2, 'Home: Leave it to chance', 'Home card'),
+  (3, 'Home: weather card', 'Home card'),
+  (4, 'Tools catalog', 'Tools catalog'),
+  (5, 'Not recorded', 'Not recorded')
+]) AS e;

@@ -110,6 +110,34 @@ bq14 AS (
     IF(invalid > 0, FORMAT(' %d sessions with a duration of 0 s or less were left out.', invalid), '')) AS answer
   FROM bq14_parts
 ),
+-- BQ15: desde que entrada se abren las herramientas que se completan (ultimas 4 semanas completas)
+bq15 AS (
+  SELECT CONCAT(
+    `ark-mobiles.ark_dashboards.as_of`(last_session_at),
+    FORMAT('Of %d completed sessions with a recorded entry point (last 4 complete weeks): ', recorded),
+    (SELECT STRING_AGG(CONCAT(entry_point_label, ' ',
+       CAST(CAST(ROUND(100 * SAFE_DIVIDE(n, recorded)) AS INT64) AS STRING), '% (', CAST(n AS STRING), ')'),
+       ', ' ORDER BY n DESC, entry_order)
+     FROM (SELECT r.entry_point_label, r.entry_order, SUM(r.sessions) AS n
+           FROM UNNEST(items) AS r WHERE r.has_entry_point GROUP BY 1, 2)),
+    '. The three Home cards together: ',
+    CAST(CAST(ROUND(100 * SAFE_DIVIDE(home, recorded)) AS INT64) AS STRING),
+    '%.',
+    IF(not_recorded > 0,
+      FORMAT(' %d more sessions have no recorded entry point (older app versions).', not_recorded),
+      '')) AS answer
+  FROM (
+    SELECT
+      ARRAY_AGG(STRUCT(entry_point_label, entry_order, has_entry_point, sessions)) AS items,
+      -- total con entrada registrada: la base de los porcentajes
+      SUM(IF(has_entry_point, sessions, 0)) AS recorded,
+      SUM(IF(entry_group = 'Home card', sessions, 0)) AS home,
+      SUM(IF(has_entry_point, 0, sessions)) AS not_recorded,
+      MAX(last_session_at) AS last_session_at
+    FROM `ark-mobiles.ark_dashboards.bq15_entry_points`
+    WHERE device_type = 'Real phone' AND NOT is_test_account
+  )
+),
 -- BQ1: herramienta mas lenta en abrir (mediana) y las demas
 bq1_rows AS (
   SELECT
@@ -236,4 +264,5 @@ SELECT
   (SELECT answer FROM bq8) AS bq8_answer,
   (SELECT answer FROM bq9) AS bq9_answer,
   (SELECT answer FROM bq13) AS bq13_answer,
-  (SELECT answer FROM bq14) AS bq14_answer;
+  (SELECT answer FROM bq14) AS bq14_answer,
+  (SELECT answer FROM bq15) AS bq15_answer;
