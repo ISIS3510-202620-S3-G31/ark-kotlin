@@ -186,38 +186,60 @@ CROSS JOIN the_4_weeks AS w;
 -- sesiones (asi la barra al 100 % siempre tiene los 3 pedazos en el mismo orden).
 -- Una duracion de 0 segundos, negativa o vacia es un error del reloj: no se puede clasificar, asi
 -- que no entra en los rangos y se cuenta aparte en invalid_duration_sessions.
+-- Lee completed_tool_sessions una sola vez: cuenta los 3 rangos en columnas y despues los pasa a filas.
 -- La respuesta se lee con device_type = 'Real phone' y is_test_account = false.
 CREATE OR REPLACE VIEW `ark-mobiles.ark_dashboards.bq14_tool_duration_brackets` AS
-WITH grouped AS (
+WITH
+-- unica lectura de las sesiones del periodo: cuenta las de cada rango por herramienta
+sessions_per_bracket AS (
   SELECT
     tool,
     device_type,
     is_test_account,
-    -- sesiones de cada rango, en el orden de los rangos
-    [COUNTIF(duration_s BETWEEN 1 AND 59),
-     COUNTIF(duration_s BETWEEN 60 AND 180),
-     COUNTIF(duration_s > 180)] AS by_bracket,
+    COUNTIF(duration_s BETWEEN 1 AND 59) AS under_1_min,
+    COUNTIF(duration_s BETWEEN 60 AND 180) AS from_1_to_3_min,
+    COUNTIF(duration_s > 180) AS over_3_min,
     COUNTIF(duration_s IS NULL OR duration_s <= 0) AS invalid_duration_sessions,
     MAX(happened_at) AS last_session_at
   FROM `ark-mobiles.ark_dashboards.completed_tool_sessions`
   WHERE in_last_4_weeks
-  GROUP BY 1, 2, 3
+  GROUP BY tool, device_type, is_test_account
+),
+-- la lista fija de los 3 rangos, en orden
+brackets AS (
+  SELECT 1 AS bracket_order, '1. Under 1 min' AS duration_bracket
+  UNION ALL SELECT 2, '2. 1 to 3 min'
+  UNION ALL SELECT 3, '3. Over 3 min'
+),
+-- una fila por herramienta y rango: las sesiones salen de la columna que le toca
+tool_brackets AS (
+  SELECT
+    c.tool,
+    b.duration_bracket,
+    b.bracket_order,
+    CASE b.bracket_order
+      WHEN 1 THEN c.under_1_min
+      WHEN 2 THEN c.from_1_to_3_min
+      WHEN 3 THEN c.over_3_min
+    END AS sessions,
+    -- las sesiones que si caen en un rango: la base del porcentaje
+    c.under_1_min + c.from_1_to_3_min + c.over_3_min AS sessions_with_bracket,
+    c.invalid_duration_sessions,
+    c.last_session_at,
+    c.device_type,
+    c.is_test_account
+  FROM sessions_per_bracket AS c
+  CROSS JOIN brackets AS b
 )
 SELECT
-  g.tool,
-  b.duration_bracket,
-  b.bracket_order,
-  g.by_bracket[OFFSET(b.bracket_order - 1)] AS sessions,
+  tool,
+  duration_bracket,
+  bracket_order,
+  sessions,
   -- porcentaje dentro de su herramienta (dispositivo y cuenta de prueba), no del total
-  ROUND(100 * SAFE_DIVIDE(g.by_bracket[OFFSET(b.bracket_order - 1)],
-    (SELECT SUM(n) FROM UNNEST(g.by_bracket) AS n)), 1) AS pct_of_tool_sessions,
-  g.invalid_duration_sessions,
-  g.last_session_at,
-  g.device_type,
-  g.is_test_account
-FROM grouped AS g
-CROSS JOIN UNNEST([
-  STRUCT(1 AS bracket_order, '1. Under 1 min' AS duration_bracket),
-  (2, '2. 1 to 3 min'),
-  (3, '3. Over 3 min')
-]) AS b;
+  ROUND(100 * SAFE_DIVIDE(sessions, sessions_with_bracket), 1) AS pct_of_tool_sessions,
+  invalid_duration_sessions,
+  last_session_at,
+  device_type,
+  is_test_account
+FROM tool_brackets;
