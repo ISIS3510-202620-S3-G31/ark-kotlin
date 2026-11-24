@@ -62,7 +62,7 @@ open class ToolModel(
 
     companion object {
         //herramientas con pantalla propia en el NavHost; al implementar una nueva se agrega aqui
-        val IMPLEMENTED_TOOL_IDS = setOf("custom_breathing", "scream_tank", "photo_of_the_day")
+        val IMPLEMENTED_TOOL_IDS = setOf("custom_breathing", "scream_tank", "photo_of_the_day", "wish_lantern")
 
         //herramienta que se abre cuando no se puede elegir otra (siempre esta en el telefono)
         const val FALLBACK_TOOL_ID = "custom_breathing"
@@ -75,7 +75,8 @@ open class ToolModel(
             ToolModel("body_mapping", "Body mapping", "Mark where the feeling lives.", "reflect", "touch", "ic_tool_body_mapping"),
             ToolModel("emotion_detective", "Emotion detective", "Not sure what you feel? Let's find out.", "reflect", "text", "ic_tool_emotion_detective"),
             ToolModel("achievement_jar", "Achievement jar", "Save the good stuff. Read it when you need it.", "celebrate", "text", "ic_tool_achievement_jar"),
-            ToolModel("photo_of_the_day", "Photo of the day", "One photo a day, one new memory.", "celebrate", "photo", "ic_tool_photo_of_the_day")
+            ToolModel("photo_of_the_day", "Photo of the day", "One photo a day, one new memory.", "celebrate", "photo", "ic_tool_photo_of_the_day"),
+            ToolModel("wish_lantern", "Wish lantern", "Write a wish, light it up and let it fly.", "celebrate", "text", "ic_tool_wish_lantern")
         )
 
         //solo las que ya tienen pantalla

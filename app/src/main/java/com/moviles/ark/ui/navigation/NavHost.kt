@@ -38,6 +38,7 @@ import com.moviles.ark.ui.screens.RegisterScreen
 import com.moviles.ark.ui.screens.ScreamTankRoute
 import com.moviles.ark.ui.screens.StatsScreen
 import com.moviles.ark.ui.screens.ToolsCatalogRoute
+import com.moviles.ark.ui.screens.WishLanternRoute
 import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.viewmodels.AppViewModel
 
@@ -121,6 +122,7 @@ fun AppNavigation(
                             "photo_of_the_day" -> navController.navigate("photo_of_the_day_screen")
                             "custom_breathing" -> navController.navigate("custom_breathing_screen")
                             "scream_tank" -> navController.navigate("scream_tank_screen")
+                            "wish_lantern" -> navController.navigate("wish_lantern_screen")
                             //el catalogo es una pestana: se abre igual que desde la barra para no dejar el stack trabado
                             "tools_catalog_screen" -> navController.navigateToTab("tools_catalog_screen")
                         }
@@ -147,6 +149,7 @@ fun AppNavigation(
                             "photo_of_the_day" -> navController.navigate("photo_of_the_day_screen")
                             "custom_breathing" -> navController.navigate("custom_breathing_screen")
                             "scream_tank" -> navController.navigate("scream_tank_screen")
+                            "wish_lantern" -> navController.navigate("wish_lantern_screen")
                         }
                     }
                 )
@@ -200,6 +203,18 @@ fun AppNavigation(
                     if (wasCompleted) {
                         navController.navigate("post_tool_feedback/scream_tank?duration=$duration") {
                             popUpTo("scream_tank_screen") { inclusive = true }
+                        }
+                    } else {
+                        navController.popBackStack()
+                    }
+                })
+            }
+            //herramienta farol de deseos; el chulito navega a feedback y atras (salir) vuelve sin feedback
+            composable("wish_lantern_screen") {
+                WishLanternRoute(onBack = { wasCompleted, duration ->
+                    if (wasCompleted) {
+                        navController.navigate("post_tool_feedback/wish_lantern?duration=$duration") {
+                            popUpTo("wish_lantern_screen") { inclusive = true }
                         }
                     } else {
                         navController.popBackStack()
