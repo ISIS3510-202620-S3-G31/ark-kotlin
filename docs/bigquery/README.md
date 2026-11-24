@@ -163,12 +163,10 @@ Un cuadro de texto de Data Studio no puede mostrar datos, así que una respuesta
 ("Voice 54 %") queda vieja apenas llega otro dato. Por eso las respuestas no van en cuadros de
 texto: `views_answers.sql` las escribe en BigQuery y cada página las muestra con una **tabla de una
 celda** (fuente `bq_answers`, dimensión `bqN_answer`, sin métrica). En la fuente, los campos
-`*_answer` van con tipo **Text** (Data Studio los toma como fecha porque empiezan con una) y
+`*_answer` van con tipo **Text** (si no, Data Studio puede tomarlos como fecha) y
 frescura de 1 minuto. En la tabla: sin encabezado, sin números de fila, con *Wrap text* y sin
-dimensión de rango de fechas. Cada respuesta empieza con "Updated with data up to …", la hora del
-último dato en hora de Bogotá, menos `bq13_answer`, `bq14_answer` y `bq15_answer`, que empiezan
-directo con el dato. En los cuadros de texto solo van el título, la pregunta y las definiciones
-que no cambian.
+dimensión de rango de fechas. Cada respuesta empieza directo con el dato. En los cuadros de texto
+solo van el título y la pregunta.
 
 ### Página BQ1 (latencia de render de una herramienta)
 

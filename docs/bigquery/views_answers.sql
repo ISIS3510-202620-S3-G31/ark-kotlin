@@ -1,17 +1,11 @@
 -- Respuestas de las BQ de Kotlin escritas por BigQuery, para que el texto del dashboard se
 -- actualice solo (un cuadro de texto de Data Studio no puede mostrar datos).
 -- Una sola fila con una columna por pregunta. En cada pagina se muestra con una tabla de una
--- celda (sin encabezado ni paginacion). Cada respuesta empieza con la fecha y hora del ultimo dato
--- que la alimenta, en hora de Bogota (menos BQ13, BQ14 y BQ15, que empiezan directo con el dato).
+-- celda (sin encabezado ni paginacion). Cada respuesta empieza directo con el dato.
 -- Solo celulares reales y sin cuentas de prueba.
 --
 -- Uso: correr despues de views.sql, views_analytics.sql, views_bq4_and_age.sql,
 -- views_stats_visits.sql y views_tool_sessions.sql (lee sus vistas).
-
-CREATE OR REPLACE FUNCTION `ark-mobiles.ark_dashboards.as_of`(ts TIMESTAMP) AS (
-  CONCAT('Updated with data up to ', FORMAT_TIMESTAMP('%b %d, %Y %I:%M %p', ts, 'America/Bogota'),
-    ' (Bogota time). ')
-);
 
 CREATE OR REPLACE FUNCTION `ark-mobiles.ark_dashboards.tool_name`(tool_id STRING) AS (
   CASE tool_id
@@ -175,8 +169,6 @@ bq1_rows AS (
 ),
 bq1 AS (
   SELECT CONCAT(
-    (SELECT `ark-mobiles.ark_dashboards.as_of`(MAX(happened_at))
-     FROM `ark-mobiles.ark_dashboards.tool_load_latency` WHERE device_type = 'Real phone'),
     FORMAT('%s is the slowest tool to open (median %d ms, p90 %d ms, %d opens). ',
       MAX(IF(rank = 1, tool, NULL)), MAX(IF(rank = 1, p50, NULL)),
       MAX(IF(rank = 1, p90, NULL)), MAX(IF(rank = 1, opens, NULL))),
@@ -199,8 +191,6 @@ bq9_hour AS (
 ),
 bq9 AS (
   SELECT CONCAT(
-    (SELECT `ark-mobiles.ark_dashboards.as_of`(MAX(happened_at))
-     FROM `ark-mobiles.ark_dashboards.app_screen_time` WHERE device_type = 'Real phone'),
     FORMAT('A typical user spends %.0f minutes a day in Ark (median of %d user-days from %d users, %s to %s), ',
       APPROX_QUANTILES(minutes, 100)[OFFSET(50)], COUNT(*), COUNT(DISTINCT user_key),
       FORMAT_DATE('%b %d', MIN(day)), FORMAT_DATE('%b %d', MAX(day))),
@@ -222,8 +212,6 @@ bq7_week AS (
 ),
 bq7 AS (
   SELECT CONCAT(
-    (SELECT `ark-mobiles.ark_dashboards.as_of`(MAX(updated_at))
-     FROM `ark-mobiles.firestore_export.vw_stats_daily_parsed` WHERE device_type = 'Real phone'),
     FORMAT('Users open Stats %.2f times per week on average (week of %s: %d visits from %d users). ',
       avg_visits_per_user, FORMAT_DATE('%b %d', week_start), total_visits, active_users),
     'A visit is opening the Stats tab; refreshing or rotating the phone does not count.') AS answer
@@ -235,7 +223,6 @@ bq5_rows AS (
 ),
 bq5 AS (
   SELECT CONCAT(
-    `ark-mobiles.ark_dashboards.as_of`(MAX(last_checkin_at)),
     'Inside Bogota: ',
     (SELECT STRING_AGG(
         FORMAT('%s %d check-ins (most frequent: %s; highest intensity: %s %.1f)',
@@ -257,8 +244,6 @@ bq3_rows AS (
 ),
 bq3 AS (
   SELECT CONCAT(
-    (SELECT `ark-mobiles.ark_dashboards.as_of`(MAX(happened_at))
-     FROM `ark-mobiles.ark_dashboards.tool_interactions` WHERE complete),
     FORMAT('Users complete %s tools the most (%.1f%% of %d sessions), followed by ',
       INITCAP(MAX(IF(rank = 1, tool_format, NULL))), MAX(IF(rank = 1, completion_percentage, NULL)),
       SUM(total_completions)),
@@ -270,10 +255,6 @@ bq3 AS (
 -- BQ8: grupos de edad de los usuarios activos en 30 dias
 bq8 AS (
   SELECT CONCAT(
-    (SELECT `ark-mobiles.ark_dashboards.as_of`(MAX(happened_at)) FROM (
-       SELECT happened_at FROM `ark-mobiles.ark_dashboards.mood_checkins`
-       UNION ALL
-       SELECT happened_at FROM `ark-mobiles.ark_dashboards.tool_interactions`)),
     FORMAT('%d users were active in the last 30 days: ', SUM(active_users_30d)),
     STRING_AGG(FORMAT('%s %.1f%%', age_bucket, pct_of_active_users), ', ' ORDER BY active_users_30d DESC),
     '.') AS answer
