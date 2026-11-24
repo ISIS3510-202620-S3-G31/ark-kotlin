@@ -27,9 +27,11 @@ data class MoodCheckInModel(
     fun isPostToolFeedback(): Boolean = isPostToolNote(note)
 
     //texto del chip de ubicacion: el nombre del lugar, nunca las coordenadas ni un "null"
-    fun locationLabel(): String = PlaceName.clean(cityName) ?: when {
-        hasLocation() -> LOCATION_SAVED_LABEL
-        else -> NO_LOCATION_LABEL
+    fun locationLabel(): String {
+        val placeName = PlaceName.clean(cityName)
+        if (placeName != null) return placeName
+        if (hasLocation()) return LOCATION_SAVED_LABEL
+        return NO_LOCATION_LABEL
     }
 
     //el primer error del check-in, o null si se puede guardar

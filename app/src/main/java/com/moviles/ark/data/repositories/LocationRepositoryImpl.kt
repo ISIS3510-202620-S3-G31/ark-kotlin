@@ -21,12 +21,16 @@ class LocationRepositoryImpl(
     //si las coordenadas caen cerca de las anteriores se devuelve el mismo nombre (el modelo decide que es "cerca"),
     //asi varios check-ins o aperturas en el mismo sitio no dan nombres distintos por el temblor del gps
     override suspend fun getCityName(latitude: Double, longitude: Double): String? {
-        lastPlace?.takeIf { it.covers(latitude, longitude) }?.let { place ->
-            Log.d(Location.TAG, "same place as before, reusing: ${place.name}")
-            return place.name
+        val previousPlace = lastPlace
+        if (previousPlace != null && previousPlace.covers(latitude, longitude)) {
+            Log.d(Location.TAG, "same place as before, reusing: ${previousPlace.name}")
+            return previousPlace.name
         }
-        val name = locationDataSource.resolveCityName(latitude, longitude) ?: return null
-        lastPlace = ResolvedPlace(latitude, longitude, name)
-        return name
+
+        //lugar nuevo: se le pregunta al geocoder y se recuerda para la proxima vez
+        val placeName = locationDataSource.resolveCityName(latitude, longitude)
+        if (placeName == null) return null
+        lastPlace = ResolvedPlace(latitude, longitude, placeName)
+        return placeName
     }
 }

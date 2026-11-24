@@ -206,7 +206,7 @@ class Location(private val context: Context) {
             }
             val address = addresses?.firstOrNull() ?: return@withContext null
             //el modelo arma "localidad, ciudad, pais" y se salta las partes que el geocoder deja en null
-            val name = PlaceName.format(
+            val placeName = PlaceName.format(
                 subLocality = address.subLocality,
                 locality = address.locality,
                 subAdminArea = address.subAdminArea,
@@ -218,9 +218,9 @@ class Location(private val context: Context) {
                 TAG,
                 "geocoder: subLocality=${address.subLocality}, locality=${address.locality}, " +
                     "subAdminArea=${address.subAdminArea}, adminArea=${address.adminArea}, " +
-                    "countryCode=${address.countryCode} -> $name"
+                    "countryCode=${address.countryCode} -> $placeName"
             )
-            name
+            placeName
         } catch (e: Exception) {
             com.moviles.ark.data.remote.CrashlyticsHelper.logNonFatal(
                 componentName = "LocationSensor",

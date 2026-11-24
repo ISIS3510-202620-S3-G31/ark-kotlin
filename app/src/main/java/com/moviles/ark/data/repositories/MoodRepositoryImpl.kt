@@ -41,9 +41,11 @@ class MoodRepositoryImpl(
                 throw AlreadyCheckedInTodayException()
             }
             //el lugar se guarda limpio y, si ya existe escrito de otra forma ("Bogota" / "Bogotá"), con el texto de antes
-            val cityName = PlaceName.canonical(checkIn.cityName, emotionCheckInDao.getCityNames(currentUserId))
+            val savedPlaceNames = emotionCheckInDao.getCityNames(currentUserId)
+            val placeName = PlaceName.canonical(checkIn.cityName, savedPlaceNames)
+            val checkInToSave = checkIn.copy(cityName = placeName)
             //queda con isSynced = false; guardar no depende de la red, asi el check-in es instantaneo
-            emotionCheckInDao.insertCheckIn(checkIn.copy(cityName = cityName).toEntity(currentUserId))
+            emotionCheckInDao.insertCheckIn(checkInToSave.toEntity(currentUserId))
             Log.d("MoodCheckIn", "Check-in saved in Room for $currentUserId, pending sync")
             onCheckInSaved()
             Unit
@@ -119,17 +121,13 @@ class MoodRepositoryImpl(
             //primero room, asi la recomendacion del home funciona sin internet
             val local = emotionCheckInDao.getLatestCheckIn(currentUserId)?.toDomain()
             if (local != null) {
-                val resolved = withCityName(local)
+                val withCity = withCityName(local)
+                //si ya tenia lugar guardado no hay nada que actualizar
+                if (!local.cityName.isNullOrBlank()) return@runCatching withCity
                 //la ciudad se guarda una sola vez; asi no se vuelve a pedir cada vez que se abre el home
-                if (local.cityName.isNullOrBlank()) {
-                    val cityName = PlaceName.canonical(resolved.cityName, emotionCheckInDao.getCityNames(currentUserId))
-                    if (cityName != null) {
-                        emotionCheckInDao.updateCityName(currentUserId, local.timestamp, cityName)
-                        onCheckInSaved()
-                        return@runCatching local.copy(cityName = cityName)
-                    }
-                }
-                return@runCatching resolved
+                val savedPlaceName = saveLateCityName(currentUserId, local.timestamp, withCity.cityName)
+                if (savedPlaceName == null) return@runCatching withCity
+                return@runCatching local.copy(cityName = savedPlaceName)
             }
 
             //room vacio: respaldo en firestore con tiempo maximo
@@ -155,6 +153,17 @@ class MoodRepositoryImpl(
         val latitude = checkIn.latitude ?: return checkIn
         val longitude = checkIn.longitude ?: return checkIn
         return checkIn.copy(cityName = resolveCityName(latitude, longitude))
+    }
+
+    //el check-in se guardo sin lugar y el nombre llego despues: se guarda con la misma escritura de los anteriores
+    //devuelve el nombre guardado, o null si no habia nombre que guardar
+    private suspend fun saveLateCityName(userId: String, timestamp: Long, cityName: String?): String? {
+        val savedPlaceNames = emotionCheckInDao.getCityNames(userId)
+        val placeName = PlaceName.canonical(cityName, savedPlaceNames)
+        if (placeName == null) return null
+        emotionCheckInDao.updateCityName(userId, timestamp, placeName)
+        onCheckInSaved()
+        return placeName
     }
 
     //documentos de firestore que son check-ins del dia (sin los que guardaba el feedback viejo)
