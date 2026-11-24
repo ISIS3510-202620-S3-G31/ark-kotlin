@@ -11,6 +11,7 @@ import com.moviles.ark.data.local.daos.BreathingSessionDao
 import com.moviles.ark.data.local.daos.CookieDao
 import com.moviles.ark.data.local.daos.EmotionCheckInDao
 import com.moviles.ark.data.local.daos.FavoriteFortuneCookieDao
+import com.moviles.ark.data.local.daos.SavedFortuneCardDao
 import com.moviles.ark.data.local.daos.FeedbackDao
 import com.moviles.ark.data.local.daos.PhotoEntryDao
 import com.moviles.ark.data.local.daos.StatsDailyVisitDao
@@ -21,6 +22,7 @@ import com.moviles.ark.data.local.entities.BreathingSessionEntity
 import com.moviles.ark.data.local.entities.CheckInEntity
 import com.moviles.ark.data.local.entities.CookieEntity
 import com.moviles.ark.data.local.entities.FavoriteFortuneCookieEntity
+import com.moviles.ark.data.local.entities.SavedFortuneCardEntity
 import com.moviles.ark.data.local.entities.FeedbackEntity
 import com.moviles.ark.data.local.entities.PhotoEntryEntity
 import com.moviles.ark.data.local.entities.StatsDailyVisitEntity
@@ -37,6 +39,7 @@ import com.moviles.ark.data.local.entities.UserEntity
 //version 9: cuenta del feedback pendiente, para no subirlo a otra cuenta si se cierra sesion sin red
 //version 12: se agrego cookies, las galletas del cookie jar, con migracion para no perder nada de lo anterior
 //version 13: se agrego favorite_fortunes, frases favoritas de la galleta de la fortuna
+//version 14: se agrego saved_fortune_cards, trazabilidad de tarjetas guardadas en galeria y nube
 //(sin migracion para un salto de version, room borra y crea de nuevo la base local)
 @Database(
     entities = [
@@ -50,8 +53,9 @@ import com.moviles.ark.data.local.entities.UserEntity
         StatsDailyVisitEntity::class,
         CookieEntity::class,
         FavoriteFortuneCookieEntity::class,
+        SavedFortuneCardEntity::class,
     ],
-    version = 13,
+    version = 14,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -66,6 +70,7 @@ abstract class ArkDatabase : RoomDatabase() {
     abstract fun statsDailyVisitDao(): StatsDailyVisitDao
     abstract fun cookieDao(): CookieDao
     abstract fun favoriteFortuneCookieDao(): FavoriteFortuneCookieDao
+    abstract fun savedFortuneCardDao(): SavedFortuneCardDao
 
     companion object {
         @Volatile
@@ -133,6 +138,18 @@ abstract class ArkDatabase : RoomDatabase() {
             }
         }
 
+        //agrega la tabla de tarjetas de la fortuna guardadas en galeria y nube
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `saved_fortune_cards` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`cookieId` INTEGER NOT NULL, `userId` TEXT NOT NULL, `quote` TEXT NOT NULL, " +
+                        "`category` TEXT NOT NULL, `luckyNumber` INTEGER NOT NULL, `localImageUri` TEXT NOT NULL, " +
+                        "`remoteImageUrl` TEXT, `savedAt` INTEGER NOT NULL, `isSynced` INTEGER NOT NULL)"
+                )
+            }
+        }
+
         //singleton con doble comprobacion para que toda la app comparta un unico pool de conexiones
         fun getInstance(context: Context): ArkDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -141,7 +158,7 @@ abstract class ArkDatabase : RoomDatabase() {
                     ArkDatabase::class.java,
                     "ark.db"
                 )
-                .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
+                .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
                 .also { INSTANCE = it }

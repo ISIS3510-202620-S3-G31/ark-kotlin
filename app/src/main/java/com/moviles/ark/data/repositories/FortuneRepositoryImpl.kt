@@ -3,29 +3,36 @@ package com.moviles.ark.data.repositories
 import android.graphics.Bitmap
 import android.net.Uri
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.storage.FirebaseStorage
 import com.moviles.ark.data.local.FortuneCacheManager
 import com.moviles.ark.data.local.FortuneCardExporter
 import com.moviles.ark.data.local.FortunePreferencesManager
 import com.moviles.ark.data.local.daos.FavoriteFortuneCookieDao
+import com.moviles.ark.data.local.daos.SavedFortuneCardDao
 import com.moviles.ark.data.local.entities.FavoriteFortuneCookieEntity
+import com.moviles.ark.data.local.entities.SavedFortuneCardEntity
 import com.moviles.ark.domain.adapters.FortuneServiceAdapter
 import com.moviles.ark.domain.models.FortuneCrackResult
 import com.moviles.ark.domain.models.FortuneModel
 import com.moviles.ark.domain.repositories.FortuneRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 
 //implementacion del repositorio que maneja favoritos en room y cache falling back to network
 class FortuneRepositoryImpl(
     private val favoriteFortuneCookieDao: FavoriteFortuneCookieDao,
+    private val savedFortuneCardDao: SavedFortuneCardDao,
     private val preferencesManager: FortunePreferencesManager,
     private val cacheManager: FortuneCacheManager,
     private val cardExporter: FortuneCardExporter,
     private val serviceAdapter: FortuneServiceAdapter,
     private val firestore: FirebaseFirestore? = null,
+    private val storage: FirebaseStorage? = null,
     private val userIdProvider: () -> String? = { null }
 ) : FortuneRepository {
 
@@ -37,6 +44,12 @@ class FortuneRepositoryImpl(
             cacheManager.loadFavoriteIds(ids)
             list
         }
+    }
+
+    //observa todas las tarjetas guardadas en galeria y nube para el usuario con sesion
+    override fun observeSavedCards(): Flow<List<SavedFortuneCardEntity>> {
+        val userId = userIdProvider() ?: return flowOf(emptyList())
+        return savedFortuneCardDao.observeSavedCards(userId)
     }
 
     //carga los identificadores de favoritos de room a memoria para acceso en tiempo constante
@@ -127,14 +140,57 @@ class FortuneRepositoryImpl(
         Result.success(FortuneCrackResult(fortune = finalFortune, isFromOfflineReserve = isOfflineFallback, remainingChances = remaining))
     }
 
-    //dibuja el bitmap en dispatchers.default porque es trabajo pesado de cpu y luego guarda en mediastore
+    //dibuja el bitmap en dispatchers.default, lo guarda en mediastore y lo respalda en firebase storage
     override suspend fun saveCardToGallery(fortune: FortuneModel): Uri? {
         val bitmap: Bitmap = withContext(Dispatchers.Default) {
             cardExporter.renderCardBitmap(fortune)
         }
-        return withContext(Dispatchers.IO) {
+        val uri: Uri? = withContext(Dispatchers.IO) {
             cardExporter.saveCardToGallery(bitmap, "fortune_${fortune.id}")
         }
+        if (uri != null) {
+            withContext(Dispatchers.IO) {
+                val userId = userIdProvider() ?: "local_user"
+                val cardEntity = SavedFortuneCardEntity(
+                    cookieId = fortune.id,
+                    userId = userId,
+                    quote = fortune.quote,
+                    category = fortune.category,
+                    luckyNumber = fortune.luckyNumber,
+                    localImageUri = uri.toString(),
+                    savedAt = System.currentTimeMillis(),
+                    isSynced = false
+                )
+                val cardId = savedFortuneCardDao.insertCard(cardEntity)
+
+                //si hay sesion y conexion subimos la imagen comprimida a storage y su documento a firestore
+                if (storage != null && firestore != null && userId != "local_user") {
+                    try {
+                        val stream = ByteArrayOutputStream()
+                        bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+                        val bytes = stream.toByteArray()
+                        val storageRef = storage.reference.child("users/$userId/fortune_cards/card_${cardId}_${fortune.id}.png")
+                        storageRef.putBytes(bytes).await()
+                        val downloadUrl = storageRef.downloadUrl.await().toString()
+                        val map = hashMapOf(
+                            "id" to cardId,
+                            "cookieId" to fortune.id,
+                            "userId" to userId,
+                            "quote" to fortune.quote,
+                            "category" to fortune.category,
+                            "luckyNumber" to fortune.luckyNumber,
+                            "remoteImageUrl" to downloadUrl,
+                            "savedAt" to cardEntity.savedAt
+                        )
+                        firestore.collection("users").document(userId).collection("saved_fortune_cards").document(cardId.toString()).set(map).await()
+                        savedFortuneCardDao.markCardSynced(cardId, downloadUrl)
+                    } catch (_: Exception) {
+                        //si falla la subida queda registrado localmente en room para sincronizarse despues
+                    }
+                }
+            }
+        }
+        return uri
     }
 
     //sincroniza las favoritas desde la nube para restaurarlas si room se vacia
@@ -158,6 +214,42 @@ class FortuneRepositoryImpl(
                 cacheManager.loadFavoriteIds(ids)
             } catch (_: Exception) {
                 //si falla la consulta remota se conservan los datos de room
+            }
+        }
+    }
+
+    //sincroniza las tarjetas guardadas desde la nube si el usuario cambia de celular
+    override suspend fun syncSavedCardsFromRemote(): Unit = withContext(Dispatchers.IO) {
+        val userId = userIdProvider()
+        if (firestore != null && userId != null) {
+            try {
+                val snapshot = firestore.collection("users").document(userId).collection("saved_fortune_cards").get().await()
+                val entities = snapshot.documents.mapNotNull { doc ->
+                    val cardId = doc.getLong("id") ?: return@mapNotNull null
+                    val cookieId = doc.getLong("cookieId")?.toInt() ?: return@mapNotNull null
+                    val quote = doc.getString("quote") ?: ""
+                    val category = doc.getString("category") ?: "Wisdom"
+                    val luckyNumber = doc.getLong("luckyNumber")?.toInt() ?: 7
+                    val remoteImageUrl = doc.getString("remoteImageUrl")
+                    val savedAt = doc.getLong("savedAt") ?: System.currentTimeMillis()
+                    SavedFortuneCardEntity(
+                        id = cardId,
+                        cookieId = cookieId,
+                        userId = userId,
+                        quote = quote,
+                        category = category,
+                        luckyNumber = luckyNumber,
+                        localImageUri = remoteImageUrl ?: "",
+                        remoteImageUrl = remoteImageUrl,
+                        savedAt = savedAt,
+                        isSynced = true
+                    )
+                }
+                for (entity in entities) {
+                    savedFortuneCardDao.insertCard(entity)
+                }
+            } catch (_: Exception) {
+                //si falla la consulta remota se conservan los datos locales
             }
         }
     }
