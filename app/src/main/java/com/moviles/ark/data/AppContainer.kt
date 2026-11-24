@@ -17,6 +17,7 @@ import com.moviles.ark.data.local.ArkDatabase
 import com.moviles.ark.data.local.daos.FavoriteFortuneCookieDao
 import com.moviles.ark.data.local.FortunePreferencesManager
 import com.moviles.ark.data.local.FortuneCardExporter
+import com.moviles.ark.data.local.FortuneCacheManager
 import com.moviles.ark.data.local.daos.FeedbackDao
 import com.moviles.ark.data.local.daos.ToolRecordDao
 import com.moviles.ark.data.local.sensors.AudioPlayerHelper
@@ -86,6 +87,7 @@ interface AppContainer {
     val favoriteFortuneCookieDao: FavoriteFortuneCookieDao
     val fortunePreferencesManager: FortunePreferencesManager
     val fortuneCardExporter: FortuneCardExporter
+    val fortuneCacheManager: FortuneCacheManager
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -245,4 +247,6 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val fortunePreferencesManager: FortunePreferencesManager by lazy { FortunePreferencesManager(context) }
     // exportador de tarjetas de la fortuna a la galeria publica
     override val fortuneCardExporter: FortuneCardExporter by lazy { FortuneCardExporter(context) }
+    // gestor de cache en memoria y disco para la galleta de la fortuna
+    override val fortuneCacheManager: FortuneCacheManager by lazy { FortuneCacheManager(context) }
 }
