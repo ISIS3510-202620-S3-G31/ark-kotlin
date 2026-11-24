@@ -42,6 +42,10 @@ import java.util.TimeZone
 
 //jarro, listado y detalle de cookie jar; las reglas (sorteo del dia, limites, titulos, sync) estan en el modelo
 //conectividad eventual: todo sale de room al instante (cached) y, si hay red, se bajan los cambios de la nube (network)
+//hilos: todo arranca con viewModelScope.launch, que corre en el hilo principal (Dispatchers.Main.immediate) y se cancela
+//solo al salir de la pantalla; el trabajo pesado lo mandan a otro hilo el repositorio y el cargador de imagenes
+//(room, archivos y red en Dispatchers.IO; sorteo, compresion y decodificacion en Dispatchers.Default), y al volver
+//de esos hilos el estado (StateFlow) se actualiza otra vez en el hilo principal, que es el unico que pinta la ui
 class CookieJarViewModel(
     private val cookieRepository: CookieRepository,
     private val imageLoader: CookieImageLoader<Bitmap>,
@@ -187,11 +191,17 @@ class CookieJarViewModel(
     }
 
     //estado de la red sin esperar: los botones que necesitan red cambian al instante
+    //si la red se cae, las fotos del jarro de hoy que seguian bajando se cancelan: no se queda esperando el timeout
+    //y se reintentan cuando vuelva la red
     private fun observeConnectivity() {
         viewModelScope.launch {
             connectivity.collect { online ->
                 isOnlineFlow.value = online
                 _uiState.update { it.copy(isOnline = online) }
+                if (!online && dailyDownloadJob?.isActive == true) {
+                    Log.d(TAG, "offline: canceling the downloads of today's pictures still running")
+                    dailyDownloadJob?.cancel()
+                }
                 if (!online && isDownloadingDetail) {
                     stopDetailDownload()
                 }
@@ -240,6 +250,8 @@ class CookieJarViewModel(
         }
         failedDownloads.clear()
         refreshFromCloud()
+        //las fotos de hoy que no alcanzaron a bajar (room no vuelve a emitir si la nube no trajo cambios)
+        downloadTodayImages()
         if (backupFinishedBeforeBackOnline) {
             sayAllBackedUpAfterRefresh()
         }
@@ -306,7 +318,9 @@ class CookieJarViewModel(
         }
     }
 
-    //imagenes que faltan de las 10 del dia (llegaron de otro telefono o se desalojaron): se bajan una por una
+    //imagenes que faltan de las 10 del dia (llegaron de otro telefono o se desalojaron): se bajan en paralelo
+    //(async + awaitAll en Dispatchers.IO dentro del repositorio); si una falla las demas siguen
+    //cada una que baja hace que room vuelva a emitir y la galleta aparece con su foto sin esperar a las otras
     private fun downloadTodayImages() {
         if (!isOnlineFlow.value || dailyDownloadJob?.isActive == true) return
         val missing = mutableListOf<CookieModel>()
@@ -318,14 +332,13 @@ class CookieJarViewModel(
         }
         if (missing.isEmpty()) return
         dailyDownloadJob = viewModelScope.launch {
-            for (cookie in missing) {
-                if (!isOnlineFlow.value) break
-                val result = cookieRepository.downloadImage(cookie.id)
-                if (result.isFailure) {
-                    val error = result.exceptionOrNull()
-                    if (error is CancellationException) throw error
-                    //no se vuelve a intentar hasta que vuelva la red
-                    failedDownloads.add(cookie.id)
+            val missingIds = missing.map { it.id }
+            val results = cookieRepository.downloadImages(missingIds)
+            //de vuelta en el hilo principal: las que fallaron no se reintentan en esta visita hasta que vuelva la red
+            for ((cookieId, result) in results) {
+                val error = result.exceptionOrNull()
+                if (error != null && error !is CancellationException) {
+                    failedDownloads.add(cookieId)
                 }
             }
             //ya hay imagenes bajadas (desalojables) en el disco

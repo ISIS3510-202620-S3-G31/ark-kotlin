@@ -30,6 +30,8 @@ import kotlinx.coroutines.withContext
 sealed interface NewCookieEvent {
     data class Saved(val typedTitle: String, val cookie: CookieModel) : NewCookieEvent
     data class Message(val text: String) : NewCookieEvent
+    //el archivo de la camara ya esta creado: la pantalla abre la camara con esta direccion
+    data class OpenCamera(val uri: String) : NewCookieEvent
 }
 
 //formulario de galleta nueva: titulo (60), texto (280), dictado e imagen opcional
@@ -47,6 +49,7 @@ class NewCookieViewModel(
 
     private var titleJob: Job? = null
     private var previewJob: Job? = null
+    private var captureJob: Job? = null
     //foto temporal de la camara; se borra al guardar o al salir porque la galleta guarda su propia copia
     private var cameraFile: String? = null
 
@@ -70,12 +73,16 @@ class NewCookieViewModel(
 
     fun hasCameraPermission(): Boolean = cookieRepository.hasCameraPermission()
 
-    //prepara el archivo de la camara y devuelve su direccion para abrirla; null si no se pudo crear
-    fun prepareCapture(): String? {
-        val uri = cookieRepository.createCaptureUri()
-        _uiState.update { it.copy(captureUri = uri) }
-        if (uri == null) events.trySend(NewCookieEvent.Message(CAMERA_ERROR))
-        return uri
+    //prepara el archivo de la camara: crearlo escribe en disco, asi que el repositorio lo hace en Dispatchers.IO
+    //y la pantalla abre la camara cuando llega el evento; el toque del boton (hilo principal) no espera al disco
+    //un segundo toque mientras se prepara no crea otro archivo
+    fun prepareCapture() {
+        if (captureJob?.isActive == true) return
+        captureJob = viewModelScope.launch {
+            val uri = cookieRepository.createCaptureUri()
+            _uiState.update { it.copy(captureUri = uri) }
+            events.send(if (uri == null) NewCookieEvent.Message(CAMERA_ERROR) else NewCookieEvent.OpenCamera(uri))
+        }
     }
 
     fun onCaptureResult(success: Boolean) {

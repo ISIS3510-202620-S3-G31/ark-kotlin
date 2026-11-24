@@ -49,11 +49,15 @@ interface CookieRepository {
     suspend fun refreshFromCloud(): Result<CookieRefreshResult>
 
     //true si este telefono ya bajo alguna vez las galletas de la cuenta; false en un telefono nuevo
-    fun hasDownloadedFromCloud(): Boolean
+    suspend fun hasDownloadedFromCloud(): Boolean
 
     //baja de la nube la imagen de una galleta que no esta en el telefono y la guarda en privado
     //devuelve la galleta con su ruta local; si falla no queda ningun archivo a medias
     suspend fun downloadImage(cookieId: String): Result<CookieModel>
+
+    //baja varias imagenes en paralelo (las del jarro de hoy); si una falla las otras siguen
+    //devuelve el resultado de cada una por id
+    suspend fun downloadImages(cookieIds: List<String>): Map<String, Result<CookieModel>>
 
     //sube las galletas pendientes (primero la imagen, luego el documento); lo llama el sync en segundo plano
     suspend fun uploadPending(): CookieUploadResult
@@ -84,7 +88,7 @@ interface CookieRepository {
     fun hasCameraPermission(): Boolean
 
     //crea el archivo temporal donde la camara deja la foto y devuelve su direccion; null si no se pudo crear
-    fun createCaptureUri(): String?
+    suspend fun createCaptureUri(): String?
 
     //borra la foto temporal de la camara: la galleta ya guardo su propia copia comprimida
     suspend fun discardCapture(uri: String)
