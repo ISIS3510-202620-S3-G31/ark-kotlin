@@ -33,7 +33,10 @@ class NetworkConnectivityObserver(
 
         //hay internet si alguna red sigue validada: perder el wifi no deja sin internet si quedan los datos
         fun publish(reason: String) {
-            val online = networks.values.any { it }
+            var online = false
+            for (isValidated in networks.values) {
+                if (isValidated) online = true
+            }
             Log.d(TAG, "$reason -> online=$online (${networks.size} networks)")
             trySend(online)
         }
@@ -44,7 +47,8 @@ class NetworkConnectivityObserver(
                 //desde android 8 siempre llega onCapabilitiesChanged justo despues con sus capacidades
                 //en 7 se consultan las de esta red (no las de la red activa)
                 if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-                    networks[network] = connectivityManager.getNetworkCapabilities(network)?.let(::isValidated) ?: false
+                    val capabilities = connectivityManager.getNetworkCapabilities(network)
+                    networks[network] = capabilities != null && isValidated(capabilities)
                     publish("available")
                 }
             }
@@ -89,9 +93,12 @@ class NetworkConnectivityObserver(
         return isValidated(capabilities)
     }
 
-    private fun isValidated(capabilities: NetworkCapabilities): Boolean =
-        capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    //validada = android ya comprobo que esa red si llega a internet
+    private fun isValidated(capabilities: NetworkCapabilities): Boolean {
+        val hasInternet = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        val isChecked = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        return hasInternet && isChecked
+    }
 
     //detecta si el modo avion esta activado
     fun isAirplaneModeOn(): Boolean {

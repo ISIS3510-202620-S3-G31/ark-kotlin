@@ -81,7 +81,11 @@ class NewCookieViewModel(
         captureJob = viewModelScope.launch {
             val uri = cookieRepository.createCaptureUri()
             _uiState.update { it.copy(captureUri = uri) }
-            events.send(if (uri == null) NewCookieEvent.Message(CAMERA_ERROR) else NewCookieEvent.OpenCamera(uri))
+            if (uri == null) {
+                events.send(NewCookieEvent.Message(CAMERA_ERROR))
+            } else {
+                events.send(NewCookieEvent.OpenCamera(uri))
+            }
         }
     }
 

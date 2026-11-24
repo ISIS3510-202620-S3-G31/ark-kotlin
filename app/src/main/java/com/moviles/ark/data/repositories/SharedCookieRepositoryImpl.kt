@@ -59,7 +59,8 @@ class SharedCookieRepositoryImpl(
     override fun observeSentGifts(): Flow<List<SentGift>> {
         val uid = userIdProvider() ?: return flowOf(emptyList())
         //room consulta en su hilo; el paso a modelos va en Dispatchers.Default, no en el hilo principal
-        return sentGiftDao.observeSent(uid).map { rows -> rows.map { it.toModel() } }.flowOn(Dispatchers.Default)
+        val sentGifts = sentGiftDao.observeSent(uid).map { rows -> rows.map { it.toModel() } }
+        return sentGifts.flowOn(Dispatchers.Default)
     }
 
     //regalar: primero la foto, despues el documento, y solo cuando el servidor confirmo se guarda en "enviados"

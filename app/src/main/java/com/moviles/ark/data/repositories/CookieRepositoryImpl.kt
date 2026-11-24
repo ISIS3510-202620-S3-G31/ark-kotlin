@@ -22,6 +22,7 @@ import com.moviles.ark.domain.models.CookieUploadResult
 import com.moviles.ark.domain.models.StoredCookieImage
 import com.moviles.ark.domain.repositories.CookieRepository
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
@@ -93,12 +94,14 @@ class CookieRepositoryImpl(
     override fun observeCookies(): Flow<List<CookieModel>> {
         //sin sesion no se muestran galletas de nadie
         val userId = currentUserId() ?: return flowOf(emptyList())
-        return cookieDao.observeCookies(userId).map { entities -> entities.map { it.toModel() } }.flowOn(Dispatchers.Default)
+        val cookies = cookieDao.observeCookies(userId).map { entities -> entities.map { it.toModel() } }
+        return cookies.flowOn(Dispatchers.Default)
     }
 
     override fun observeCookieList(): Flow<List<CookieListItem>> {
         val userId = currentUserId() ?: return flowOf(emptyList())
-        return cookieDao.observeList(userId).map { rows -> rows.map { it.toItem() } }.flowOn(Dispatchers.Default)
+        val items = cookieDao.observeList(userId).map { rows -> rows.map { it.toItem() } }
+        return items.flowOn(Dispatchers.Default)
     }
 
     override suspend fun getCookie(cookieId: String): CookieModel? = withContext(Dispatchers.IO) {
@@ -187,12 +190,15 @@ class CookieRepositoryImpl(
     //room vuelve a emitir con cada cambio y la pantalla se actualiza sola
     //el Mutex hace que un segundo refresco espere a que termine el primero en vez de correr encima de el
     override suspend fun refreshFromCloud(): Result<CookieRefreshResult> = withContext(Dispatchers.IO) {
-        if (refreshMutex.isLocked) Log.d(SYNC_TAG, "refresh waiting: another refresh is running")
-        refreshMutex.withLock { refreshLocked() }
+        if (refreshMutex.isLocked) {
+            Log.d(SYNC_TAG, "refresh waiting: another refresh is running")
+        }
+        refreshMutex.withLock { refreshNow() }
     }
 
-    private suspend fun refreshLocked(): Result<CookieRefreshResult> =
-        runCatching {
+    //se llama con refreshMutex tomado
+    private suspend fun refreshNow(): Result<CookieRefreshResult> {
+        return runCatching {
             Log.d(SYNC_TAG, "refresh start on ${Thread.currentThread().name}")
             val userId = currentUserId() ?: error("No user is logged in")
             val cloud = cloudStore ?: error("The cloud is not available")
@@ -219,6 +225,7 @@ class CookieRepositoryImpl(
                 CrashlyticsHelper.logNonFatal(componentName = "CookieRepository", action = "refreshFromCloud", throwable = error)
             }
         }
+    }
 
     //se llama con titleMutex tomado: los titulos no pueden cambiar mientras se resuelven los repetidos
     private suspend fun mergeWithCloud(
@@ -478,19 +485,34 @@ class CookieRepositoryImpl(
     override suspend fun downloadImages(cookieIds: List<String>): Map<String, Result<CookieModel>> = withContext(Dispatchers.IO) {
         if (cookieIds.isEmpty()) return@withContext emptyMap()
         val permits = Semaphore(MAX_PARALLEL_DOWNLOADS)
-        val started = System.nanoTime()
+        val startedAt = System.nanoTime()
         Log.d(SYNC_TAG, "downloading ${cookieIds.size} pictures of today's jar, up to $MAX_PARALLEL_DOWNLOADS at a time")
-        val results = supervisorScope {
-            cookieIds.map { id ->
-                async(Dispatchers.IO) { id to permits.withPermit { downloadImage(id) } }
-            }.awaitAll()
-        }.toMap()
-        Log.d(
-            SYNC_TAG,
-            "today's pictures: ${results.values.count { it.isSuccess }} downloaded, ${results.values.count { it.isFailure }} failed " +
-                "in ${(System.nanoTime() - started) / 1_000_000} ms"
-        )
-        results
+
+        val downloadResults = supervisorScope {
+            //primero se lanzan todas; cada una espera su turno en el Semaphore
+            val downloads = mutableListOf<Deferred<Result<CookieModel>>>()
+            for (cookieId in cookieIds) {
+                val download = async(Dispatchers.IO) {
+                    permits.withPermit { downloadImage(cookieId) }
+                }
+                downloads.add(download)
+            }
+            //despues se espera a que terminen todas
+            downloads.awaitAll()
+        }
+
+        //resultado de cada galleta por su id (las listas van en el mismo orden)
+        val resultsById = HashMap<String, Result<CookieModel>>()
+        var downloaded = 0
+        var failed = 0
+        for (index in cookieIds.indices) {
+            val result = downloadResults[index]
+            resultsById[cookieIds[index]] = result
+            if (result.isSuccess) downloaded++ else failed++
+        }
+        val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
+        Log.d(SYNC_TAG, "today's pictures: $downloaded downloaded, $failed failed in $elapsedMs ms")
+        resultsById
     }
 
     override suspend fun downloadImage(cookieId: String): Result<CookieModel> = withContext(Dispatchers.IO) {
@@ -623,7 +645,9 @@ class CookieRepositoryImpl(
 
     //crear el archivo temporal de la camara escribe en disco: en Dispatchers.IO, no en el toque del boton (hilo principal)
     override suspend fun createCaptureUri(): String? = withContext(Dispatchers.IO) {
-        cameraHelper?.createPictureUri()?.toString()
+        val camera = cameraHelper ?: return@withContext null
+        val pictureUri = camera.createPictureUri() ?: return@withContext null
+        pictureUri.toString()
     }
 
     override suspend fun discardCapture(uri: String) = withContext(Dispatchers.IO) {
