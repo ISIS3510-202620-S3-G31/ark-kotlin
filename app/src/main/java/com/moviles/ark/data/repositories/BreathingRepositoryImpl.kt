@@ -48,6 +48,9 @@ class BreathingRepositoryImpl(
         }
     }
 
+    override suspend fun getOfflineTracks(): List<AmbientTrackModel> =
+        (listOf(defaultTrack) + musicServiceAdapter.getCachedTracks()).distinctBy { it.id }
+
     override suspend fun offlineTrackIds(): Set<String> =
         musicServiceAdapter.getCachedTracks().map { it.id }.toSet() + BUNDLED_TRACK_ID
 

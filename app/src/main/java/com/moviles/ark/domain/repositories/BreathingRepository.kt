@@ -13,6 +13,9 @@ interface BreathingRepository {
     //obtiene las pistas de audio ambiental (desde jamendo o, sin conexion, las guardadas en cache)
     suspend fun getAmbientTracks(): AmbientTrackCatalog
 
+    //pistas que ya estan en el telefono (la de la app y las de la cache del disco); no espera a jamendo
+    suspend fun getOfflineTracks(): List<AmbientTrackModel> = listOfNotNull(defaultTrack)
+
     //uri para reproducir la pista: el archivo en cache si existe o la url remota para empezar por streaming
     suspend fun resolveTrackAudio(track: AmbientTrackModel): String = track.audioUrl
 
