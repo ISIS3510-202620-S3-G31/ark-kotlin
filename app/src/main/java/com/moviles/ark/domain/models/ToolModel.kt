@@ -79,6 +79,11 @@ open class ToolModel(
             ToolModel("cookie_jar", "Cookie jar", "Keep your best memories. Eat one when you need it.", "celebrate", "text", "ic_tool_cookie_jar")
         )
 
+        //herramientas con pantalla del catalogo por defecto que faltan en un catalogo guardado
+        //un telefono que ya tenia ark guardo su catalogo antes de que existieran; se agregan sin tocar las que ya estan
+        fun missingImplemented(storedIds: Set<String>): List<ToolModel> =
+            DEFAULT_CATALOG.filter { it.isImplemented && it.id !in storedIds }
+
         //solo las que ya tienen pantalla
         fun implemented(toolModels: List<ToolModel>): List<ToolModel> = toolModels.filter { it.isImplemented }
 
