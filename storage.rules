@@ -57,7 +57,7 @@ service firebase.storage {
 
       allow get: if isAuthenticated() && fileName.matches('[A-Za-z0-9-]+[.]jpg')
                   && request.auth.uid in [sharedCookie(fileName).data.from, sharedCookie(fileName).data.to];
-      // solo se crea un archivo nuevo (no hay allow update), asi que una foto de regalo no se sobreescribe
+      // el nombre es el uuid del regalo y solo lo conocen from y to (el documento solo lo leen ellos dos)
       // una sola consulta a firestore (la amistad): con mas consultas la subida daba 403 en produccion;
       // el bloqueo ya lo cubre la amistad (bloquear la borra) y el documento del regalo lo revisa firestore.rules
       allow create: if isAuthenticated() && fileName.matches('[A-Za-z0-9-]+[.]jpg')
