@@ -10,6 +10,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.moviles.ark.data.local.daos.BreathingSessionDao
 import com.moviles.ark.data.local.daos.CookieDao
 import com.moviles.ark.data.local.daos.EmotionCheckInDao
+import com.moviles.ark.data.local.daos.FavoriteFortuneCookieDao
 import com.moviles.ark.data.local.daos.FeedbackDao
 import com.moviles.ark.data.local.daos.PhotoEntryDao
 import com.moviles.ark.data.local.daos.StatsDailyVisitDao
@@ -20,6 +21,7 @@ import com.moviles.ark.data.local.daos.WishDao
 import com.moviles.ark.data.local.entities.BreathingSessionEntity
 import com.moviles.ark.data.local.entities.CheckInEntity
 import com.moviles.ark.data.local.entities.CookieEntity
+import com.moviles.ark.data.local.entities.FavoriteFortuneCookieEntity
 import com.moviles.ark.data.local.entities.FeedbackEntity
 import com.moviles.ark.data.local.entities.PhotoEntryEntity
 import com.moviles.ark.data.local.entities.StatsDailyVisitEntity
@@ -36,7 +38,8 @@ import com.moviles.ark.data.local.entities.WishEntity
 //version 8: emociones del feedback y ciudad del check-in, con migracion para no borrar lo que no se ha subido
 //version 9: cuenta del feedback pendiente, para no subirlo a otra cuenta si se cierra sesion sin red
 //version 12: se agrego cookies, las galletas del cookie jar, con migracion para no perder nada de lo anterior
-//version 13: se agrego wishes, los deseos del farol de deseos, con migracion para no perder nada de lo anterior
+//version 13: se agrego favorite_fortunes, frases favoritas de la galleta de la fortuna
+//version 14: se agrego wishes, los deseos del farol de deseos, con migracion para no perder nada de lo anterior
 //(sin migracion para un salto de version, room borra y crea de nuevo la base local)
 @Database(
     entities = [
@@ -49,9 +52,10 @@ import com.moviles.ark.data.local.entities.WishEntity
         UserEntity::class,
         StatsDailyVisitEntity::class,
         CookieEntity::class,
+        FavoriteFortuneCookieEntity::class,
         WishEntity::class,
     ],
-    version = 13,
+    version = 14,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -66,6 +70,7 @@ abstract class ArkDatabase : RoomDatabase() {
     abstract fun statsDailyVisitDao(): StatsDailyVisitDao
     abstract fun cookieDao(): CookieDao
     abstract fun wishDao(): WishDao
+    abstract fun favoriteFortuneCookieDao(): FavoriteFortuneCookieDao
 
     companion object {
         @Volatile
@@ -122,9 +127,20 @@ abstract class ArkDatabase : RoomDatabase() {
             }
         }
 
+        //agrega la tabla de frases favoritas de la galleta de la fortuna
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `favorite_fortune_cookies` (`id` INTEGER NOT NULL, `quote` TEXT NOT NULL, " +
+                        "`category` TEXT NOT NULL, `luckyNumber` INTEGER NOT NULL, `savedAt` INTEGER NOT NULL, " +
+                        "`isSynced` INTEGER NOT NULL, PRIMARY KEY(`id`))"
+                )
+            }
+        }
+
         //solo crea la tabla nueva del farol de deseos; las demas tablas no se tocan
         //el sql es el mismo que genera room para WishEntity, si no coincide room no abre la base
-        val MIGRATION_12_13 = object : Migration(12, 13) {
+        val MIGRATION_13_14 = object : Migration(13, 14) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS `wishes` (`id` TEXT NOT NULL, `userId` TEXT NOT NULL, `text` TEXT NOT NULL, " +
@@ -142,7 +158,7 @@ abstract class ArkDatabase : RoomDatabase() {
                     ArkDatabase::class.java,
                     "ark.db"
                 )
-                .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
+                .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
                 .also { INSTANCE = it }

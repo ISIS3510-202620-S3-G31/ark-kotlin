@@ -62,7 +62,7 @@ open class ToolModel(
 
     companion object {
         //herramientas con pantalla propia en el NavHost; al implementar una nueva se agrega aqui
-        val IMPLEMENTED_TOOL_IDS = setOf("custom_breathing", "scream_tank", "photo_of_the_day")
+        val IMPLEMENTED_TOOL_IDS = setOf("custom_breathing", "scream_tank", "photo_of_the_day", "cookie_jar", "wish_lantern")
 
         //herramienta que se abre cuando no se puede elegir otra (siempre esta en el telefono)
         const val FALLBACK_TOOL_ID = "custom_breathing"
