@@ -40,6 +40,9 @@ class FriendRepositoryImpl(
     private var cachedProfileUid: String? = null
 
     //las cuatro lecturas van en paralelo (async en Dispatchers.IO): la pantalla espera la mas lenta, no la suma
+    //coroutineScope y no supervisorScope a proposito: si una lectura falla se cancelan las otras y la accion entera
+    //falla con su aviso y "Retry"; mostrar a medias seria mentir (sin la lista de bloqueados o de amigos la pantalla
+    //diria "no tienes amigos"), y casi siempre fallan todas juntas porque es la misma red
     override suspend fun loadOverview(): Result<FriendsOverview> = runSafely("loadOverview") {
         val uid = requireUser()
         coroutineScope {
@@ -163,6 +166,8 @@ class FriendRepositoryImpl(
     }
 
     //relacion con otra persona: cuatro lecturas en paralelo
+    //coroutineScope: si falla una no se puede adivinar la relacion (por ejemplo, sin saber si lo bloqueaste se
+    //ofreceria enviarle una solicitud), asi que falla todo y se avisa
     private suspend fun relationWith(uid: String, otherUid: String): FriendRelation = coroutineScope {
         val blockedByMeCall = async { cloud.isBlockedByMe(uid, otherUid) }
         val friendsCall = async { cloud.friendshipExists(uid, otherUid) }
@@ -184,6 +189,8 @@ class FriendRepositoryImpl(
     }
 
     //amistades del usuario y el perfil publico de cada amigo, todos los perfiles en paralelo
+    //coroutineScope: si falla el perfil de un amigo se falla la lista entera; con supervisorScope ese amigo
+    //desapareceria en silencio y se confundiria con uno que apago amigos
     //un amigo que desactivo amigos (sin perfil) no aparece: no se le puede regalar
     private suspend fun friendsOf(uid: String): List<Friend> = coroutineScope {
         val friendships = cloud.friendships(uid)

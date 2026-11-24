@@ -12,7 +12,8 @@ import com.moviles.ark.domain.models.CookieModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
 
@@ -44,14 +45,27 @@ class CookieImageLoaderImpl(
         return bitmap
     }
 
-    //decodifica en paralelo (Dispatchers.Default) las del jarro de hoy que aun no estan en memoria
+    //decodifica en paralelo las del jarro de hoy que aun no estan en memoria: cada async lee su archivo en
+    //Dispatchers.IO y lo decodifica en Dispatchers.Default (dentro de load), asi el hilo principal solo espera
+    //supervisorScope + runCatching: un archivo danado o que se borro en medio no cancela las otras ni tumba la pantalla
     override suspend fun prefetch(dailyCookies: List<CookieModel>) {
         dailyIds = dailyCookies.map { it.id }.toSet()
         val missing = dailyCookies.filter { it.hasLocalImage() && !memoryCache.contains(it.id) }
         if (missing.isEmpty()) return
         Log.d(CookieMemoryCache.TAG, "prefetch ${missing.size} pictures of today's jar")
-        coroutineScope {
-            missing.map { cookie -> async { load(cookie) } }.awaitAll()
+        supervisorScope {
+            missing.map { cookie ->
+                async {
+                    try {
+                        load(cookie)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Log.w(CookieMemoryCache.TAG, "prefetch failed id=${cookie.id}: ${e.javaClass.simpleName}")
+                        null
+                    }
+                }
+            }.awaitAll()
         }
     }
 

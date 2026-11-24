@@ -12,6 +12,7 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.withContext
+import java.util.concurrent.Executors
 
 //aqui se usa firebase: regalos del cookie jar
 //firestore shared_cookies/{shareId} guarda la copia (titulo y texto) y storage shared/{shareId}.jpg la foto
@@ -25,12 +26,17 @@ class SharedCookieCloudStore(
     //lo que entrega el listener: los regalos y si vienen de la cache local de firestore (sin red)
     data class InboxEvent(val gifts: List<SharedCookieDto>, val isFromCache: Boolean)
 
+    //hilo de fondo donde firestore entrega los snapshots de la bandeja
+    private val listenerExecutor = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "cookie-inbox-listener") }
+
     //listener en vivo de la bandeja (callbackFlow como NetworkConnectivityObserver): firestore llama en su hilo,
     //trySend lo pasa al flow y awaitClose quita el listener cuando nadie escucha
+    //sin executor firestore llamaria en el hilo principal; con listenerExecutor (un solo hilo de fondo) convertir los
+    //documentos en objetos no ocupa el hilo de la ui, y al ser un solo hilo los snapshots llegan en orden
     //MetadataChanges.INCLUDE: tambien avisa cuando los mismos datos pasan de la cache al servidor y al reves (red que va y viene)
     fun observeInbox(uid: String): Flow<InboxEvent> = callbackFlow {
         val registration = gifts().whereEqualTo(FIELD_TO, uid)
-            .addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
+            .addSnapshotListener(listenerExecutor, MetadataChanges.INCLUDE) { snapshot, error ->
                 if (error != null) {
                     //el listener ya no sigue (por ejemplo sin permiso): se trata como sin red
                     Log.w(TAG, "inbox listener failed: ${error.code}")
