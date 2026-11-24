@@ -264,7 +264,9 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             preferencesManager = fortunePreferencesManager,
             cacheManager = fortuneCacheManager,
             cardExporter = fortuneCardExporter,
-            serviceAdapter = fortuneServiceAdapter
+            serviceAdapter = fortuneServiceAdapter,
+            firestore = firestore,
+            userIdProvider = { auth.currentUser?.uid }
         )
     }
 }

@@ -71,10 +71,8 @@ class FortuneCacheManager(context: Context) {
     @Synchronized
     fun addRecentCookie(cookie: FortuneModel): List<FortuneModel> {
         val current = getRecentCookies().toMutableList()
-        //removemos si ya estaba para moverla a la primera posicion
         current.removeAll { it.id == cookie.id }
         current.add(0, cookie)
-        //desalojamos las mas viejas si supera la capacidad de 5
         val trimmed = if (current.size > recentCapacity) current.take(recentCapacity) else current
         try {
             val array = JSONArray()
@@ -103,13 +101,20 @@ class FortuneCacheManager(context: Context) {
         "Happiness is not by chance, but by conscious daily choice."
     )
 
+    //obtiene una frase de respaldo seguro del conjunto por defecto
+    fun getDefaultFallback(): FortuneModel {
+        val quote = defaultReserveQuotes.random()
+        val id = FortuneModel.generateId(quote)
+        return FortuneModel(id = id, quote = quote, category = "Wisdom", isFavorite = isFavorite(id))
+    }
+
     //lee las galletas candidatas guardadas en disco como reserva offline
     @Synchronized
     fun getDeck(): List<FortuneModel> {
         if (!deckFile.exists()) {
             val defaults = defaultReserveQuotes.map { quote ->
                 val id = FortuneModel.generateId(quote)
-                FortuneModel(id = id, quote = quote, category = "Reserve", isFavorite = isFavorite(id))
+                FortuneModel(id = id, quote = quote, category = "Wisdom", isFavorite = isFavorite(id))
             }
             saveDeck(defaults)
             return defaults
@@ -136,6 +141,23 @@ class FortuneCacheManager(context: Context) {
         } catch (_: Exception) {
             emptyList()
         }
+    }
+
+    //retorna cuantas galletas quedan en el deck de reserva de disco
+    @Synchronized
+    fun getDeckCount(): Int = getDeck().size
+
+    //agrega galletas nuevas traidas de la red a la reserva en disco sin duplicar frases
+    @Synchronized
+    fun appendDeck(newCookies: List<FortuneModel>) {
+        val current = getDeck().toMutableList()
+        val existingQuotes = current.map { it.quote }.toSet()
+        for (cookie in newCookies) {
+            if (!existingQuotes.contains(cookie.quote)) {
+                current.add(cookie)
+            }
+        }
+        saveDeck(current)
     }
 
     //guarda la baraja de galletas de reserva en disco
