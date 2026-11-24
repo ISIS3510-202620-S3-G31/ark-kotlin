@@ -94,10 +94,26 @@ class FortuneCacheManager(context: Context) {
         return trimmed
     }
 
+    //frases de reserva offline por defecto por si el usuario abre la app sin internet
+    private val defaultReserveQuotes = listOf(
+        "Peace begins with a deep breath and a quiet mind.",
+        "Small daily steps lead to life-changing results.",
+        "Trust the timing of your life and keep moving forward.",
+        "Your kindness to yourself is your greatest superpower.",
+        "Happiness is not by chance, but by conscious daily choice."
+    )
+
     //lee las galletas candidatas guardadas en disco como reserva offline
     @Synchronized
     fun getDeck(): List<FortuneModel> {
-        if (!deckFile.exists()) return emptyList()
+        if (!deckFile.exists()) {
+            val defaults = defaultReserveQuotes.map { quote ->
+                val id = FortuneModel.generateId(quote)
+                FortuneModel(id = id, quote = quote, category = "Reserve", isFavorite = isFavorite(id))
+            }
+            saveDeck(defaults)
+            return defaults
+        }
         return try {
             val content = deckFile.readText()
             val array = JSONArray(content)

@@ -8,6 +8,7 @@ import com.moviles.ark.data.local.daos.FavoriteFortuneCookieDao
 import com.moviles.ark.data.local.entities.FavoriteFortuneCookieEntity
 import com.moviles.ark.domain.adapters.FortuneServiceAdapter
 import com.moviles.ark.domain.models.FortuneModel
+import com.moviles.ark.domain.models.FortuneCrackResult
 import com.moviles.ark.domain.repositories.FortuneRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -70,32 +71,33 @@ class FortuneRepositoryImpl(
         preferencesManager.getChancesLeft()
     }
 
-    //rompe una galleta descargando la frase de internet o sacandola de la reserva local
-    override suspend fun crackCookie(): Result<FortuneModel> = withContext(Dispatchers.IO) {
+    //rompe una galleta usando network falling back to cache, si falla la red saca de la reserva offline
+    override suspend fun crackCookie(): Result<FortuneCrackResult> = withContext(Dispatchers.IO) {
         val chances = preferencesManager.getChancesLeft()
         if (chances <= 0) {
             return@withContext Result.failure(Exception("no chances left today"))
         }
 
-        //llamamos a la api en el hilo de red
+        //estrategia eventual connectivity que intenta red con timeout de 3 segundos y si falla usa la reserva en disco
         val networkResult = serviceAdapter.fetchFortune()
+        val isFromOfflineReserve = networkResult.isFailure
         val fortune = if (networkResult.isSuccess) {
             networkResult.getOrThrow()
         } else {
-            //si falla la red sacamos una galleta de la reserva de disco
+            //fallback a galletas no abiertas de la reserva en disco
             cacheManager.popDeckCookie() ?: FortuneModel(
                 id = FortuneModel.generateId("Every day brings new chances to grow."),
                 quote = "Every day brings new chances to grow.",
-                category = "Wisdom"
+                category = "Reserve"
             )
         }
 
         //descontamos el intento y guardamos en las recientes de disco
-        preferencesManager.decrementChances()
+        val remaining = preferencesManager.decrementChances()
         val isFav = cacheManager.isFavorite(fortune.id)
         val finalFortune = fortune.copy(isFavorite = isFav)
         cacheManager.addRecentCookie(finalFortune)
-        Result.success(finalFortune)
+        Result.success(FortuneCrackResult(fortune = finalFortune, isFromOfflineReserve = isFromOfflineReserve, remainingChances = remaining))
     }
 
     //dibuja el bitmap en dispatchers.default porque es trabajo pesado de cpu y luego guarda en mediastore

@@ -16,3 +16,10 @@ data class FortuneModel(
         fun generateId(quote: String): Int = abs(quote.hashCode())
     }
 }
+
+//resultado al romper una galleta indicando si vino de internet o de la reserva local
+data class FortuneCrackResult(
+    val fortune: FortuneModel,
+    val isFromOfflineReserve: Boolean,
+    val remainingChances: Int
+)

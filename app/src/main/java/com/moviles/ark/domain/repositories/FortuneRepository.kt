@@ -24,8 +24,8 @@ interface FortuneRepository {
     //obtiene los intentos diarios disponibles hoy
     suspend fun getRemainingChances(): Int
 
-    //rompe una galleta descontando un intento y obteniendo una frase fresca o de reserva
-    suspend fun crackCookie(): Result<FortuneModel>
+    //rompe una galleta descontando un intento y avisando si viene de la reserva offline
+    suspend fun crackCookie(): Result<com.moviles.ark.domain.models.FortuneCrackResult>
 
     //genera el bitmap en un hilo de computo y lo guarda en la galeria
     suspend fun saveCardToGallery(fortune: FortuneModel): Uri?
