@@ -91,17 +91,35 @@ class ToolRepositoryImpl(
     }
 
     //room para la pantalla y filesDir/tools.json para no perderlo sin internet
+    //si el catalogo que llega no trae alguna herramienta que la app ya tiene implementada, se le agrega
     private suspend fun storeCatalog(tools: List<ToolDto>) {
-        toolDao.replaceTools(tools.map { it.toEntity() })
-        catalogFileStore.writeCatalog(tools)
+        val complete = tools + ToolModel.missingImplemented(tools.map { it.id }.toSet()).map { it.toDto() }
+        toolDao.replaceTools(complete.map { it.toEntity() })
+        catalogFileStore.writeCatalog(complete)
     }
 
     //room se llena desde filesDir/tools.json (o assets/tools.json si el archivo falta o esta danado)
     //insertTools usa REPLACE, asi que si dos pantallas siembran a la vez no se duplica nada
+    //despues se agregan las herramientas implementadas que falten (catalogo guardado por una version vieja de la app)
     private suspend fun seedIfEmpty() {
         if (toolDao.getTools().first().isEmpty()) {
             toolDao.insertTools(catalogFileStore.readCatalog().map { it.toEntity() })
         }
+        addMissingImplementedTools()
+    }
+
+    //solo inserta las que faltan: no borra ni pisa las que ya estan en room o en filesDir/tools.json
+    private suspend fun addMissingImplementedTools() {
+        val stored = toolDao.getTools().first()
+        val missing = ToolModel.missingImplemented(stored.map { it.id }.toSet())
+        if (missing.isEmpty()) return
+        toolDao.insertTools(missing.map { it.toDto().toEntity() })
+        val fileCatalog = catalogFileStore.readCatalog()
+        val missingInFile = ToolModel.missingImplemented(fileCatalog.map { it.id }.toSet())
+        if (missingInFile.isNotEmpty()) {
+            runCatching { catalogFileStore.writeCatalog(fileCatalog + missingInFile.map { it.toDto() }) }
+        }
+        Log.d("ToolRepository", "Added missing tools: ${missing.joinToString { it.id }}")
     }
 
     companion object {

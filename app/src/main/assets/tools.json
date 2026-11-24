@@ -62,5 +62,13 @@
     "category": "behavioral_activation",
     "format": "text",
     "iconName": "ic_tool_wish_lantern"
+  },
+  {
+    "id": "cookie_jar",
+    "name": "Cookie jar",
+    "description": "Keep your best memories. Eat one when you need it.",
+    "category": "behavioral_activation",
+    "format": "text",
+    "iconName": "ic_tool_cookie_jar"
   }
 ]
