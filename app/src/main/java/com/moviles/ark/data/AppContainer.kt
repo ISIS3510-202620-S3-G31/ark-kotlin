@@ -14,6 +14,9 @@ import com.google.firebase.storage.storage
 import com.moviles.ark.data.workers.RemotePhotoDeleteWorker
 import com.moviles.ark.R
 import com.moviles.ark.data.local.ArkDatabase
+import com.moviles.ark.data.local.daos.FavoriteFortuneCookieDao
+import com.moviles.ark.data.local.FortunePreferencesManager
+import com.moviles.ark.data.local.FortuneCardExporter
 import com.moviles.ark.data.local.daos.FeedbackDao
 import com.moviles.ark.data.local.daos.ToolRecordDao
 import com.moviles.ark.data.local.sensors.AudioPlayerHelper
@@ -80,6 +83,9 @@ interface AppContainer {
     val syncManager: SyncManager
     val environmentalSensorManager: EnvironmentalSensorManager
     val speechToTextHelper: SpeechToTextHelper
+    val favoriteFortuneCookieDao: FavoriteFortuneCookieDao
+    val fortunePreferencesManager: FortunePreferencesManager
+    val fortuneCardExporter: FortuneCardExporter
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -233,4 +239,10 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val environmentalSensorManager: EnvironmentalSensorManager by lazy { EnvironmentalSensorManager(context) }
     // ayudante reutilizable de speech-to-text nativo de android para dictado offline
     override val speechToTextHelper: SpeechToTextHelper by lazy { SpeechToTextHelper(context) }
+    // dao local de room para consultar y guardar frases favoritas de la galleta de la fortuna
+    override val favoriteFortuneCookieDao: FavoriteFortuneCookieDao by lazy { database.favoriteFortuneCookieDao() }
+    // gestor de intentos diarios con sharedpreferences para la galleta de la fortuna
+    override val fortunePreferencesManager: FortunePreferencesManager by lazy { FortunePreferencesManager(context) }
+    // exportador de tarjetas de la fortuna a la galeria publica
+    override val fortuneCardExporter: FortuneCardExporter by lazy { FortuneCardExporter(context) }
 }
