@@ -106,6 +106,10 @@ interface EmotionCheckInDao {
     @Query("SELECT timestamp FROM mood_checkins WHERE userId = :userId AND timestamp >= :fromMillis AND $DAILY_ONLY")
     suspend fun getDailyTimestampsSince(userId: String, fromMillis: Long): List<Long>
 
+    //nombres de lugar ya guardados del usuario; el modelo los usa para escribir cada lugar de una sola forma
+    @Query("SELECT DISTINCT cityName FROM mood_checkins WHERE userId = :userId AND cityName IS NOT NULL")
+    suspend fun getCityNames(userId: String): List<String>
+
     //ciudad que llego despues (el check-in se guardo sin red); isSynced = 0 para que el sync la suba al mismo documento
     @Query("UPDATE mood_checkins SET cityName = :cityName, isSynced = 0 WHERE userId = :userId AND timestamp = :timestamp")
     suspend fun updateCityName(userId: String, timestamp: Long, cityName: String)

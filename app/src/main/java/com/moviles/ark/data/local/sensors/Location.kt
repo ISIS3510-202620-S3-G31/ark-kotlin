@@ -8,6 +8,7 @@ import android.location.LocationManager
 import android.os.Build
 import android.os.CancellationSignal
 import android.os.SystemClock
+import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.core.location.LocationManagerCompat
 import com.google.android.gms.location.LocationServices
@@ -29,6 +30,7 @@ import kotlin.coroutines.resume
 import android.location.Location as AndroidLocation
 import com.moviles.ark.domain.models.LocationResult
 import com.moviles.ark.domain.models.LocationStatus
+import com.moviles.ark.domain.models.PlaceName
 
 //el gps del telefono funciona sin datos ni wifi; solo el nombre de la ciudad (geocoder) necesita red
 class Location(private val context: Context) {
@@ -178,7 +180,7 @@ class Location(private val context: Context) {
         }
     }
 
-    //nombre de la ciudad con geocoder; necesita red, asi que tiene tiempo maximo y sin respuesta devuelve null
+    //nombre del lugar con geocoder ("Chapinero, Bogotá, CO"); necesita red, asi que tiene tiempo maximo y sin respuesta devuelve null
     suspend fun resolveCityName(latitude: Double, longitude: Double): String? = withContext(Dispatchers.IO) {
         try {
             if (!Geocoder.isPresent()) return@withContext null
@@ -203,8 +205,22 @@ class Location(private val context: Context) {
                 }
             }
             val address = addresses?.firstOrNull() ?: return@withContext null
-            //solo la ciudad; si el lugar no tiene ciudad se usa el municipio o el departamento
-            address.locality ?: address.subAdminArea ?: address.adminArea
+            //el modelo arma "localidad, ciudad, pais" y se salta las partes que el geocoder deja en null
+            val name = PlaceName.format(
+                subLocality = address.subLocality,
+                locality = address.locality,
+                subAdminArea = address.subAdminArea,
+                adminArea = address.adminArea,
+                countryCode = address.countryCode,
+                countryName = address.countryName
+            )
+            Log.d(
+                TAG,
+                "geocoder: subLocality=${address.subLocality}, locality=${address.locality}, " +
+                    "subAdminArea=${address.subAdminArea}, adminArea=${address.adminArea}, " +
+                    "countryCode=${address.countryCode} -> $name"
+            )
+            name
         } catch (e: Exception) {
             com.moviles.ark.data.remote.CrashlyticsHelper.logNonFatal(
                 componentName = "LocationSensor",
@@ -220,6 +236,7 @@ class Location(private val context: Context) {
     }
 
     companion object {
+        const val TAG = "CheckInLocation"
         //tiempo maximo esperando una posicion nueva del gps
         private const val LOCATION_TIMEOUT_MILLIS = 8_000L
         //una posicion guardada de hace mas de 2 minutos ya no es "donde estoy ahora"

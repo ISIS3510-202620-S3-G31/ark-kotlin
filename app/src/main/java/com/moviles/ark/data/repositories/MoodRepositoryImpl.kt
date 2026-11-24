@@ -12,6 +12,7 @@ import com.moviles.ark.data.remote.CrashlyticsHelper
 import com.moviles.ark.data.remote.dtos.MoodCheckInDto
 import com.moviles.ark.data.remote.dtos.toDomain
 import com.moviles.ark.domain.models.MoodCheckInModel
+import com.moviles.ark.domain.models.PlaceName
 import com.moviles.ark.domain.repositories.MoodRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
@@ -39,8 +40,10 @@ class MoodRepositoryImpl(
             if (emotionCheckInDao.countCheckInsSince(currentUserId, MoodCheckInModel.startOfToday()) > 0) {
                 throw AlreadyCheckedInTodayException()
             }
+            //el lugar se guarda limpio y, si ya existe escrito de otra forma ("Bogota" / "Bogotá"), con el texto de antes
+            val cityName = PlaceName.canonical(checkIn.cityName, emotionCheckInDao.getCityNames(currentUserId))
             //queda con isSynced = false; guardar no depende de la red, asi el check-in es instantaneo
-            emotionCheckInDao.insertCheckIn(checkIn.toEntity(currentUserId))
+            emotionCheckInDao.insertCheckIn(checkIn.copy(cityName = cityName).toEntity(currentUserId))
             Log.d("MoodCheckIn", "Check-in saved in Room for $currentUserId, pending sync")
             onCheckInSaved()
             Unit
@@ -116,13 +119,17 @@ class MoodRepositoryImpl(
             //primero room, asi la recomendacion del home funciona sin internet
             val local = emotionCheckInDao.getLatestCheckIn(currentUserId)?.toDomain()
             if (local != null) {
-                val withCity = withCityName(local)
+                val resolved = withCityName(local)
                 //la ciudad se guarda una sola vez; asi no se vuelve a pedir cada vez que se abre el home
-                if (withCity.cityName != null && local.cityName == null) {
-                    emotionCheckInDao.updateCityName(currentUserId, local.timestamp, withCity.cityName)
-                    onCheckInSaved()
+                if (local.cityName.isNullOrBlank()) {
+                    val cityName = PlaceName.canonical(resolved.cityName, emotionCheckInDao.getCityNames(currentUserId))
+                    if (cityName != null) {
+                        emotionCheckInDao.updateCityName(currentUserId, local.timestamp, cityName)
+                        onCheckInSaved()
+                        return@runCatching local.copy(cityName = cityName)
+                    }
                 }
-                return@runCatching withCity
+                return@runCatching resolved
             }
 
             //room vacio: respaldo en firestore con tiempo maximo

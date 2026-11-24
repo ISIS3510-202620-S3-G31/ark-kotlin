@@ -26,9 +26,8 @@ data class MoodCheckInModel(
     //antes el feedback de una herramienta tambien guardaba un check-in con esta nota; esos no son el check-in del dia
     fun isPostToolFeedback(): Boolean = isPostToolNote(note)
 
-    //texto del chip de ubicacion: solo la ciudad, nunca las coordenadas
-    fun locationLabel(): String = when {
-        !cityName.isNullOrBlank() -> cityName
+    //texto del chip de ubicacion: el nombre del lugar, nunca las coordenadas ni un "null"
+    fun locationLabel(): String = PlaceName.clean(cityName) ?: when {
         hasLocation() -> LOCATION_SAVED_LABEL
         else -> NO_LOCATION_LABEL
     }
