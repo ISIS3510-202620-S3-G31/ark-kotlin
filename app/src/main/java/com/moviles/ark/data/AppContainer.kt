@@ -1,6 +1,7 @@
 package com.moviles.ark.data
 
 import android.content.Context
+import android.graphics.Bitmap
 import androidx.room.Room
 import com.google.firebase.Firebase
 import com.google.firebase.analytics.analytics
@@ -34,6 +35,7 @@ import com.moviles.ark.data.repositories.StatsRepositoryImpl
 import com.moviles.ark.data.repositories.SyncRepositoryImpl
 import com.moviles.ark.data.repositories.ToolInteractionRepositoryImpl
 import com.moviles.ark.data.repositories.UserRepositoryImpl
+import com.moviles.ark.domain.adapters.CookieImageLoader
 import com.moviles.ark.domain.models.ToolLatencyTracker
 import com.moviles.ark.domain.repositories.AnalyticsRepository
 import com.moviles.ark.domain.repositories.AuthRepository
@@ -60,6 +62,7 @@ interface AppContainer {
     val statsRepository: StatsRepository
     val photoRepository: PhotoEntryRepository
     val cookieRepository: CookieRepository
+    val cookieImageLoader: CookieImageLoader<Bitmap>
     val analyticsRepository: AnalyticsRepository
     val toolLatencyTracker: ToolLatencyTracker
     val screenTimeTracker: com.moviles.ark.domain.models.ScreenTimeTracker
@@ -139,11 +142,18 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val cookieRepository: CookieRepository by lazy {
         CookieRepositoryImpl(
             cookieDao = database.cookieDao(),
-            imageStore = com.moviles.ark.data.local.CookiePrivateImageStore(context.filesDir),
+            imageStore = cookieImageStore,
             imageCompressor = com.moviles.ark.data.local.CookieImageCompressor(context),
-            currentUserId = { auth.currentUser?.uid }
+            cameraHelper = com.moviles.ark.data.local.sensors.CameraHelper(context),
+            userIdProvider = { auth.currentUser?.uid }
         )
     }
+    // imagenes del cookie jar leidas del almacenamiento privado y decodificadas para la pantalla
+    override val cookieImageLoader: CookieImageLoader<Bitmap> by lazy {
+        com.moviles.ark.data.local.CookieImageLoaderImpl(context, cookieImageStore)
+    }
+    // una sola carpeta filesDir/cookies para el repositorio y el cargador de imagenes
+    private val cookieImageStore by lazy { com.moviles.ark.data.local.CookiePrivateImageStore(context.filesDir) }
     override val analyticsRepository: AnalyticsRepository by lazy { AnalyticsRepositoryImpl(Firebase.analytics, auth, firestore) }
     // one tracker for the whole app: the tap on a tool and its screen live in different places
     override val toolLatencyTracker: ToolLatencyTracker by lazy { ToolLatencyTracker(analyticsRepository) }

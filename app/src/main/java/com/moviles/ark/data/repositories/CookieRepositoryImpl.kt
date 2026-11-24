@@ -6,6 +6,7 @@ import com.moviles.ark.data.local.CookiePrivateImageStore
 import com.moviles.ark.data.local.daos.CookieDao
 import com.moviles.ark.data.local.entities.CookieEntity
 import com.moviles.ark.data.local.entities.CookieListRow
+import com.moviles.ark.data.local.sensors.CameraHelper
 import com.moviles.ark.data.remote.CrashlyticsHelper
 import com.moviles.ark.domain.models.CookieListItem
 import com.moviles.ark.domain.models.CookieModel
@@ -27,8 +28,10 @@ class CookieRepositoryImpl(
     private val cookieDao: CookieDao,
     private val imageStore: CookiePrivateImageStore,
     private val imageCompressor: CookieImageCompressor,
+    //la camara del sistema deja la foto en un archivo temporal que se crea aqui (FileProvider); null en pruebas
+    private val cameraHelper: CameraHelper? = null,
     //uid del usuario con sesion; null sin sesion
-    private val currentUserId: () -> String?,
+    private val userIdProvider: () -> String?,
     //avisa que hay algo nuevo por subir (crear, comer, devolver); no se espera
     private val onCookieChanged: () -> Unit = {},
     //pide borrar la copia de la nube de una galleta borrada en el telefono; no se espera
@@ -108,6 +111,17 @@ class CookieRepositoryImpl(
     override suspend fun markOpened(cookieId: String) = withContext(Dispatchers.IO) {
         val userId = currentUserId() ?: return@withContext
         runCatching { cookieDao.markOpened(cookieId, userId, now()) }
+        Unit
+    }
+
+    override fun currentUserId(): String? = userIdProvider()
+
+    override fun hasCameraPermission(): Boolean = cameraHelper?.hasCameraPermission() ?: false
+
+    override fun createCaptureUri(): String? = cameraHelper?.createPictureUri()?.toString()
+
+    override suspend fun discardCapture(uri: String) = withContext(Dispatchers.IO) {
+        runCatching { cameraHelper?.deletePicture(uri) }
         Unit
     }
 

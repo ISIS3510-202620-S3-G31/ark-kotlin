@@ -54,5 +54,13 @@
     "category": "behavioral_activation",
     "format": "photo",
     "iconName": "ic_tool_photo_of_the_day"
+  },
+  {
+    "id": "cookie_jar",
+    "name": "Cookie jar",
+    "description": "Keep your best memories. Eat one when you need it.",
+    "category": "behavioral_activation",
+    "format": "text",
+    "iconName": "ic_tool_cookie_jar"
   }
 ]
