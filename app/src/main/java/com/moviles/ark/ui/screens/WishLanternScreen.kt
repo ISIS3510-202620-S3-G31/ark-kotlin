@@ -1,12 +1,6 @@
 package com.moviles.ark.ui.screens
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
@@ -29,21 +23,15 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.theme.BackgroundLightColor
-import com.moviles.ark.ui.theme.PrimaryColor
 import com.moviles.ark.ui.theme.ScreenTopPadding
 import com.moviles.ark.ui.theme.SecondaryColor
 import com.moviles.ark.ui.theme.TextColor
-import com.moviles.ark.ui.theme.WarningColor
 import com.moviles.ark.ui.viewmodels.WishLanternView
 import com.moviles.ark.ui.viewmodels.WishLanternViewModel
 
@@ -168,65 +156,5 @@ fun WishOfflineMessage(isOnline: Boolean, message: String) {
     ) {
         Icon(imageVector = Icons.Default.CloudOff, contentDescription = null, tint = TextColor)
         Text(text = message, style = MaterialTheme.typography.bodyMedium, color = TextColor)
-    }
-}
-
-//dibujo de un farol: encendido brilla y tiene llama; apagado se ve oscuro
-@Composable
-fun LanternDrawing(isLit: Boolean, modifier: Modifier = Modifier) {
-    //la llama titila: su tamano sube y baja sin parar
-    val flameTransition = rememberInfiniteTransition(label = "flame")
-    val flameSize by flameTransition.animateFloat(
-        initialValue = 0.85f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(animation = tween(durationMillis = 600), repeatMode = RepeatMode.Reverse),
-        label = "flameSize"
-    )
-
-    Canvas(modifier = modifier) {
-        val width = size.width
-        val height = size.height
-
-        //resplandor alrededor del farol encendido
-        if (isLit) {
-            drawCircle(
-                color = WarningColor.copy(alpha = 0.25f * flameSize),
-                radius = width * 0.75f,
-                center = Offset(width / 2, height / 2)
-            )
-        }
-
-        //cuerpo del farol: mas ancho arriba que abajo
-        val body = Path()
-        body.moveTo(width * 0.1f, height * 0.1f)
-        body.lineTo(width * 0.9f, height * 0.1f)
-        body.lineTo(width * 0.75f, height * 0.9f)
-        body.lineTo(width * 0.25f, height * 0.9f)
-        body.close()
-
-        var bodyColor = BackgroundColor.copy(alpha = 0.3f)
-        if (isLit) {
-            bodyColor = PrimaryColor
-        }
-        drawPath(path = body, color = bodyColor)
-
-        //bordes de arriba y de abajo
-        val borderColor = TextColor.copy(alpha = 0.5f)
-        drawRect(color = borderColor, topLeft = Offset(width * 0.05f, height * 0.05f), size = Size(width * 0.9f, height * 0.07f))
-        drawRect(color = borderColor, topLeft = Offset(width * 0.22f, height * 0.88f), size = Size(width * 0.56f, height * 0.06f))
-
-        if (isLit) {
-            //llama amarilla en la parte de abajo del farol
-            val flameWidth = width * 0.22f * flameSize
-            val flameHeight = height * 0.28f * flameSize
-            drawOval(
-                color = WarningColor,
-                topLeft = Offset(width / 2 - flameWidth / 2, height * 0.85f - flameHeight),
-                size = Size(flameWidth, flameHeight)
-            )
-        } else {
-            //sin llama solo se ve la mecha
-            drawCircle(color = TextColor.copy(alpha = 0.6f), radius = width * 0.04f, center = Offset(width / 2, height * 0.8f))
-        }
     }
 }
