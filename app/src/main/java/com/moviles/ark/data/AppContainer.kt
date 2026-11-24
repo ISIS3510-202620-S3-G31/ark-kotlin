@@ -18,6 +18,10 @@ import com.moviles.ark.data.local.daos.FavoriteFortuneCookieDao
 import com.moviles.ark.data.local.FortunePreferencesManager
 import com.moviles.ark.data.local.FortuneCardExporter
 import com.moviles.ark.data.local.FortuneCacheManager
+import com.moviles.ark.domain.adapters.FortuneServiceAdapter
+import com.moviles.ark.domain.repositories.FortuneRepository
+import com.moviles.ark.data.remote.apis.FortuneServiceAdapterImpl
+import com.moviles.ark.data.repositories.FortuneRepositoryImpl
 import com.moviles.ark.data.local.daos.FeedbackDao
 import com.moviles.ark.data.local.daos.ToolRecordDao
 import com.moviles.ark.data.local.sensors.AudioPlayerHelper
@@ -88,6 +92,8 @@ interface AppContainer {
     val fortunePreferencesManager: FortunePreferencesManager
     val fortuneCardExporter: FortuneCardExporter
     val fortuneCacheManager: FortuneCacheManager
+    val fortuneServiceAdapter: FortuneServiceAdapter
+    val fortuneRepository: FortuneRepository
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -249,4 +255,16 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val fortuneCardExporter: FortuneCardExporter by lazy { FortuneCardExporter(context) }
     // gestor de cache en memoria y disco para la galleta de la fortuna
     override val fortuneCacheManager: FortuneCacheManager by lazy { FortuneCacheManager(context) }
+    // adaptador de la api remota de consejos y frases de sabiduria
+    override val fortuneServiceAdapter: FortuneServiceAdapter by lazy { FortuneServiceAdapterImpl() }
+    // repositorio principal de la galleta de la fortuna que reparte trabajo en hilos
+    override val fortuneRepository: FortuneRepository by lazy {
+        FortuneRepositoryImpl(
+            favoriteFortuneCookieDao = favoriteFortuneCookieDao,
+            preferencesManager = fortunePreferencesManager,
+            cacheManager = fortuneCacheManager,
+            cardExporter = fortuneCardExporter,
+            serviceAdapter = fortuneServiceAdapter
+        )
+    }
 }
