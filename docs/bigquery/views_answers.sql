@@ -4,8 +4,8 @@
 -- celda (sin encabezado ni paginacion). Cada respuesta empieza con la fecha y hora del ultimo dato
 -- que la alimenta, en hora de Bogota. Solo celulares reales y sin cuentas de prueba.
 --
--- Uso: correr despues de views.sql, views_analytics.sql, views_bq4_and_age.sql y
--- views_stats_visits.sql (lee sus vistas).
+-- Uso: correr despues de views.sql, views_analytics.sql, views_bq4_and_age.sql,
+-- views_stats_visits.sql y views_tool_sessions.sql (lee sus vistas).
 
 CREATE OR REPLACE FUNCTION `ark-mobiles.ark_dashboards.as_of`(ts TIMESTAMP) AS (
   CONCAT('Updated with data up to ', FORMAT_TIMESTAMP('%b %d, %Y %I:%M %p', ts, 'America/Bogota'),
@@ -23,6 +23,28 @@ CREATE OR REPLACE FUNCTION `ark-mobiles.ark_dashboards.tool_name`(tool_id STRING
 
 CREATE OR REPLACE VIEW `ark-mobiles.ark_dashboards.bq_answers` AS
 WITH
+-- la respuesta de BQ13 lee su vista una sola vez (BigQuery recalcula una vista cada vez que se
+-- nombra, y sale de completed_tool_sessions)
+-- BQ13: sesiones completadas por semana de cada herramienta (ultimas 4 semanas completas)
+bq13 AS (
+  SELECT CONCAT(
+    `ark-mobiles.ark_dashboards.as_of`(MAX(last_session_at)),
+    FORMAT('Completed sessions per week, %s to %s (W1 / W2 / W3 / W4): ',
+      FORMAT_DATE('%b %d', MIN(week_start)), FORMAT_DATE('%b %d', DATE_ADD(MIN(week_start), INTERVAL 27 DAY))),
+    STRING_AGG(FORMAT('%s %s (%d in total, completed in %d of 4 weeks)',
+      tool, weekly_completions, completions_4_weeks, active_weeks), '; ' ORDER BY completions_4_weeks DESC, tool),
+    '. ',
+    IF(COUNTIF(active_weeks = 4) > 0,
+      CONCAT('Habitual (completed every week): ',
+        STRING_AGG(IF(active_weeks = 4, tool, NULL), ', ' ORDER BY tool), '.'),
+      'No tool was completed in all 4 weeks.'),
+    IF(COUNTIF(active_weeks = 1) > 0,
+      CONCAT(' Sporadic (a single week): ', STRING_AGG(IF(active_weeks = 1, tool, NULL), ', ' ORDER BY tool), '.'),
+      '')) AS answer
+  -- una fila por herramienta: la de la primera semana ya trae el total y las 4 semanas
+  FROM `ark-mobiles.ark_dashboards.bq13_weekly_tool_completions`
+  WHERE device_type = 'Real phone' AND NOT is_test_account AND week_number = 1
+),
 -- BQ1: herramienta mas lenta en abrir (mediana) y las demas
 bq1_rows AS (
   SELECT
@@ -147,4 +169,5 @@ SELECT
   (SELECT answer FROM bq5) AS bq5_answer,
   (SELECT answer FROM bq7) AS bq7_answer,
   (SELECT answer FROM bq8) AS bq8_answer,
-  (SELECT answer FROM bq9) AS bq9_answer;
+  (SELECT answer FROM bq9) AS bq9_answer,
+  (SELECT answer FROM bq13) AS bq13_answer;
