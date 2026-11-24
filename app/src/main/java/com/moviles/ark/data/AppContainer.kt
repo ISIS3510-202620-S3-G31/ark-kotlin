@@ -24,6 +24,7 @@ import com.moviles.ark.data.local.sensors.SyncManager
 import com.moviles.ark.data.repositories.AnalyticsRepositoryImpl
 import com.moviles.ark.data.repositories.AuthRepositoryImpl
 import com.moviles.ark.data.repositories.BreathingRepositoryImpl
+import com.moviles.ark.data.repositories.CookieRepositoryImpl
 import com.moviles.ark.data.repositories.FeedbackRepositoryImpl
 import com.moviles.ark.data.repositories.ToolRepositoryImpl
 import com.moviles.ark.data.repositories.LocationRepositoryImpl
@@ -37,6 +38,7 @@ import com.moviles.ark.domain.models.ToolLatencyTracker
 import com.moviles.ark.domain.repositories.AnalyticsRepository
 import com.moviles.ark.domain.repositories.AuthRepository
 import com.moviles.ark.domain.repositories.BreathingRepository
+import com.moviles.ark.domain.repositories.CookieRepository
 import com.moviles.ark.domain.repositories.FeedbackRepository
 import com.moviles.ark.domain.repositories.LocationRepository
 import com.moviles.ark.domain.repositories.MoodRepository
@@ -57,6 +59,7 @@ interface AppContainer {
     val toolInteractionRepository: ToolInteractionRepository
     val statsRepository: StatsRepository
     val photoRepository: PhotoEntryRepository
+    val cookieRepository: CookieRepository
     val analyticsRepository: AnalyticsRepository
     val toolLatencyTracker: ToolLatencyTracker
     val screenTimeTracker: com.moviles.ark.domain.models.ScreenTimeTracker
@@ -130,6 +133,15 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             context, auth, database.photoEntryDao(), firestore, storage,
             onPhotoSaved = { syncManager.requestSync() },
             onRemoteDeleteNeeded = { userId, takenAt -> RemotePhotoDeleteWorker.enqueue(context, userId, takenAt) }
+        )
+    }
+    // cookie jar: datos en room (tabla cookies) e imagen comprimida en filesDir/cookies, por usuario (uid de firebase)
+    override val cookieRepository: CookieRepository by lazy {
+        CookieRepositoryImpl(
+            cookieDao = database.cookieDao(),
+            imageStore = com.moviles.ark.data.local.CookiePrivateImageStore(context.filesDir),
+            imageCompressor = com.moviles.ark.data.local.CookieImageCompressor(context),
+            currentUserId = { auth.currentUser?.uid }
         )
     }
     override val analyticsRepository: AnalyticsRepository by lazy { AnalyticsRepositoryImpl(Firebase.analytics, auth, firestore) }

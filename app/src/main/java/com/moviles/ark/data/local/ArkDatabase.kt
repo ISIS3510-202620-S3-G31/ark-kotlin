@@ -8,6 +8,7 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.moviles.ark.data.local.daos.BreathingSessionDao
+import com.moviles.ark.data.local.daos.CookieDao
 import com.moviles.ark.data.local.daos.EmotionCheckInDao
 import com.moviles.ark.data.local.daos.FeedbackDao
 import com.moviles.ark.data.local.daos.PhotoEntryDao
@@ -17,6 +18,7 @@ import com.moviles.ark.data.local.daos.ToolRecordDao
 import com.moviles.ark.data.local.daos.UserDao
 import com.moviles.ark.data.local.entities.BreathingSessionEntity
 import com.moviles.ark.data.local.entities.CheckInEntity
+import com.moviles.ark.data.local.entities.CookieEntity
 import com.moviles.ark.data.local.entities.FeedbackEntity
 import com.moviles.ark.data.local.entities.PhotoEntryEntity
 import com.moviles.ark.data.local.entities.StatsDailyVisitEntity
@@ -31,6 +33,7 @@ import com.moviles.ark.data.local.entities.UserEntity
 //version 7: se agrego stats_daily_visits, conteo de visitas diarias a estadisticas
 //version 8: emociones del feedback y ciudad del check-in, con migracion para no borrar lo que no se ha subido
 //version 9: cuenta del feedback pendiente, para no subirlo a otra cuenta si se cierra sesion sin red
+//version 12: se agrego cookies, las galletas del cookie jar, con migracion para no perder nada de lo anterior
 //(sin migracion para un salto de version, room borra y crea de nuevo la base local)
 @Database(
     entities = [
@@ -42,8 +45,9 @@ import com.moviles.ark.data.local.entities.UserEntity
         BreathingSessionEntity::class,
         UserEntity::class,
         StatsDailyVisitEntity::class,
+        CookieEntity::class,
     ],
-    version = 11,
+    version = 12,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -56,6 +60,7 @@ abstract class ArkDatabase : RoomDatabase() {
     abstract fun breathingSessionDao(): BreathingSessionDao
     abstract fun userDao(): UserDao
     abstract fun statsDailyVisitDao(): StatsDailyVisitDao
+    abstract fun cookieDao(): CookieDao
 
     companion object {
         @Volatile
@@ -98,6 +103,20 @@ abstract class ArkDatabase : RoomDatabase() {
             }
         }
 
+        //solo crea la tabla nueva de cookie jar y su indice unico; las demas tablas no se tocan
+        //el sql es el mismo que genera room para CookieEntity, si no coincide room no abre la base
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `cookies` (`id` TEXT NOT NULL, `userId` TEXT NOT NULL, `title` TEXT NOT NULL, " +
+                        "`titleKey` TEXT NOT NULL, `text` TEXT NOT NULL, `state` TEXT NOT NULL, `hasImage` INTEGER NOT NULL, " +
+                        "`localImagePath` TEXT, `remoteImageUrl` TEXT, `lastOpenedAt` INTEGER NOT NULL, `receivedFrom` TEXT, " +
+                        "`createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `isSynced` INTEGER NOT NULL, PRIMARY KEY(`id`))"
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_cookies_userId_titleKey` ON `cookies` (`userId`, `titleKey`)")
+            }
+        }
+
         //singleton con doble comprobacion para que toda la app comparta un unico pool de conexiones
         fun getInstance(context: Context): ArkDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -106,7 +125,7 @@ abstract class ArkDatabase : RoomDatabase() {
                     ArkDatabase::class.java,
                     "ark.db"
                 )
-                .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+                .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
                 .also { INSTANCE = it }
