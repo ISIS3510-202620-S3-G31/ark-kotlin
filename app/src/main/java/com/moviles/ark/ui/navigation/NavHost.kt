@@ -125,6 +125,8 @@ fun AppNavigation(
                             "photo_of_the_day" -> navController.navigate("photo_of_the_day_screen")
                             "custom_breathing" -> navController.navigate("custom_breathing_screen")
                             "scream_tank" -> navController.navigate("scream_tank_screen")
+                            "cookie_jar" -> navController.navigate("cookie_jar_screen")
+                            "wish_lantern" -> navController.navigate("wish_lantern_screen")
                             //el catalogo es una pestana: se abre igual que desde la barra para no dejar el stack trabado
                             "tools_catalog_screen" -> navController.navigateToTab("tools_catalog_screen")
                         }
@@ -151,6 +153,8 @@ fun AppNavigation(
                             "photo_of_the_day" -> navController.navigate("photo_of_the_day_screen")
                             "custom_breathing" -> navController.navigate("custom_breathing_screen")
                             "scream_tank" -> navController.navigate("scream_tank_screen")
+                            "cookie_jar" -> navController.navigate("cookie_jar_screen")
+                            "wish_lantern" -> navController.navigate("wish_lantern_screen")
                         }
                     }
                 )
