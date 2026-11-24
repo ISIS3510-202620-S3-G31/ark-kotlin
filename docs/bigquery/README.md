@@ -129,7 +129,7 @@ Quedan en el dataset `ark_dashboards`:
 | `bq_age_distribution` | edad de los usuarios activos en 30 días, por grupo de MinSalud y cuenta de prueba |
 | `completed_tool_sessions` | una fila por sesión completada de una herramienta (la foto del día, una por día), con su celular, punto de entrada, semana de lunes a domingo e `in_last_4_weeks` |
 | `bq13_weekly_tool_completions` | BQ13, sesiones completadas por herramienta en cada una de las últimas 4 semanas completas (con 0 en las semanas sin sesiones) |
-| `bq_answers` | una fila con la respuesta de cada BQ (`bq1_answer` … `bq13_answer`) y la fecha del último dato |
+| `bq_answers` | una fila con la respuesta de cada BQ (`bq1_answer` … `bq13_answer`); las de BQ1 a BQ9 empiezan con la fecha del último dato |
 
 Los dos bloques "PASO 2" del final de `views_analytics.sql` ya se corrieron: `tool_load_latency`
 y `app_screen_time` leen de Firestore (llega en segundos) y de Analytics solo lo anterior a la
@@ -164,7 +164,7 @@ celda** (fuente `bq_answers`, dimensión `bqN_answer`, sin métrica). En la fuen
 `*_answer` van con tipo **Text** (Data Studio los toma como fecha porque empiezan con una) y
 frescura de 1 minuto. En la tabla: sin encabezado, sin números de fila, con *Wrap text* y sin
 dimensión de rango de fechas. Cada respuesta empieza con "Updated with data up to …", la hora del
-último dato en hora de Bogotá. En los cuadros de texto solo van el título, la pregunta y las
+último dato en hora de Bogotá (menos `bq13_answer`, que empieza directo con el dato). En los cuadros de texto solo van el título, la pregunta y las
 definiciones que no cambian.
 
 ### Página BQ1 (latencia de render de una herramienta)
@@ -256,9 +256,9 @@ cuenta porque está a medias.
 5. Respuesta en vivo: tabla de una celda con `bq13_answer`.
 
 Las vistas leen las aperturas directo de la tabla de Firestore (`tool_load_latency_raw_latest`)
-y cada una lee `completed_tool_sessions` una sola vez: BigQuery recalcula una vista cada vez que
-se nombra, y la vista `tool_load_latency` recorre todos los eventos de Analytics. Así cada
-consulta tarda alrededor de 1 s.
+y cada una lee `completed_tool_sessions` una sola vez (la respuesta también lee su vista una sola
+vez): BigQuery recalcula una vista cada vez que se nombra, y la vista `tool_load_latency` recorre
+todos los eventos de Analytics. Así cada consulta tarda alrededor de 1 s.
 
 Los campos nuevos (`entry_point`, `first_open`, `app_screen_time`, `user_id`, las colecciones
 `tool_load_latency` y `screen_time`) solo llegan desde la versión de la app que los trae; antes
