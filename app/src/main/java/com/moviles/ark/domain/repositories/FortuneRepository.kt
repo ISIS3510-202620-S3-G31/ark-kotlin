@@ -36,6 +36,12 @@ interface FortuneRepository {
     //devuelve la imagen de la frase, si no existe la crea una sola vez
     suspend fun getOrCreateCard(fortune: FortuneModel): FortuneShareResult?
 
+    //quita una imagen de shared en el telefono, en la nube se borra cuando haya red
+    suspend fun deleteCard(card: FortuneCardModel)
+
+    //ruta de la imagen de una frase compartida tal como se comparte, para verla en la coleccion
+    suspend fun getCardPreview(card: FortuneCardModel): String?
+
     //sube a la nube lo que quedo pendiente sin internet
     suspend fun syncPending()
 

@@ -13,7 +13,8 @@ class FortuneCacheManager(private val context: Context) {
     private val favoritesCache = SparseArray<Boolean>()
 
     //en disco, las ultimas frases abiertas y las frases traidas del api que aun no se abren
-    private val recentFile = File(context.cacheDir, "recent_cookies.json")
+    //cada usuario tiene su propio archivo de recientes, asi no se mezclan al cambiar de cuenta
+    private fun recentFile(userId: String) = File(context.cacheDir, "recent_cookies_${userId.hashCode()}.json")
     private val deckFile = File(context.cacheDir, "fortune_deck.json")
     private val recentCapacity = 5
 
@@ -68,17 +69,23 @@ class FortuneCacheManager(private val context: Context) {
         if (favorite) favoritesCache.put(cookieId, true) else favoritesCache.delete(cookieId)
     }
 
-    //ultimas frases abiertas
+    //ultimas frases abiertas por este usuario
     @Synchronized
-    fun getRecentCookies(): List<FortuneModel> = readFile(recentFile)
+    fun getRecentCookies(userId: String): List<FortuneModel> = readFile(recentFile(userId))
 
     //pone la frase de primera en recientes, si pasan de 5 se va la menos reciente
     @Synchronized
-    fun addRecentCookie(cookie: FortuneModel) {
-        val list = readFile(recentFile).toMutableList()
+    fun addRecentCookie(userId: String, cookie: FortuneModel) {
+        val list = readFile(recentFile(userId)).toMutableList()
         list.removeAll { it.id == cookie.id }
         list.add(0, cookie)
-        writeFile(recentFile, list.take(recentCapacity))
+        writeFile(recentFile(userId), list.take(recentCapacity))
+    }
+
+    //reemplaza las recientes con las que se juntaron con la nube
+    @Synchronized
+    fun setRecentCookies(userId: String, cookies: List<FortuneModel>) {
+        writeFile(recentFile(userId), cookies.take(recentCapacity))
     }
 
     //frases traidas del api que estan esperando en el telefono

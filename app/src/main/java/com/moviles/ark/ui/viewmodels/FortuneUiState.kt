@@ -19,10 +19,14 @@ data class FortuneUiState(
     val opened: TableFortune? = null,
     //-1 mientras se lee de sharedpreferences
     val remainingChances: Int = -1,
+    //aviso solo cuando no hay internet, null si hay red
+    val offlineNotice: String? = null,
     val previewFortune: FortuneModel? = null,
     val recentFortunes: List<FortuneModel> = emptyList(),
     val favoriteFortunes: List<FortuneModel> = emptyList(),
     val savedCards: List<FortuneCardModel> = emptyList(),
+    //id de la frase -> archivo con su imagen, para verla en shared igual a como se comparte
+    val cardPreviews: Map<Int, String> = emptyMap(),
     val isSharing: Boolean = false,
     val shareUri: Uri? = null,
     val snackbarMessage: String? = null
