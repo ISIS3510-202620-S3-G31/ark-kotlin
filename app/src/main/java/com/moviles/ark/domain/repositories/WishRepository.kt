@@ -16,6 +16,15 @@ interface WishRepository {
     //ids de los deseos que estan en la cache (los faroles encendidos)
     fun getLitWishIds(): Flow<Set<String>>
 
+    //trae de firestore los deseos del usuario si todavia no se han recuperado en este telefono
+    //(por ejemplo, si el usuario borro los datos de la app)
+    //devuelve true si ya estan recuperados y false si falta recuperarlos y no se pudo (sin internet)
+    suspend fun restoreWishesIfNeeded(): Boolean
+
+    //al abrir la herramienta: si la cache esta vacia, la llena con los deseos mas recientes
+    //asi el cielo arranca con faroles encendidos
+    suspend fun warmUpCache()
+
     //busca un deseo y lo mete a la cache: su farol queda encendido; null si no existe
     suspend fun openWish(wishId: String): WishModel?
 

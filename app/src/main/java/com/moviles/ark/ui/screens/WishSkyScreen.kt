@@ -101,7 +101,7 @@ fun WishSkyScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             WishHeader(title = "Wish Lantern", onBack = onBack, textColor = BackgroundLightColor)
-            WishOfflineMessage(isOnline = uiState.isOnline, message = WISHES_OFFLINE_MESSAGE)
+            WishOfflineMessage(message = wishesNotice(uiState))
 
             if (uiState.isSkyEmpty()) {
                 Text(
