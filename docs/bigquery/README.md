@@ -101,7 +101,10 @@ query*. Una corrida por colección.
    instalar las instancias de `tool_load_latency` y `screen_time`.
 4. Correr `views_bq4_and_age.sql` (BQ4 y edad de los usuarios activos; usa las vistas de los
    dos pasos anteriores).
-5. Correr `views_answers.sql` al final: escribe la respuesta de cada BQ como texto (ver
+5. Correr `views_tool_sessions.sql` (sesiones completadas de cada herramienta, con su celular y
+   su punto de entrada, y las vistas de BQ13; usa `tool_interactions`, `test_accounts` y la
+   tabla de aperturas de Firestore).
+6. Correr `views_answers.sql` al final: escribe la respuesta de cada BQ como texto (ver
    "Respuestas en vivo" en la sección 5).
 
 Quedan en el dataset `ark_dashboards`:
@@ -124,7 +127,9 @@ Quedan en el dataset `ark_dashboards`:
 | `test_accounts` (tabla) | cuentas de prueba creadas a mano en la app; se marcan con `is_test_account`, no se borran |
 | `bq4_tool_formats` | BQ4, sesiones completadas por formato, tipo de dispositivo y cuenta de prueba |
 | `bq_age_distribution` | edad de los usuarios activos en 30 días, por grupo de MinSalud y cuenta de prueba |
-| `bq_answers` | una fila con la respuesta de cada BQ (`bq1_answer` … `bq9_answer`) y la fecha del último dato |
+| `completed_tool_sessions` | una fila por sesión completada de una herramienta (la foto del día, una por día), con su celular, punto de entrada, semana de lunes a domingo e `in_last_4_weeks` |
+| `bq13_weekly_tool_completions` | BQ13, sesiones completadas por herramienta en cada una de las últimas 4 semanas completas (con 0 en las semanas sin sesiones) |
+| `bq_answers` | una fila con la respuesta de cada BQ (`bq1_answer` … `bq13_answer`); las de BQ1 a BQ9 empiezan con la fecha del último dato |
 
 Los dos bloques "PASO 2" del final de `views_analytics.sql` ya se corrieron: `tool_load_latency`
 y `app_screen_time` leen de Firestore (llega en segundos) y de Analytics solo lo anterior a la
@@ -159,7 +164,7 @@ celda** (fuente `bq_answers`, dimensión `bqN_answer`, sin métrica). En la fuen
 `*_answer` van con tipo **Text** (Data Studio los toma como fecha porque empiezan con una) y
 frescura de 1 minuto. En la tabla: sin encabezado, sin números de fila, con *Wrap text* y sin
 dimensión de rango de fechas. Cada respuesta empieza con "Updated with data up to …", la hora del
-último dato en hora de Bogotá. En los cuadros de texto solo van el título, la pregunta y las
+último dato en hora de Bogotá (menos `bq13_answer`, que empieza directo con el dato). En los cuadros de texto solo van el título, la pregunta y las
 definiciones que no cambian.
 
 ### Página BQ1 (latencia de render de una herramienta)
@@ -232,6 +237,28 @@ retome. En Kotlin ninguna herramienta registra el formato `text`, por eso no apa
 Fuente `bq_age_distribution`: control `is_test_account` (por defecto `false`), anillo y barras
 `age_bucket` × `active_users_30d`, scorecard con el total y la respuesta en vivo (`bq8_answer`).
 Activo = al menos un check-in o una herramienta en los últimos 30 días.
+
+### Página BQ13 Weekly Tool Completion Frequency
+
+Fuente `bq13_weekly_tool_completions`. Pregunta: ¿cuántas veces por semana completan los usuarios
+cada herramienta, en las últimas 4 semanas? Unidad: una sesión completada (la foto del día cuenta
+una vez por usuario y día). Semanas de lunes a domingo en hora de Bogotá; la semana en curso no
+cuenta porque está a medias.
+
+1. Controles *Drop-down list* `device_type` (por defecto `Real phone`) e `is_test_account` (por
+   defecto `false`).
+2. Barras agrupadas: dimensión `tool`, desglose `week` (orden ascendente), métrica
+   `SUM(completions)`, sin apilar. Cada herramienta muestra sus 4 semanas lado a lado: una
+   herramienta habitual tiene las 4 barras, una esporádica un solo pico. Sin promedios.
+3. Scorecard `SUM(completions)`: sesiones completadas en las 4 semanas.
+4. Tabla: `tool`, `weekly_completions` ("W1 / W2 / W3 / W4"), `completions_4_weeks` y
+   `active_weeks` (agregación **Max**; con *Sum* se multiplican por 4).
+5. Respuesta en vivo: tabla de una celda con `bq13_answer`.
+
+Las vistas leen las aperturas directo de la tabla de Firestore (`tool_load_latency_raw_latest`)
+y cada una lee `completed_tool_sessions` una sola vez (la respuesta también lee su vista una sola
+vez): BigQuery recalcula una vista cada vez que se nombra, y la vista `tool_load_latency` recorre
+todos los eventos de Analytics. Así cada consulta tarda alrededor de 1 s.
 
 Los campos nuevos (`entry_point`, `first_open`, `app_screen_time`, `user_id`, las colecciones
 `tool_load_latency` y `screen_time`) solo llegan desde la versión de la app que los trae; antes
