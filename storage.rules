@@ -30,6 +30,46 @@ service firebase.storage {
       allow delete: if isOwner(userId);
     }
 
+    // Cookie Jar pictures (Kotlin): users/{uid}/cookies/{cookieId}.jpg, compressed once on the phone (~400 KB)
+    match /users/{userId}/cookies/{fileName} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId)
+                    && request.resource.size < 10 * 1024 * 1024
+                    && request.resource.contentType.matches('image/.*');
+      allow delete: if isOwner(userId);
+    }
+
+    // regalos del cookie jar: shared/{shareId}.jpg, la foto de un regalo pendiente (shared_cookies/{shareId} en firestore)
+    // se sube antes que el documento, asi que al subir se revisa con la metadata (from, to) y la amistad en firestore
+    // la leen solo from y to del documento del regalo; la borran from o to segun la metadata (el documento ya pudo borrarse)
+    match /shared/{fileName} {
+      function shareIdOf(name) {
+        return name.split('[.]')[0];
+      }
+
+      function sharedCookie(name) {
+        return firestore.get(/databases/(default)/documents/shared_cookies/$(shareIdOf(name)));
+      }
+
+      function friendshipId(a, b) {
+        return a < b ? a + '_' + b : b + '_' + a;
+      }
+
+      allow get: if isAuthenticated() && fileName.matches('[A-Za-z0-9-]+[.]jpg')
+                  && request.auth.uid in [sharedCookie(fileName).data.from, sharedCookie(fileName).data.to];
+      // el nombre es el uuid del regalo y solo lo conocen from y to (el documento solo lo leen ellos dos)
+      // una sola consulta a firestore (la amistad): con mas consultas la subida daba 403 en produccion;
+      // el bloqueo ya lo cubre la amistad (bloquear la borra) y el documento del regalo lo revisa firestore.rules
+      allow create: if isAuthenticated() && fileName.matches('[A-Za-z0-9-]+[.]jpg')
+                     && request.resource.size < 10 * 1024 * 1024
+                     && request.resource.contentType.matches('image/.*')
+                     && request.resource.metadata.from == request.auth.uid
+                     && request.resource.metadata.to is string
+                     && request.resource.metadata.to != request.auth.uid
+                     && firestore.exists(/databases/(default)/documents/friendships/$(friendshipId(request.auth.uid, request.resource.metadata.to)));
+      allow delete: if isAuthenticated() && request.auth.uid in [resource.metadata.from, resource.metadata.to];
+    }
+
     // Fortune cookie cards in Kotlin: one png per saved phrase
     match /users/{userId}/fortune_cards/{fileName} {
       allow read: if isOwner(userId);

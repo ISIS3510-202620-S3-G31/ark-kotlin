@@ -14,6 +14,7 @@ import com.moviles.ark.data.local.daos.FavoriteFortuneCookieDao
 import com.moviles.ark.data.local.daos.SavedFortuneCardDao
 import com.moviles.ark.data.local.daos.FeedbackDao
 import com.moviles.ark.data.local.daos.PhotoEntryDao
+import com.moviles.ark.data.local.daos.SentGiftDao
 import com.moviles.ark.data.local.daos.StatsDailyVisitDao
 import com.moviles.ark.data.local.daos.ToolDao
 import com.moviles.ark.data.local.daos.ToolRecordDao
@@ -26,6 +27,7 @@ import com.moviles.ark.data.local.entities.FavoriteFortuneCookieEntity
 import com.moviles.ark.data.local.entities.SavedFortuneCardEntity
 import com.moviles.ark.data.local.entities.FeedbackEntity
 import com.moviles.ark.data.local.entities.PhotoEntryEntity
+import com.moviles.ark.data.local.entities.SentGiftEntity
 import com.moviles.ark.data.local.entities.StatsDailyVisitEntity
 import com.moviles.ark.data.local.entities.ToolEntity
 import com.moviles.ark.data.local.entities.ToolInteractionEntity
@@ -46,8 +48,9 @@ import com.moviles.ark.data.local.entities.WishEntity
         FavoriteFortuneCookieEntity::class,
         SavedFortuneCardEntity::class,
         WishEntity::class,
+        SentGiftEntity::class,
     ],
-    version = 15,
+    version = 16,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -61,6 +64,7 @@ abstract class ArkDatabase : RoomDatabase() {
     abstract fun userDao(): UserDao
     abstract fun statsDailyVisitDao(): StatsDailyVisitDao
     abstract fun cookieDao(): CookieDao
+    abstract fun sentGiftDao(): SentGiftDao
     abstract fun wishDao(): WishDao
     abstract fun favoriteFortuneCookieDao(): FavoriteFortuneCookieDao
     abstract fun savedFortuneCardDao(): SavedFortuneCardDao
@@ -162,6 +166,20 @@ abstract class ArkDatabase : RoomDatabase() {
             }
         }
 
+        //version 16: agrega sent_gifts, los regalos enviados del cookie jar (solo en el telefono del remitente)
+        //el sql es el mismo que genera room para SentGiftEntity; con IF NOT EXISTS no falla en los telefonos
+        //de prueba que ya tenian la tabla de una version anterior de la rama
+        val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `sent_gifts` (`shareId` TEXT NOT NULL, `userId` TEXT NOT NULL, " +
+                        "`toUid` TEXT NOT NULL, `toUsername` TEXT NOT NULL, `title` TEXT NOT NULL, `hasImage` INTEGER NOT NULL, " +
+                        "`sentAt` INTEGER NOT NULL, `expiresAt` INTEGER NOT NULL, PRIMARY KEY(`shareId`))"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_sent_gifts_userId` ON `sent_gifts` (`userId`)")
+            }
+        }
+
         //singleton con doble comprobacion para que toda la app comparta un unico pool de conexiones
         fun getInstance(context: Context): ArkDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -170,7 +188,7 @@ abstract class ArkDatabase : RoomDatabase() {
                     ArkDatabase::class.java,
                     "ark.db"
                 )
-                .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
+                .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
                 .also { INSTANCE = it }

@@ -19,6 +19,7 @@ import com.moviles.ark.data.remote.CrashlyticsHelper
 import com.moviles.ark.data.remote.dtos.documentId
 import com.moviles.ark.data.remote.dtos.toDto
 import com.moviles.ark.data.workers.RemotePhotoDeleteWorker
+import com.moviles.ark.domain.models.CookieUploadResult
 import com.moviles.ark.domain.models.ProfileSyncResult
 import com.moviles.ark.domain.repositories.SyncRepository
 import kotlinx.coroutines.CancellationException
@@ -46,6 +47,10 @@ class SyncRepositoryImpl(
     private val syncPendingProfile: suspend () -> ProfileSyncResult = { ProfileSyncResult() },
     //true si el perfil o la foto de perfil tienen cambios sin subir (UserRepository.hasPendingProfileChanges)
     private val hasPendingProfile: suspend () -> Boolean = { false },
+    //sube las galletas del cookie jar pendientes, imagen y documento (CookieRepository.uploadPending)
+    private val syncPendingCookies: suspend () -> CookieUploadResult = { CookieUploadResult() },
+    //cuantas galletas faltan por subir (CookieRepository.pendingUploadCount)
+    private val pendingCookieCount: suspend () -> Int = { 0 },
     //deseos del farol de deseos (tabla wishes)
     private val wishDao: WishDao? = null
 ) : SyncRepository {
@@ -88,7 +93,8 @@ class SyncRepositoryImpl(
             feedbackDao.getUnsyncedFeedback(userId).size +
             (statsDailyVisitDao?.getUnsyncedVisits(userId)?.size ?: 0) +
             (wishDao?.getUnsyncedWishes(userId)?.size ?: 0) +
-            (if (hasPendingProfile()) 1 else 0)
+            (if (hasPendingProfile()) 1 else 0) +
+            pendingCookieCount()
     }
 
     //cuantas filas se subieron y cuantas fallaron; con fallos el sync devuelve error y el SyncWorker reintenta con espera
@@ -240,7 +246,15 @@ class SyncRepositoryImpl(
             tally.failed += result.failed
         }
 
-        // 6. Sincronizar los deseos del farol pendientes (isSynced = 0): nuevos, editados o borrados
+        // 6a. Subir las galletas del cookie jar pendientes (isSynced = 0): primero la imagen y luego el documento
+        //las cuenta el repositorio de galletas; si alguna falla el SyncWorker reintenta con backoff
+        tally.step("syncCookies", currentUserId) {
+            val result = syncPendingCookies()
+            tally.synced += result.synced
+            tally.failed += result.failed
+        }
+
+        // 6b. Sincronizar los deseos del farol pendientes (isSynced = 0): nuevos, editados o borrados
         //cada deseo va a users/{uid}/wishes/{id del deseo}: si se sube dos veces queda un solo documento
         tally.step("syncWishes", currentUserId) {
             syncWishes(tally)

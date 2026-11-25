@@ -54,6 +54,14 @@ class CookiePrivateImageStore(filesDir: File) {
         !file.exists() || file.delete()
     }
 
+    //borra solo el temporal de una galleta (una descarga o una escritura que no termino)
+    suspend fun deleteTemp(cookieId: String) {
+        withContext(Dispatchers.IO) {
+            val tempFile = File(directory, "${fileNameOf(cookieId)}$TEMP_SUFFIX")
+            tempFile.delete()
+        }
+    }
+
     //bytes que ocupan todas las imagenes de galletas en el telefono
     suspend fun usedBytes(): Long = withContext(Dispatchers.IO) {
         directory.listFiles()?.filter { it.isFile && it.name.endsWith(JPG_SUFFIX) }?.sumOf { it.length() } ?: 0L

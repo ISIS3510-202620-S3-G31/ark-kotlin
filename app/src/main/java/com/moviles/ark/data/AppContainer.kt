@@ -11,9 +11,12 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.firestore
 import com.google.firebase.storage.FirebaseStorage
 import com.google.firebase.storage.storage
+import com.moviles.ark.data.workers.RemoteCookieDeleteWorker
 import com.moviles.ark.data.workers.RemotePhotoDeleteWorker
+import com.moviles.ark.data.workers.SharedImageDeleteWorker
 import com.moviles.ark.R
 import com.moviles.ark.data.local.ArkDatabase
+import com.moviles.ark.data.local.CookieSyncPreferences
 import com.moviles.ark.data.local.daos.FavoriteFortuneCookieDao
 import com.moviles.ark.data.local.daos.SavedFortuneCardDao
 import com.moviles.ark.data.local.FortunePreferencesManager
@@ -36,6 +39,11 @@ import com.moviles.ark.data.repositories.AuthRepositoryImpl
 import com.moviles.ark.data.repositories.BreathingRepositoryImpl
 import com.moviles.ark.data.repositories.CookieRepositoryImpl
 import com.moviles.ark.data.repositories.FeedbackRepositoryImpl
+import com.moviles.ark.data.repositories.FriendRepositoryImpl
+import com.moviles.ark.data.repositories.SharedCookieRepositoryImpl
+import com.moviles.ark.data.remote.CookieCloudStore
+import com.moviles.ark.data.remote.FriendCloudStore
+import com.moviles.ark.data.remote.SharedCookieCloudStore
 import com.moviles.ark.data.repositories.ToolRepositoryImpl
 import com.moviles.ark.data.repositories.LocationRepositoryImpl
 import com.moviles.ark.data.repositories.MoodRepositoryImpl
@@ -45,19 +53,23 @@ import com.moviles.ark.data.repositories.SyncRepositoryImpl
 import com.moviles.ark.data.repositories.ToolInteractionRepositoryImpl
 import com.moviles.ark.data.repositories.UserRepositoryImpl
 import com.moviles.ark.domain.adapters.CookieImageLoader
+import com.moviles.ark.domain.models.Avatar
 import com.moviles.ark.domain.models.ToolLatencyTracker
 import com.moviles.ark.domain.repositories.AnalyticsRepository
 import com.moviles.ark.domain.repositories.AuthRepository
 import com.moviles.ark.domain.repositories.BreathingRepository
 import com.moviles.ark.domain.repositories.CookieRepository
 import com.moviles.ark.domain.repositories.FeedbackRepository
+import com.moviles.ark.domain.repositories.FriendRepository
 import com.moviles.ark.domain.repositories.LocationRepository
 import com.moviles.ark.domain.repositories.MoodRepository
 import com.moviles.ark.domain.repositories.PhotoEntryRepository
+import com.moviles.ark.domain.repositories.SharedCookieRepository
 import com.moviles.ark.domain.repositories.StatsRepository
 import com.moviles.ark.domain.repositories.SyncRepository
 import com.moviles.ark.domain.repositories.ToolInteractionRepository
 import com.moviles.ark.domain.repositories.UserRepository
+import kotlinx.coroutines.flow.first
 
 interface AppContainer {
     val auth: FirebaseAuth
@@ -72,6 +84,8 @@ interface AppContainer {
     val photoRepository: PhotoEntryRepository
     val cookieRepository: CookieRepository
     val cookieImageLoader: CookieImageLoader<Bitmap>
+    val friendRepository: FriendRepository
+    val sharedCookieRepository: SharedCookieRepository
     val analyticsRepository: AnalyticsRepository
     val toolLatencyTracker: ToolLatencyTracker
     val screenTimeTracker: com.moviles.ark.domain.models.ScreenTimeTracker
@@ -156,13 +170,45 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         )
     }
     // cookie jar: datos en room (tabla cookies) e imagen comprimida en filesDir/cookies, por usuario (uid de firebase)
+    // con copia en firestore users/{uid}/cookies y storage users/{uid}/cookies/{id}.jpg
     override val cookieRepository: CookieRepository by lazy {
         CookieRepositoryImpl(
             cookieDao = database.cookieDao(),
             imageStore = cookieImageStore,
             imageCompressor = com.moviles.ark.data.local.CookieImageCompressor(context),
             cameraHelper = com.moviles.ark.data.local.sensors.CameraHelper(context),
-            userIdProvider = { auth.currentUser?.uid }
+            userIdProvider = { auth.currentUser?.uid },
+            //cada cambio (crear, comer, devolver) pide una subida; sin red queda en workmanager para cuando vuelva
+            onCookieChanged = { syncManager.requestSync() },
+            //borrar para siempre: la copia de la nube se borra con workmanager aunque se cierre la app
+            onRemoteDeleteNeeded = { userId, cookieId -> RemoteCookieDeleteWorker.enqueue(context, userId, cookieId) },
+            cloudStore = CookieCloudStore(firestore, storage),
+            pendingRemoteDeletes = { RemoteCookieDeleteWorker.pendingCookieIds(context) },
+            syncPreferences = CookieSyncPreferences(context)
+        )
+    }
+    // amigos del cookie jar (solo 18+): usernames, perfiles publicos, solicitudes, amistades y bloqueos en firestore
+    override val friendRepository: FriendRepository by lazy {
+        FriendRepositoryImpl(
+            cloud = FriendCloudStore(firestore),
+            userIdProvider = { auth.currentUser?.uid },
+            //el perfil publico lleva el avatar de la lista, nunca la foto
+            avatarIdProvider = {
+                val profile = userRepository.observeProfile().first()
+                Avatar.idOrDefault(profile?.avatarId)
+            }
+        )
+    }
+    // regalos del cookie jar: bandeja en vivo desde firestore, regalos enviados en room, aceptados entran a cookieRepository
+    override val sharedCookieRepository: SharedCookieRepository by lazy {
+        SharedCookieRepositoryImpl(
+            cloud = SharedCookieCloudStore(firestore, storage),
+            cookieRepository = cookieRepository,
+            sentGiftDao = database.sentGiftDao(),
+            userIdProvider = { auth.currentUser?.uid },
+            myUsername = { friendRepository.myUsername() },
+            //una foto de regalo que no se pudo borrar la borra workmanager cuando haya red
+            onOrphanImage = { userId, shareId -> SharedImageDeleteWorker.enqueue(context, userId, shareId) }
         )
     }
     // imagenes del cookie jar leidas del almacenamiento privado y decodificadas para la pantalla
@@ -251,6 +297,8 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             statsDailyVisitDao = database.statsDailyVisitDao(),
             syncPendingProfile = { userRepository.syncPendingProfile() },
             hasPendingProfile = { userRepository.hasPendingProfileChanges() },
+            syncPendingCookies = { cookieRepository.uploadPending() },
+            pendingCookieCount = { cookieRepository.pendingUploadCount() },
             wishDao = database.wishDao()
         )
     }

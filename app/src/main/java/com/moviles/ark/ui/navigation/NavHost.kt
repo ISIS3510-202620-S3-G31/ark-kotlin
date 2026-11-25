@@ -27,6 +27,8 @@ import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.ui.components.BottomNavItem
 import com.moviles.ark.ui.components.BottomNavigationBar
 import com.moviles.ark.ui.components.OfflineBannerComponent
+import com.moviles.ark.ui.screens.CookieFriendsRoute
+import com.moviles.ark.ui.screens.CookieInboxRoute
 import com.moviles.ark.ui.screens.CookieJarRoute
 import com.moviles.ark.ui.screens.CustomBreathingRoute
 import com.moviles.ark.ui.screens.FavoriteFortunesRoute
@@ -46,6 +48,7 @@ import com.moviles.ark.ui.screens.WishLanternRoute
 import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.viewmodels.AppViewModel
 import com.moviles.ark.ui.viewmodels.CookieJarViewModel
+import com.moviles.ark.ui.viewmodels.CookieSocialViewModel
 
 @Composable
 fun AppNavigation(
@@ -242,8 +245,22 @@ fun AppNavigation(
                             navController.popBackStack()
                         }
                     },
-                    onNewCookie = { navController.navigate("new_cookie_screen") }
+                    onNewCookie = { navController.navigate("new_cookie_screen") },
+                    onOpenFriends = { navController.navigate("cookie_friends_screen") { launchSingleTop = true } },
+                    onOpenInbox = { navController.navigate("cookie_inbox_screen") { launchSingleTop = true } }
                 )
+            }
+            //amigos y bandeja de regalos (solo 18+): comparten el viewmodel social del jarro, asi el listener de la bandeja
+            //y los avisos siguen al pasar de una pantalla a otra
+            composable("cookie_friends_screen") { backStackEntry ->
+                val jarEntry = remember(backStackEntry) { navController.getBackStackEntry("cookie_jar_screen") }
+                val socialViewModel: CookieSocialViewModel = viewModel(jarEntry, factory = CookieSocialViewModel.Factory)
+                CookieFriendsRoute(socialViewModel = socialViewModel, onBack = { navController.popBackStack() })
+            }
+            composable("cookie_inbox_screen") { backStackEntry ->
+                val jarEntry = remember(backStackEntry) { navController.getBackStackEntry("cookie_jar_screen") }
+                val socialViewModel: CookieSocialViewModel = viewModel(jarEntry, factory = CookieSocialViewModel.Factory)
+                CookieInboxRoute(socialViewModel = socialViewModel, onBack = { navController.popBackStack() })
             }
             //galleta nueva: comparte el viewmodel del jarro para que el aviso de guardado se vea alla
             composable("new_cookie_screen") { backStackEntry ->

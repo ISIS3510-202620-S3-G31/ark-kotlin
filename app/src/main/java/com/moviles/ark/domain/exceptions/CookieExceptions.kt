@@ -15,3 +15,15 @@ class InvalidCookieImageException(cause: Throwable? = null) : IOException(MESSAG
         const val MESSAGE = "Couldn't read that picture. Try another one"
     }
 }
+
+//amigos y regalos: la red se cayo o no respondio a tiempo (timeout); no se cambio nada en la nube
+class ConnectionLostException(cause: Throwable? = null) : IOException("Connection lost", cause)
+
+//el username ya es de otra cuenta
+class UsernameTakenException(val username: String) : IOException("Username taken")
+
+//nadie tiene ese username (o esa persona bloqueo a quien busca: se responde igual)
+class UsernameNotFoundException : IOException("Username not found")
+
+//el regalo ya no esta en la nube: se acepto, se rechazo, se cancelo o vencio
+class GiftUnavailableException : IOException("Gift no longer available")
