@@ -15,6 +15,9 @@ interface CookieImageLoader<Image> {
     //saca de memoria la imagen de una galleta borrada
     fun forget(cookieId: String) {}
 
+    //la pantalla dejo de mostrar esta imagen: su memoria se puede reutilizar para la proxima que se decodifique
+    fun release(image: Image) {}
+
     //vista previa pequena de la imagen elegida al crear la galleta (camara o galeria), antes de guardarla
     suspend fun loadPreview(sourceUri: String): Image?
 }

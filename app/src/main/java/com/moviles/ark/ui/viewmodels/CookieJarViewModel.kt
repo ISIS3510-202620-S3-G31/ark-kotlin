@@ -427,7 +427,12 @@ class CookieJarViewModel(
     fun onDismissDetail() {
         imageJob?.cancel()
         isDownloadingDetail = false
+        val closedImage = _uiState.value.selectedImage
         _uiState.update { it.copy(selectedCookie = null, selectedImage = null, isImageLoading = false, imageNotice = null) }
+        //el detalle ya no muestra esa foto: el loader puede reutilizar su memoria para la proxima
+        if (closedImage != null) {
+            imageLoader.release(closedImage)
+        }
     }
 
     //boton de un aviso: "Undo" de comer o "Retry"
