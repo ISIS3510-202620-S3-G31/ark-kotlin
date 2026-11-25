@@ -29,6 +29,11 @@ interface WishDao {
     @Query("SELECT id FROM wishes WHERE userId = :userId AND isDeleted = 0")
     fun observeWishIds(userId: String): Flow<List<String>>
 
+    //los deseos mas recientes del usuario, del mas nuevo al mas viejo
+    //se usa para llenar la cache (los faroles encendidos) al abrir la herramienta
+    @Query("SELECT * FROM wishes WHERE userId = :userId AND isDeleted = 0 ORDER BY createdAt DESC LIMIT :limit")
+    suspend fun getNewestWishes(userId: String, limit: Int): List<WishEntity>
+
     //un solo deseo; null si no existe o si ya se borro
     @Query("SELECT * FROM wishes WHERE id = :id AND userId = :userId AND isDeleted = 0 LIMIT 1")
     suspend fun getWish(id: String, userId: String): WishEntity?
@@ -42,6 +47,17 @@ interface WishDao {
     //asi el sync sabe que tambien la tiene que borrar de firestore
     @Query("UPDATE wishes SET isDeleted = 1, updatedAt = :updatedAt, isSynced = 0 WHERE id = :id AND userId = :userId")
     suspend fun markAsDeleted(id: String, userId: String, updatedAt: Long): Int
+
+    // ---------- lo que usa la recuperacion desde firestore (eventual connectivity) ----------
+
+    //un deseo por su id, este borrado o no; sirve para comparar con la version de la nube
+    @Query("SELECT * FROM wishes WHERE id = :id LIMIT 1")
+    suspend fun getWishById(id: String): WishEntity?
+
+    //guarda varios deseos de una vez; si el id ya existe, lo reemplaza
+    //room guarda toda la lista en una sola transaccion: o se guardan todos o ninguno
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertWishes(wishes: List<WishEntity>)
 
     // ---------- lo que usa el sync (eventual connectivity) ----------
 

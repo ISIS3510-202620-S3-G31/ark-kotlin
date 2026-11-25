@@ -47,10 +47,33 @@ class WishLanternViewModel(
     //trabajo que escucha la lista completa; null mientras el usuario no haya abierto la lista
     private var fullListJob: Job? = null
 
+    //true mientras se estan recuperando los deseos de firestore, para no hacerlo dos veces al mismo tiempo
+    private var isRestoring = false
+
     init {
+        restoreWishesAndLightLanterns()
         listenToSkyLanterns()
         listenToLitLanterns()
         listenToConnectivity()
+    }
+
+    //al abrir la herramienta:
+    //1. si el usuario borro los datos de la app, se traen sus deseos de firestore
+    //2. se encienden los faroles de los 8 deseos mas recientes (se llena la cache)
+    private fun restoreWishesAndLightLanterns() {
+        if (isRestoring) {
+            return
+        }
+        isRestoring = true
+
+        viewModelScope.launch {
+            val wishesAreRestored = wishRepository.restoreWishesIfNeeded()
+            //si no se pudieron recuperar (sin internet), las vistas muestran el aviso
+            _uiState.update { it.copy(isRestorePending = !wishesAreRestored) }
+
+            wishRepository.warmUpCache()
+            isRestoring = false
+        }
     }
 
     //cada vez que cambian los deseos (guardar, editar o borrar) llegan los ids nuevos
@@ -118,10 +141,15 @@ class WishLanternViewModel(
     }
 
     //cada vez que se pierde o vuelve el internet
+    //si los deseos faltaban por recuperar, se intenta otra vez apenas vuelve el internet
     private fun listenToConnectivity() {
         viewModelScope.launch {
             connectivity.collect { isOnline ->
                 _uiState.update { it.copy(isOnline = isOnline) }
+
+                if (isOnline && _uiState.value.isRestorePending) {
+                    restoreWishesAndLightLanterns()
+                }
             }
         }
     }

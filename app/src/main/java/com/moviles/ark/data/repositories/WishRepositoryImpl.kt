@@ -1,20 +1,28 @@
 package com.moviles.ark.data.repositories
 
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Source
+import com.moviles.ark.data.local.WishMemoryCache
+import com.moviles.ark.data.local.WishPreferences
 import com.moviles.ark.data.local.daos.WishDao
 import com.moviles.ark.data.local.entities.WishEntity
 import com.moviles.ark.data.local.entities.toModel
 import com.moviles.ark.data.remote.CrashlyticsHelper
+import com.moviles.ark.data.remote.dtos.WishDto
+import com.moviles.ark.data.remote.dtos.toEntity
 import com.moviles.ark.domain.models.WishModel
 import com.moviles.ark.domain.repositories.WishRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import java.util.UUID
 
 //repositorio del farol de deseos con room (local storage)
@@ -25,6 +33,15 @@ import java.util.UUID
 //- leer y escribir en room va en ioDispatcher (Dispatchers.IO), para no trabar la animacion de la llama
 //- ordenar y convertir la lista completa va en defaultDispatcher (Dispatchers.Default), que es para trabajo de cpu
 //- el hilo principal (Main) solo recibe el resultado listo
+//
+//cache (caching):
+//- los faroles encendidos son los deseos que estan en memoryCache, un LruCache de maximo 8 deseos
+//- al tocar un farol primero se busca en la cache; solo si no esta se va a room
+//- al editar o borrar un deseo tambien se cambia la cache, asi el cielo nunca muestra texto viejo
+//
+//eventual connectivity (offline first):
+//- todo se lee y se escribe en room, con o sin internet; el SyncWorker sube los cambios cuando hay red
+//- si el usuario borro los datos de la app, restoreWishesIfNeeded trae sus deseos de firestore
 class WishRepositoryImpl(
     private val wishDao: WishDao,
     //uid del usuario con sesion; null si no hay sesion
@@ -34,12 +51,19 @@ class WishRepositoryImpl(
     //hilo para leer y escribir en la base de datos
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     //hilo para trabajo pesado de cpu, como ordenar listas
-    private val defaultDispatcher: CoroutineDispatcher = Dispatchers.Default
+    private val defaultDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    //cache en memoria de los faroles encendidos (LruCache de 8 deseos)
+    private val memoryCache: WishMemoryCache = WishMemoryCache(),
+    //firestore, para recuperar los deseos de la nube; null en pruebas
+    private val firestore: FirebaseFirestore? = null,
+    //guarda si los deseos de cada usuario ya se recuperaron; null en pruebas
+    private val wishPreferences: WishPreferences? = null,
+    //true si el telefono tiene internet en este momento
+    private val isOnline: () -> Boolean = { true }
 ) : WishRepository {
 
-    //faroles encendidos: ids de los deseos abiertos hace poco; el primero es el que se uso hace mas tiempo
-    //es una version sencilla mientras tanto: el issue de caching la cambia por un LruCache de verdad
-    private val litWishIds = MutableStateFlow<List<String>>(emptyList())
+    //de que usuario son los deseos que estan en la cache; si entra otro usuario la cache se vacia
+    private var cacheUserId: String? = null
 
     // ---------- lecturas que se actualizan solas (Flow) ----------
 
@@ -69,12 +93,25 @@ class WishRepositoryImpl(
     }
 
     override fun getLitWishIds(): Flow<Set<String>> {
-        //las pantallas piden un set, asi que la lista se convierte cada vez que cambia
-        return litWishIds.map { ids -> ids.toSet() }
+        //los faroles encendidos son los deseos que estan en la cache
+        return memoryCache.observeLitWishIds()
     }
 
     // ---------- lecturas y escrituras de una vez (suspend) ----------
     //cada funcion publica cambia al hilo de IO y la funcion privada de abajo hace el trabajo
+
+    override suspend fun restoreWishesIfNeeded(): Boolean {
+        //bajar de internet y guardar en room va en Dispatchers.IO
+        return withContext(ioDispatcher) {
+            restoreWishesFromFirestore()
+        }
+    }
+
+    override suspend fun warmUpCache() {
+        withContext(ioDispatcher) {
+            warmUpCacheFromRoom()
+        }
+    }
 
     override suspend fun openWish(wishId: String): WishModel? {
         return withContext(ioDispatcher) {
@@ -102,21 +139,124 @@ class WishRepositoryImpl(
 
     // ---------- el trabajo de verdad (ya corre en IO) ----------
 
+    private suspend fun restoreWishesFromFirestore(): Boolean {
+        //sin sesion no hay deseos que recuperar
+        val userId = userIdProvider()
+        if (userId == null) {
+            return true
+        }
+        //sin firestore o sin preferencias (por ejemplo en pruebas) no se puede recuperar nada
+        val remote = firestore
+        val preferences = wishPreferences
+        if (remote == null || preferences == null) {
+            return true
+        }
+
+        //si ya se recuperaron en este telefono, no hay nada que hacer: room ya los tiene
+        if (preferences.areWishesRestored(userId)) {
+            return true
+        }
+
+        //falta recuperarlos y no hay internet: se intenta otra vez cuando vuelva la conexion
+        if (!isOnline()) {
+            return false
+        }
+
+        try {
+            //1. bajar todos los deseos del usuario de firestore
+            //Source.SERVER: si no hay red falla, en vez de devolver la copia vieja (o vacia) que guarda firestore
+            val documents = withTimeout(RESTORE_TIMEOUT_MS) {
+                remote.collection("users")
+                    .document(userId)
+                    .collection("wishes")
+                    .get(Source.SERVER)
+                    .await()
+            }
+
+            //2. decidir cuales guardar en room
+            val wishesToSave = mutableListOf<WishEntity>()
+            for (document in documents) {
+                val dto = document.toObject(WishDto::class.java)
+                val cloudWish = dto.copy(id = document.id, userId = userId).toEntity()
+                val phoneWish = wishDao.getWishById(cloudWish.id)
+
+                if (phoneWish == null) {
+                    //el telefono no lo tiene: se guarda
+                    wishesToSave.add(cloudWish)
+                } else if (cloudWish.updatedAt > phoneWish.updatedAt) {
+                    //los dos lo tienen: gana el que se cambio mas recientemente
+                    wishesToSave.add(cloudWish)
+                }
+                //si el del telefono es igual o mas nuevo, se deja el del telefono (el sync lo sube despues)
+            }
+
+            //3. guardar todos de una vez (una sola transaccion de room)
+            if (wishesToSave.isNotEmpty()) {
+                wishDao.insertWishes(wishesToSave)
+            }
+
+            //4. listo: no se vuelve a recuperar en este telefono
+            preferences.markWishesRestored(userId)
+            return true
+        } catch (e: TimeoutCancellationException) {
+            //la red no respondio a tiempo: se intenta otra vez despues
+            return false
+        } catch (e: CancellationException) {
+            //la pantalla se cerro: no es un error
+            throw e
+        } catch (e: Exception) {
+            logError("restoreWishes", e)
+            return false
+        }
+    }
+
+    private suspend fun warmUpCacheFromRoom() {
+        val userId = userIdProvider()
+        if (userId == null) {
+            return
+        }
+        makeSureCacheIsForUser(userId)
+
+        //si la cache ya tiene faroles (por ejemplo, el usuario salio y volvio a entrar) se deja como esta
+        if (!memoryCache.isEmpty()) {
+            return
+        }
+
+        //los 8 deseos mas recientes, del mas nuevo al mas viejo
+        val newestWishes = wishDao.getNewestWishes(userId, WishModel.MAX_LIT_LANTERNS)
+
+        //se meten del mas viejo al mas nuevo: asi el mas nuevo queda como el mas recientemente usado
+        //y si luego se llena la cache, el primero en apagarse es el mas viejo
+        for (index in newestWishes.size - 1 downTo 0) {
+            val entity = newestWishes[index]
+            memoryCache.put(entity.toModel())
+        }
+    }
+
     private suspend fun openWishFromRoom(wishId: String): WishModel? {
         val userId = userIdProvider()
         if (userId == null) {
             return null
         }
+        makeSureCacheIsForUser(userId)
 
-        //el texto del deseo se lee solo ahora, cuando el usuario toca el farol
+        //1. primero se busca en la cache: si el farol estaba encendido no hace falta ir a room
+        val cachedWish = memoryCache.get(wishId)
+        if (cachedWish != null) {
+            return cachedWish
+        }
+
+        //2. no estaba (farol apagado): se lee de room
         val entity = wishDao.getWish(wishId, userId)
         if (entity == null) {
             return null
         }
 
-        //al abrirlo, su farol se enciende
-        lightLantern(wishId)
-        return entity.toModel()
+        //3. se mete a la cache y su farol se enciende
+        //si la cache estaba llena, el LruCache saca el que hace mas tiempo no se usa y ese farol se apaga
+        val wish = entity.toModel()
+        memoryCache.put(wish)
+        return wish
     }
 
     private suspend fun saveWishInRoom(text: String): Result<WishModel> {
@@ -125,6 +265,7 @@ class WishRepositoryImpl(
             if (userId == null) {
                 return Result.failure(IllegalStateException("No user is logged in"))
             }
+            makeSureCacheIsForUser(userId)
 
             val now = System.currentTimeMillis()
             val newWish = WishEntity(
@@ -141,9 +282,10 @@ class WishRepositoryImpl(
             //el sync lo sube despues por debajo (SyncWorker con WorkManager), aunque se cierre la app
             onWishChanged()
 
-            //un deseo recien guardado llega al cielo encendido
-            lightLantern(newWish.id)
-            return Result.success(newWish.toModel())
+            //un deseo recien guardado entra a la cache, asi llega al cielo encendido
+            val savedWish = newWish.toModel()
+            memoryCache.put(savedWish)
+            return Result.success(savedWish)
         } catch (e: Exception) {
             logError("saveWish", e)
             return Result.failure(e)
@@ -166,6 +308,12 @@ class WishRepositoryImpl(
             )
             if (changedRows == 0) {
                 return Result.failure(IllegalStateException("The wish does not exist"))
+            }
+
+            //si el deseo estaba en la cache, se cambia por el texto nuevo
+            val editedEntity = wishDao.getWish(wishId, userId)
+            if (editedEntity != null) {
+                memoryCache.replaceIfPresent(editedEntity.toModel())
             }
 
             onWishChanged()
@@ -193,8 +341,8 @@ class WishRepositoryImpl(
             )
             onWishChanged()
 
-            //un deseo borrado tampoco puede quedar encendido
-            turnOffLantern(wishId)
+            //un deseo borrado sale de la cache: su farol ya no puede quedar encendido
+            memoryCache.remove(wishId)
             return Result.success(Unit)
         } catch (e: Exception) {
             logError("deleteWish", e)
@@ -215,27 +363,18 @@ class WishRepositoryImpl(
         return wishes
     }
 
-    //enciende un farol: pasa a ser el mas reciente y, si ya hay demasiados encendidos, se apaga el mas viejo
-    //update hace el cambio de una sola vez, asi dos hilos al mismo tiempo no se pisan
-    private fun lightLantern(wishId: String) {
-        litWishIds.update { currentIds ->
-            val newIds = currentIds.toMutableList()
-            newIds.remove(wishId)
-            newIds.add(wishId)
-            if (newIds.size > WishModel.MAX_LIT_LANTERNS) {
-                newIds.removeAt(0)
-            }
-            newIds
+    //la cache solo puede tener deseos de un usuario
+    //si cambio el usuario (cerro sesion y entro otro), se vacia para no mostrar deseos ajenos
+    private fun makeSureCacheIsForUser(userId: String) {
+        if (cacheUserId != userId) {
+            memoryCache.clear()
+            cacheUserId = userId
         }
     }
 
-    //apaga un farol
-    private fun turnOffLantern(wishId: String) {
-        litWishIds.update { currentIds ->
-            val newIds = currentIds.toMutableList()
-            newIds.remove(wishId)
-            newIds
-        }
+    companion object {
+        //cuanto se espera a firestore al recuperar los deseos
+        private const val RESTORE_TIMEOUT_MS = 20_000L
     }
 
     //guarda el error en crashlytics para poder revisarlo despues
