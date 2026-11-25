@@ -70,6 +70,15 @@ service firebase.storage {
       allow delete: if isAuthenticated() && request.auth.uid in [resource.metadata.from, resource.metadata.to];
     }
 
+    // Fortune cookie cards in Kotlin: one png per saved phrase
+    match /users/{userId}/fortune_cards/{fileName} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId)
+                    && request.resource.size < 5 * 1024 * 1024
+                    && request.resource.contentType.matches('image/.*');
+      allow delete: if isOwner(userId);
+    }
+
     // Deny all other access
     match /{allPaths=**} {
       allow read, write: if false;

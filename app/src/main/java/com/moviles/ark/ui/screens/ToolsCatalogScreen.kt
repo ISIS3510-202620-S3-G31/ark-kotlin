@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Cookie
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Whatshot
 import androidx.compose.material3.Card
@@ -374,7 +375,9 @@ private fun getCatalogToolIcon(toolId: String): ImageVector {
         "scream_tank" -> Icons.Default.Mic
         "body_mapping" -> Icons.Default.AccessibilityNew
         "emotion_detective" -> Icons.Default.Psychology
+        "wish_lantern" -> Icons.Default.Lightbulb
         "cookie_jar" -> Icons.Default.Cookie
+        "fortune_cookie" -> Icons.Default.AutoAwesome
         else -> Icons.Default.AutoAwesome
     }
 }
