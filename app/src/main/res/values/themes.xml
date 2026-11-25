@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.Ark" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.Ark" parent="android:Theme.Material.Light.NoActionBar">
+        <!-- fondo de la ventana mientras carga la app, sin blanco -->
+        <item name="android:windowBackground">@color/ark_background</item>
+    </style>
 </resources>

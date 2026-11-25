@@ -74,7 +74,7 @@
   {
     "id": "fortune_cookie",
     "name": "Fortune cookie",
-    "description": "Crack daily cookies for wisdom, advice, and lucky numbers.",
+    "description": "Open a fortune cookie and take a moment with its message.",
     "category": "emotional_awareness",
     "format": "touch",
     "iconName": "ic_tool_fortune_cookie"

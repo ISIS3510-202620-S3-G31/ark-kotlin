@@ -1,19 +1,29 @@
 package com.moviles.ark.ui.viewmodels
 
-import com.moviles.ark.data.local.entities.SavedFortuneCardEntity
+import android.net.Uri
+import com.moviles.ark.domain.models.FortuneCardModel
 import com.moviles.ark.domain.models.FortuneModel
+import com.moviles.ark.domain.models.TableFortune
 
-//estado inmutable de la interfaz de usuario para la galleta de la fortuna
+//galletas que se pueden abrir por dia, igual que en FortunePreferencesManager
+const val DAILY_FORTUNE_CHANCES = 5
+
+//momentos de la sesion, elegir una galleta, verla abrirse y leer el papelito
+enum class FortunePhase { CHOOSING, OPENING, REVEALED }
+
+//estado de la pantalla de la galleta y de la coleccion
 data class FortuneUiState(
-    val remainingChances: Int = 5,
-    val activeFortune: FortuneModel? = null,
-    val isCracking: Boolean = false,
-    val crackingCookieIndex: Int = -1,
-    val openedCookies: Set<Int> = emptySet(),
-    val sourceBadge: String? = null,
+    val phase: FortunePhase = FortunePhase.CHOOSING,
+    val table: List<TableFortune> = emptyList(),
+    val chosenIndex: Int = -1,
+    val opened: TableFortune? = null,
+    //-1 mientras se lee de sharedpreferences
+    val remainingChances: Int = -1,
+    val previewFortune: FortuneModel? = null,
     val recentFortunes: List<FortuneModel> = emptyList(),
     val favoriteFortunes: List<FortuneModel> = emptyList(),
-    val savedCards: List<SavedFortuneCardEntity> = emptyList(),
-    val snackbarMessage: String? = null,
-    val isExporting: Boolean = false
+    val savedCards: List<FortuneCardModel> = emptyList(),
+    val isSharing: Boolean = false,
+    val shareUri: Uri? = null,
+    val snackbarMessage: String? = null
 )

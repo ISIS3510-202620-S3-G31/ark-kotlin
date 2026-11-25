@@ -1,52 +1,43 @@
 package com.moviles.ark.ui.screens
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CloudDone
-import androidx.compose.material.icons.filled.CloudOff
-import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
-import androidx.compose.material3.TabRowDefaults
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -55,325 +46,170 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontStyle
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
-import coil.request.ImageRequest
-import com.moviles.ark.data.local.entities.SavedFortuneCardEntity
+import com.moviles.ark.domain.models.FortuneCardModel
 import com.moviles.ark.domain.models.FortuneModel
+import com.moviles.ark.ui.components.FortuneBackdrop
+import com.moviles.ark.ui.components.FortuneHeader
+import com.moviles.ark.ui.components.FortunePaperColor
+import com.moviles.ark.ui.components.FortuneSnackbarHost
+import com.moviles.ark.ui.components.liquidGlass
 import com.moviles.ark.ui.theme.AccentColor
 import com.moviles.ark.ui.theme.BackgroundColor
-import com.moviles.ark.ui.theme.BackgroundLightColor
 import com.moviles.ark.ui.theme.PrimaryColor
 import com.moviles.ark.ui.theme.SecondaryColor
 import com.moviles.ark.ui.theme.TextColor
 import com.moviles.ark.ui.viewmodels.FortuneCookieViewModel
 import com.moviles.ark.ui.viewmodels.FortuneUiState
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
-//ruta composable que conecta la pantalla de favoritos con el viewmodel
+//conecta la coleccion con el viewmodel
 @Composable
-fun FavoriteFortunesRoute(
-    onBack: () -> Unit,
-    viewModel: FortuneCookieViewModel = viewModel(factory = FortuneCookieViewModel.Factory)
-) {
+fun FavoriteFortunesRoute(onBack: () -> Unit, viewModel: FortuneCookieViewModel = viewModel(factory = FortuneCookieViewModel.Factory)) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-
-    FavoriteFortunesScreen(
-        uiState = uiState,
-        onBack = onBack,
-        onDeleteFavorite = { fortune -> viewModel.toggleFavorite(fortune) }
-    )
+    val context = LocalContext.current
+    //cuando la imagen esta lista se abre el menu de compartir
+    LaunchedEffect(uiState.shareUri) {
+        val uri = uiState.shareUri
+        if (uri != null) {
+            openShareSheet(context, uri)
+            viewModel.onShareHandled()
+        }
+    }
+    FavoriteFortunesScreen(uiState = uiState, onBack = onBack, onRemoveFavorite = { viewModel.toggleFavorite(it) }, onShareCard = { viewModel.shareCard(it) }, onClearSnackbar = { viewModel.clearSnackbar() })
 }
 
-//pantalla de frases favoritas y galeria de tarjetas guardadas en la nube
-@OptIn(ExperimentalMaterial3Api::class)
+//coleccion, frases guardadas con el corazon e imagenes compartidas
 @Composable
-fun FavoriteFortunesScreen(
-    uiState: FortuneUiState,
-    onBack: () -> Unit,
-    onDeleteFavorite: (FortuneModel) -> Unit,
-    modifier: Modifier = Modifier
-) {
+fun FavoriteFortunesScreen(uiState: FortuneUiState, onBack: () -> Unit, onRemoveFavorite: (FortuneModel) -> Unit, onShareCard: (FortuneCardModel) -> Unit, onClearSnackbar: () -> Unit) {
     var selectedTab by remember { mutableIntStateOf(0) }
-    var itemToDelete by remember { mutableStateOf<FortuneModel?>(null) }
-
-    //dialogo de confirmacion para eliminar de favoritos
-    val toDelete = itemToDelete
-    if (toDelete != null) {
-        AlertDialog(
-            onDismissRequest = { itemToDelete = null },
-            title = { Text("Remove Favorite", fontWeight = FontWeight.Bold) },
-            text = { Text("Are you sure you want to remove this fortune from your favorites?") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        onDeleteFavorite(toDelete)
-                        itemToDelete = null
-                    }
-                ) {
-                    Text("Remove", color = AccentColor, fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { itemToDelete = null }) {
-                    Text("Cancel")
-                }
-            }
-        )
+    var toRemove by remember { mutableStateOf<FortuneModel?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(uiState.snackbarMessage) {
+        val message = uiState.snackbarMessage
+        if (message != null) {
+            snackbarHostState.showSnackbar(message)
+            onClearSnackbar()
+        }
     }
 
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
-        containerColor = BackgroundColor,
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = "Saved Fortunes",
-                        fontWeight = FontWeight.Bold,
-                        color = TextColor,
-                        fontSize = 20.sp
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = TextColor
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = BackgroundColor)
-            )
-        }
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-        ) {
-            //pestanas para alternar entre frases favoritas y tarjetas visuales
-            TabRow(
-                selectedTabIndex = selectedTab,
-                containerColor = BackgroundColor,
-                contentColor = PrimaryColor,
-                indicator = { tabPositions ->
-                    TabRowDefaults.SecondaryIndicator(
-                        Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                        color = PrimaryColor
-                    )
-                }
-            ) {
-                Tab(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    text = {
-                        Text(
-                            text = "Favorites (${uiState.favoriteFortunes.size})",
-                            fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Normal
-                        )
-                    }
-                )
-                Tab(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    text = {
-                        Text(
-                            text = "Cards Gallery (${uiState.savedCards.size})",
-                            fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Normal
-                        )
-                    }
-                )
-            }
+    //confirmacion antes de quitar una frase
+    val removing = toRemove
+    if (removing != null) {
+        val title = @Composable { Text(text = "Remove this phrase?", style = MaterialTheme.typography.headlineSmall) }
+        val body = @Composable { Text(text = "It will leave My collection on this phone and in your account.") }
+        val confirm = @Composable { TextButton(onClick = { onRemoveFavorite(removing); toRemove = null }) { Text(text = "Remove", color = AccentColor) } }
+        val dismiss = @Composable { TextButton(onClick = { toRemove = null }) { Text(text = "Keep it", color = TextColor) } }
+        AlertDialog(onDismissRequest = { toRemove = null }, confirmButton = confirm, dismissButton = dismiss, title = title, text = body, containerColor = BackgroundColor, titleContentColor = TextColor, textContentColor = TextColor)
+    }
 
-            if (selectedTab == 0) {
-                //listado lazycolumn de frases favoritas guardadas en room
-                if (uiState.favoriteFortunes.isEmpty()) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.padding(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Favorite,
-                                contentDescription = null,
-                                tint = PrimaryColor.copy(alpha = 0.4f),
-                                modifier = Modifier.size(54.dp)
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = "No favorites saved yet.\nTap the heart icon on any opened fortune to keep it here.",
-                                color = TextColor.copy(alpha = 0.6f),
-                                textAlign = TextAlign.Center,
-                                fontSize = 14.sp
-                            )
-                        }
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        items(uiState.favoriteFortunes, key = { it.id }) { item ->
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(18.dp),
-                                colors = CardDefaults.cardColors(containerColor = Color.White),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                                border = BorderStroke(1.dp, PrimaryColor.copy(alpha = 0.2f))
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(16.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Surface(
-                                                shape = RoundedCornerShape(6.dp),
-                                                color = BackgroundLightColor
-                                            ) {
-                                                Text(
-                                                    text = item.category.uppercase(),
-                                                    color = PrimaryColor,
-                                                    fontSize = 10.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                                )
-                                            }
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Text(
-                                                text = "Lucky #${item.luckyNumber}",
-                                                color = SecondaryColor,
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.SemiBold
-                                            )
-                                        }
-
-                                        Spacer(modifier = Modifier.height(8.dp))
-
-                                        Text(
-                                            text = "\"${item.quote}\"",
-                                            color = TextColor,
-                                            fontSize = 15.sp,
-                                            fontStyle = FontStyle.Italic,
-                                            lineHeight = 20.sp
-                                        )
-                                    }
-
-                                    IconButton(onClick = { itemToDelete = item }) {
-                                        Icon(
-                                            imageVector = Icons.Default.DeleteOutline,
-                                            contentDescription = "Delete favorite",
-                                            tint = AccentColor
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            } else {
-                //galeria de tarjetas de la fortuna cargadas con coil
-                if (uiState.savedCards.isEmpty()) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.padding(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Image,
-                                contentDescription = null,
-                                tint = SecondaryColor.copy(alpha = 0.4f),
-                                modifier = Modifier.size(54.dp)
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = "No saved cards yet.\nExport a fortune card using Save & Share to view it in your cloud gallery.",
-                                color = TextColor.copy(alpha = 0.6f),
-                                textAlign = TextAlign.Center,
-                                fontSize = 14.sp
-                            )
-                        }
-                    }
-                } else {
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(2),
-                        contentPadding = PaddingValues(16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        items(uiState.savedCards, key = { it.id }) { card ->
-                            Card(
-                                shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(containerColor = Color.White),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column {
-                                    val imageModel = card.localImageUri.ifEmpty { card.remoteImageUrl }
-                                    AsyncImage(
-                                        model = ImageRequest.Builder(LocalContext.current)
-                                            .data(imageModel)
-                                            .crossfade(true)
-                                            .build(),
-                                        contentDescription = "Saved Card",
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .aspectRatio(1f)
-                                            .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-                                    )
-
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(8.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = card.category,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = PrimaryColor,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.weight(1f)
-                                        )
-
-                                        Icon(
-                                            imageVector = if (card.isSynced) Icons.Default.CloudDone else Icons.Default.CloudOff,
-                                            contentDescription = if (card.isSynced) "Synced with cloud" else "Local only",
-                                            tint = if (card.isSynced) SecondaryColor else Color.Gray,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+    Scaffold(containerColor = Color.Transparent, contentWindowInsets = WindowInsets(0), snackbarHost = { FortuneSnackbarHost(snackbarHostState) }) { padding ->
+        FortuneBackdrop(modifier = Modifier.padding(padding)) {
+            Column(modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+                FortuneHeader(title = "My collection", onBack = onBack)
+                CollectionTabs(selected = selectedTab, phrases = uiState.favoriteFortunes.size, images = uiState.savedCards.size, onSelect = { selectedTab = it })
+                val hint = if (selectedTab == 0) "Phrases you kept with the heart" else "Images you shared, also in your phone gallery"
+                Text(text = hint, style = MaterialTheme.typography.bodySmall, color = TextColor.copy(alpha = 0.75f), modifier = Modifier.padding(horizontal = 24.dp, vertical = 10.dp))
+                if (selectedTab == 0) PhrasesList(uiState.favoriteFortunes, onRemove = { toRemove = it }) else ImagesGrid(uiState.savedCards, onShareCard)
             }
         }
     }
 }
+
+//selector de vidrio entre frases e imagenes
+@Composable
+private fun CollectionTabs(selected: Int, phrases: Int, images: Int, onSelect: (Int) -> Unit) {
+    Row(modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp).fillMaxWidth().liquidGlass(RoundedCornerShape(26.dp)).padding(4.dp)) {
+        listOf("Kept ($phrases)", "Shared ($images)").forEachIndexed { index, label ->
+            val color = if (selected == index) PrimaryColor else Color.Transparent
+            Box(modifier = Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(22.dp)).background(color).clickable(role = Role.Tab, onClick = { onSelect(index) }), contentAlignment = Alignment.Center) {
+                Text(text = label, style = MaterialTheme.typography.labelLarge, color = TextColor)
+            }
+        }
+    }
+}
+
+//lista de frases guardadas
+@Composable
+private fun PhrasesList(favorites: List<FortuneModel>, onRemove: (FortuneModel) -> Unit) {
+    if (favorites.isEmpty()) {
+        EmptyCollection("Nothing kept yet. Open a cookie and tap Keep to have it here.")
+        return
+    }
+    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        items(favorites, key = { it.id }) { item -> SavedPhrase(item = item, onRemove = { onRemove(item) }) }
+    }
+}
+
+//frase guardada como el papelito de la galleta, con la fecha y el corazon para quitarla
+@Composable
+private fun SavedPhrase(item: FortuneModel, onRemove: () -> Unit) {
+    val shape = RoundedCornerShape(4.dp)
+    val lines = Modifier.drawBehind {
+        val inset = 10.dp.toPx()
+        drawLine(PrimaryColor.copy(alpha = 0.35f), Offset(inset, inset), Offset(size.width - inset, inset), 1.dp.toPx())
+        drawLine(PrimaryColor.copy(alpha = 0.35f), Offset(inset, size.height - inset), Offset(size.width - inset, size.height - inset), 1.dp.toPx())
+    }
+    Column(modifier = Modifier.fillMaxWidth().shadow(6.dp, shape, ambientColor = TextColor, spotColor = TextColor).background(FortunePaperColor, shape).then(lines).padding(start = 22.dp, end = 8.dp, top = 22.dp, bottom = 10.dp)) {
+        Text(text = item.quote, style = MaterialTheme.typography.headlineSmall.copy(fontSize = 17.sp, lineHeight = 24.sp), color = TextColor, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(end = 14.dp))
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(text = "Kept ${formatDay(item.savedAt)}", style = MaterialTheme.typography.bodySmall, color = TextColor.copy(alpha = 0.6f), modifier = Modifier.weight(1f))
+            IconButton(onClick = onRemove) {
+                Icon(imageVector = Icons.Default.Favorite, contentDescription = "Remove from My collection", tint = AccentColor, modifier = Modifier.size(20.dp))
+            }
+        }
+    }
+}
+
+//cuadricula de imagenes, al tocar una se vuelve a compartir
+@Composable
+private fun ImagesGrid(cards: List<FortuneCardModel>, onShareCard: (FortuneCardModel) -> Unit) {
+    if (cards.isEmpty()) {
+        EmptyCollection("No images yet. Open a cookie and tap Share to keep its image here.")
+        return
+    }
+    LazyVerticalGrid(columns = GridCells.Fixed(2), modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 32.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        items(cards, key = { it.id }) { card -> SavedImage(card = card, onShare = { onShareCard(card) }) }
+    }
+}
+
+//imagen en un marco de vidrio, con la fecha y si ya esta respaldada en la cuenta
+@Composable
+private fun SavedImage(card: FortuneCardModel, onShare: () -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth().liquidGlass(RoundedCornerShape(18.dp)).clickable(role = Role.Button, onClickLabel = "Share again", onClick = onShare).padding(6.dp)) {
+        AsyncImage(model = card.imageUri, contentDescription = card.quote, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(13.dp)).background(FortunePaperColor))
+        Row(modifier = Modifier.padding(start = 6.dp, end = 6.dp, top = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(text = formatDay(card.savedAt), style = MaterialTheme.typography.bodySmall, color = TextColor, modifier = Modifier.weight(1f))
+            val cloudIcon = if (card.isBackedUp) Icons.Default.CloudDone else Icons.Default.CloudUpload
+            val cloudText = if (card.isBackedUp) "Backed up to your account" else "Will back up when you're online"
+            Icon(imageVector = cloudIcon, contentDescription = cloudText, tint = if (card.isBackedUp) SecondaryColor else TextColor.copy(alpha = 0.5f), modifier = Modifier.size(16.dp))
+            Spacer(modifier = Modifier.size(8.dp))
+            Icon(imageVector = Icons.Default.Share, contentDescription = null, tint = TextColor.copy(alpha = 0.7f), modifier = Modifier.size(16.dp))
+        }
+    }
+}
+
+//mensaje cuando no hay nada guardado, dice que hacer para llenarlo
+@Composable
+private fun EmptyCollection(message: String) {
+    Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 40.dp, vertical = 64.dp), contentAlignment = Alignment.Center) {
+        Text(text = message, style = MaterialTheme.typography.bodyLarge, color = TextColor.copy(alpha = 0.8f), textAlign = TextAlign.Center)
+    }
+}
+
+//fecha corta en ingles, por ejemplo nov 24
+private fun formatDay(millis: Long): String = SimpleDateFormat("MMM d", Locale.ENGLISH).format(Date(millis))
