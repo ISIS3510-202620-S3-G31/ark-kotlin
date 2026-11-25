@@ -127,8 +127,8 @@ Quedan en el dataset `ark_dashboards`:
 | `test_accounts` (tabla) | cuentas de prueba creadas a mano en la app; se marcan con `is_test_account`, no se borran |
 | `bq4_tool_formats` | BQ4, sesiones completadas por formato, tipo de dispositivo y cuenta de prueba |
 | `bq_age_distribution` | edad de los usuarios activos en 30 días, por grupo de MinSalud y cuenta de prueba |
-| `completed_tool_sessions` | una fila por sesión completada de una herramienta (la foto del día, una por día), con su celular, punto de entrada, semana de lunes a domingo e `in_last_4_weeks` |
-| `bq13_weekly_tool_completions` | BQ13, sesiones completadas por herramienta en cada una de las últimas 4 semanas completas (con 0 en las semanas sin sesiones) |
+| `completed_tool_sessions` | una fila por sesión completada de una herramienta (la foto del día, una por día), con su celular, punto de entrada, semana de lunes a domingo e `in_last_4_weeks` (true si cae en los últimos 28 días; conserva el nombre porque Data Studio ya está conectado a él) |
+| `bq13_weekly_tool_completions` | BQ13, sesiones completadas por herramienta en cada uno de los 4 bloques de 7 días de los últimos 28 días (con 0 en las semanas sin sesiones) |
 | `bq14_tool_duration_brackets` | BQ14, sesiones completadas por herramienta en 3 rangos de duración (menos de 1 min, 1 a 3 min, más de 3 min) |
 | `bq15_entry_points` | BQ15, sesiones completadas por punto de entrada (3 tarjetas del Home, catálogo o no registrado) y herramienta |
 | `bq_answers` | una fila con la respuesta de cada BQ (`bq1_answer` … `bq15_answer`); las de BQ1 a BQ9 empiezan con la fecha del último dato |
@@ -243,8 +243,16 @@ Activo = al menos un check-in o una herramienta en los últimos 30 días.
 
 Fuente `bq13_weekly_tool_completions`. Pregunta: ¿cuántas veces por semana completan los usuarios
 cada herramienta, en las últimas 4 semanas? Unidad: una sesión completada (la foto del día cuenta
-una vez por usuario y día). Semanas de lunes a domingo en hora de Bogotá; la semana en curso no
-cuenta porque está a medias.
+una vez por usuario y día).
+
+**Periodo** (el mismo de BQ13 y BQ14): una ventana móvil de 28 días que termina hoy, en hora
+de Bogotá: del día hoy − 27 hasta hoy, con hoy incluido. BQ13 la parte en 4 bloques de 7 días
+contados desde el primer día: W1 = días 1 a 7, W2 = 8 a 14, W3 = 15 a 21 y W4 = los últimos 7 días
+(con hoy), por ejemplo "W4 Nov 19 - Nov 25". No son semanas de lunes a domingo: con semanas de
+calendario la semana en curso no contaba y el dashboard se quedaba quieto hasta el lunes. Así, cada
+sesión nueva aparece en uno o dos minutos (lo que tarda en llegar a BigQuery más la frescura de 1
+minuto de la fuente). La columna `in_last_4_weeks` conserva su nombre (Data Studio ya está
+conectado a ella), pero ahora quiere decir "en los últimos 28 días".
 
 1. Controles *Drop-down list* `device_type` (por defecto `Real phone`) e `is_test_account` (por
    defecto `false`).
