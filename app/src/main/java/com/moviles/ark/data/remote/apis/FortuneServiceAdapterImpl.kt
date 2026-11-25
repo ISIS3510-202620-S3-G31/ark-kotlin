@@ -6,7 +6,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
+import com.moviles.ark.data.remote.dtos.AdviceSlipDto
+import com.moviles.ark.data.remote.dtos.DumbFortuneDto
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -26,10 +27,8 @@ class FortuneServiceAdapterImpl : FortuneServiceAdapter {
             if (connection.responseCode == HttpURLConnection.HTTP_OK) {
                 val text = connection.inputStream.bufferedReader().use { it.readText() }
                 connection.disconnect()
-                val json = JSONObject(text)
-                val quote = json.getString("fortune").trim()
-                val id = FortuneModel.generateId(quote)
-                Result.success(FortuneModel(id = id, quote = quote, category = "Wisdom"))
+                //el json se lee en un dto y el dto se convierte en modelo
+                Result.success(DumbFortuneDto.fromJson(text).toModel())
             } else {
                 connection.disconnect()
                 Result.failure(Exception("error dumbapis codigo ${connection.responseCode}"))
@@ -52,11 +51,8 @@ class FortuneServiceAdapterImpl : FortuneServiceAdapter {
             if (connection.responseCode == HttpURLConnection.HTTP_OK) {
                 val text = connection.inputStream.bufferedReader().use { it.readText() }
                 connection.disconnect()
-                val json = JSONObject(text)
-                val slip = json.getJSONObject("slip")
-                val quote = slip.getString("advice").trim()
-                val id = FortuneModel.generateId(quote)
-                Result.success(FortuneModel(id = id, quote = quote, category = "Advice"))
+                //el json se lee en un dto y el dto se convierte en modelo
+                Result.success(AdviceSlipDto.fromJson(text).toModel())
             } else {
                 connection.disconnect()
                 Result.failure(Exception("error adviceslip codigo ${connection.responseCode}"))
@@ -65,9 +61,6 @@ class FortuneServiceAdapterImpl : FortuneServiceAdapter {
             Result.failure(e)
         }
     }
-
-    //obtiene una frase remota generica para compatibilidad
-    override suspend fun fetchFortune(): Result<FortuneModel> = fetchAdviceSlip()
 
     //trae 2 frases de dumbapis y 2 frases de adviceslip en paralelo
     override suspend fun fetchTwoAndTwo(): List<FortuneModel> = withContext(Dispatchers.IO) {

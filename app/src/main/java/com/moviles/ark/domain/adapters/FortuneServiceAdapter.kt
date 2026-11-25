@@ -2,17 +2,14 @@ package com.moviles.ark.domain.adapters
 
 import com.moviles.ark.domain.models.FortuneModel
 
-//interfaz del adaptador de servicio para obtener frases de sabiduria remotas
+//adaptador de las dos apis de frases
 interface FortuneServiceAdapter {
-    //obtiene una frase tradicional de galleta desde dumbapis
+    //una frase de galleta de dumbapis
     suspend fun fetchDumbFortune(): Result<FortuneModel>
 
-    //obtiene un consejo de vida desde adviceslip
+    //un consejo de adviceslip
     suspend fun fetchAdviceSlip(): Result<FortuneModel>
 
-    //obtiene una frase remota generica para compatibilidad
-    suspend fun fetchFortune(): Result<FortuneModel> = fetchAdviceSlip()
-
-    //trae 2 frases de dumbapis y 2 de adviceslip en paralelo
+    //2 frases de cada api al mismo tiempo
     suspend fun fetchTwoAndTwo(): List<FortuneModel>
 }

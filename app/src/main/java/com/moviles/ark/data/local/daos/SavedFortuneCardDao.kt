@@ -7,26 +7,26 @@ import androidx.room.Query
 import com.moviles.ark.data.local.entities.SavedFortuneCardEntity
 import kotlinx.coroutines.flow.Flow
 
-//dao de room para registrar y consultar las tarjetas de la fortuna guardadas en galeria y nube
+//consultas de las imagenes guardadas
 @Dao
 interface SavedFortuneCardDao {
-    //observa todas las tarjetas guardadas de un usuario ordenadas por fecha
+    //imagenes del usuario de la mas nueva a la mas vieja
     @Query("SELECT * FROM saved_fortune_cards WHERE userId = :userId ORDER BY savedAt DESC")
-    fun observeSavedCards(userId: String): Flow<List<SavedFortuneCardEntity>>
+    fun observeCards(userId: String): Flow<List<SavedFortuneCardEntity>>
 
-    //inserta una tarjeta guardada
+    //la imagen de una frase, para no crearla dos veces
+    @Query("SELECT * FROM saved_fortune_cards WHERE userId = :userId AND cookieId = :cookieId LIMIT 1")
+    suspend fun getCard(userId: String, cookieId: Int): SavedFortuneCardEntity?
+
+    //guarda o reemplaza una imagen
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCard(card: SavedFortuneCardEntity): Long
 
-    //actualiza la url remota y el estado de sincronizacion
+    //guarda la url de la nube y la marca como subida
     @Query("UPDATE saved_fortune_cards SET remoteImageUrl = :remoteUrl, isSynced = 1 WHERE id = :id")
-    suspend fun markCardSynced(id: Long, remoteUrl: String)
+    suspend fun markSynced(id: Long, remoteUrl: String)
 
-    //obtiene las tarjetas pendientes por sincronizar
-    @Query("SELECT * FROM saved_fortune_cards WHERE isSynced = 0 AND userId = :userId")
-    suspend fun getUnsyncedCards(userId: String): List<SavedFortuneCardEntity>
-
-    //elimina una tarjeta por id
-    @Query("DELETE FROM saved_fortune_cards WHERE id = :id")
-    suspend fun deleteCardById(id: Long)
+    //las que faltan por subir
+    @Query("SELECT * FROM saved_fortune_cards WHERE userId = :userId AND isSynced = 0")
+    suspend fun getUnsynced(userId: String): List<SavedFortuneCardEntity>
 }
