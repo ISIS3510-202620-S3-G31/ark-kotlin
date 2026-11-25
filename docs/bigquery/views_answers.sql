@@ -24,14 +24,15 @@ CREATE OR REPLACE FUNCTION `ark-mobiles.ark_dashboards.tool_name`(tool_id STRING
 
 CREATE OR REPLACE VIEW `ark-mobiles.ark_dashboards.bq_answers` AS
 WITH
--- BQ13: sesiones completadas por semana de cada herramienta (ultimas 4 semanas completas).
+-- BQ13: sesiones completadas por semana de cada herramienta (ultimos 28 dias, en 4 bloques de 7).
 -- la respuesta nombra su vista una sola vez (BigQuery recalcula una vista cada vez que se nombra,
 -- y esta sale de completed_tool_sessions): todo se calcula en un solo SELECT sobre la vista.
 -- las partes del texto, cada una en su columna. una fila por herramienta: la de la primera
 -- semana ya trae el total y las 4 semanas
 bq13_parts AS (
   SELECT
-    MIN(week_start) AS first_monday,
+    -- el primer dia del periodo: la W1 empieza ahi
+    MIN(week_start) AS first_day,
     STRING_AGG(FORMAT('%s %s (%d in total, completed in %d of 4 weeks)',
       tool, weekly_completions, completions_4_weeks, active_weeks),
       '; ' ORDER BY completions_4_weeks DESC, tool) AS per_tool,
@@ -45,7 +46,7 @@ bq13_parts AS (
 bq13 AS (
   SELECT CONCAT(
     FORMAT('Completed sessions per week, %s to %s (W1 / W2 / W3 / W4): ',
-      FORMAT_DATE('%b %d', first_monday), FORMAT_DATE('%b %d', DATE_ADD(first_monday, INTERVAL 27 DAY))),
+      FORMAT_DATE('%b %d', first_day), FORMAT_DATE('%b %d', DATE_ADD(first_day, INTERVAL 27 DAY))),
     per_tool,
     '. ',
     IF(habitual_tools IS NULL,
@@ -56,7 +57,7 @@ bq13 AS (
       CONCAT(' Sporadic (a single week): ', sporadic_tools, '.'))) AS answer
   FROM bq13_parts
 ),
--- BQ14: cuanto se demoran completando cada herramienta, en 3 rangos (ultimas 4 semanas completas).
+-- BQ14: cuanto se demoran completando cada herramienta, en 3 rangos (ultimos 28 dias).
 -- lee la vista una sola vez; las ROW_NUMBER marcan el rango mas comun de cada herramienta y la
 -- herramienta con mas porcentaje en cada rango, para no tener que volver a leer la vista
 bq14_rows AS (
@@ -99,7 +100,7 @@ bq14_parts AS (
 -- arma el texto con las partes
 bq14 AS (
   SELECT CONCAT(
-    FORMAT('Of %d completed sessions in the last 4 complete weeks: ', total),
+    FORMAT('Of %d completed sessions in the last 28 days: ', total),
     'under 1 min ', CAST(CAST(ROUND(100 * SAFE_DIVIDE(under_1_min, total)) AS INT64) AS STRING), '%, ',
     '1 to 3 min ', CAST(CAST(ROUND(100 * SAFE_DIVIDE(from_1_to_3_min, total)) AS INT64) AS STRING), '%, ',
     'over 3 min ', CAST(CAST(ROUND(100 * SAFE_DIVIDE(over_3_min, total)) AS INT64) AS STRING), '%',

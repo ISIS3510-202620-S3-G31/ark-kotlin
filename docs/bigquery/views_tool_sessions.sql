@@ -4,8 +4,9 @@
 -- test_accounts y la tabla tool_load_latency_raw_latest de la extension). Despues correr
 -- views_answers.sql, que escribe las respuestas en vivo.
 --
--- Periodo de estas preguntas: las ultimas 4 semanas completas, de lunes a domingo en hora de
--- Bogota (la semana en curso no cuenta porque esta a medias). Unidad: una sesion completada
+-- Periodo de estas preguntas: los ultimos 28 dias, contando hoy, en hora de Bogota (desde hoy - 27
+-- hasta hoy). Es una ventana que se mueve cada dia: asi el dashboard muestra cada sesion nueva en uno
+-- o dos minutos, en vez de quedarse quieto hasta que cierre la semana. Unidad: una sesion completada
 -- (complete = true en tool_interactions). Sin datos sinteticos de los scripts seed.
 
 -- Una fila por sesion completada, con lo que la app no guarda en tool_interactions: el celular y el
@@ -85,11 +86,11 @@ device_per_user AS (
   WHERE user_id IS NOT NULL
   GROUP BY user_id
 ),
--- el periodo: las ultimas 4 semanas completas, de lunes a domingo en hora de Bogota
-last_4_weeks AS (
+-- el periodo: los ultimos 28 dias en hora de Bogota, del dia hoy - 27 hasta hoy (hoy cuenta)
+last_28_days AS (
   SELECT
-    DATE_SUB(DATE_TRUNC(CURRENT_DATE('America/Bogota'), ISOWEEK), INTERVAL 28 DAY) AS first_monday,
-    DATE_TRUNC(CURRENT_DATE('America/Bogota'), ISOWEEK) AS this_monday
+    DATE_SUB(CURRENT_DATE('America/Bogota'), INTERVAL 27 DAY) AS first_day,
+    CURRENT_DATE('America/Bogota') AS last_day
 )
 SELECT
   s.interaction_id,
@@ -98,22 +99,26 @@ SELECT
   `ark-mobiles.ark_dashboards.tool_name`(s.tool_id) AS tool,
   s.happened_at,
   DATE(s.happened_at, 'America/Bogota') AS day,
+  -- semana de calendario (lunes a domingo); BQ13 no la usa, arma sus bloques de 7 dias con day
   DATE_TRUNC(DATE(s.happened_at, 'America/Bogota'), ISOWEEK) AS week_start,
   s.duration_s,
   -- recommendation, surprise_me, weather o catalog; null si la app no registro la apertura
   NULLIF(o.entry_point, 'unknown') AS entry_point,
   COALESCE(o.device_type, u.device_type, 'Unknown') AS device_type,
   ta.user_id IS NOT NULL AS is_test_account,
-  -- true si cae en las ultimas 4 semanas completas (el periodo de estas preguntas)
-  DATE(s.happened_at, 'America/Bogota') >= w.first_monday
-    AND DATE(s.happened_at, 'America/Bogota') < w.this_monday AS in_last_4_weeks
+  -- true si cae en los ultimos 28 dias (el periodo de estas preguntas). se sigue llamando
+  -- in_last_4_weeks porque Data Studio ya esta conectado con ese nombre: 28 dias = 4 bloques de 7
+  DATE(s.happened_at, 'America/Bogota') BETWEEN w.first_day AND w.last_day AS in_last_4_weeks
 FROM completed_sessions AS s
-CROSS JOIN last_4_weeks AS w
+CROSS JOIN last_28_days AS w
 LEFT JOIN last_open AS o ON o.interaction_id = s.interaction_id
 LEFT JOIN device_per_user AS u ON u.user_id = s.user_id
 LEFT JOIN `ark-mobiles.ark_dashboards.test_accounts` AS ta ON ta.user_id = s.user_id;
 
--- BQ13: cuantas veces por semana se completa cada herramienta en las ultimas 4 semanas.
+-- BQ13: cuantas veces por semana se completa cada herramienta en los ultimos 28 dias.
+-- Las "semanas" son 4 bloques de 7 dias contados desde el primer dia del periodo: W1 = dias 1 a 7,
+-- W2 = dias 8 a 14, W3 = dias 15 a 21 y W4 = los ultimos 7 dias (con hoy). No son de lunes a
+-- domingo: asi la W4 ya trae las sesiones de hoy y no hay que esperar a que cierre la semana.
 -- Una fila por herramienta, semana, tipo de dispositivo y cuenta de prueba, con 0 en las semanas
 -- sin sesiones: asi la grafica distingue una herramienta habitual (todas las semanas) de una
 -- esporadica (un pico en una sola semana), cosa que un promedio esconde.
@@ -122,39 +127,51 @@ LEFT JOIN `ark-mobiles.ark_dashboards.test_accounts` AS ta ON ta.user_id = s.use
 -- La respuesta se lee con device_type = 'Real phone' y is_test_account = false.
 CREATE OR REPLACE VIEW `ark-mobiles.ark_dashboards.bq13_weekly_tool_completions` AS
 WITH
--- el lunes de la primera semana (W1); las otras 3 empiezan 7, 14 y 21 dias despues
+-- el primer dia del periodo (hoy - 27): ahi empieza la W1; las otras 3 empiezan 7, 14 y 21 dias despues
 period AS (
-  SELECT DATE_SUB(DATE_TRUNC(CURRENT_DATE('America/Bogota'), ISOWEEK), INTERVAL 28 DAY) AS first_monday
+  SELECT DATE_SUB(CURRENT_DATE('America/Bogota'), INTERVAL 27 DAY) AS first_day
 ),
--- unica lectura de las sesiones: cuenta las de cada herramienta en cada una de las 4 semanas.
--- no se filtra por periodo para que toda herramienta que se completo alguna vez aparezca, aunque
--- tenga 0 en las 4 semanas
-completions_per_tool AS (
+-- unica lectura de las sesiones: a cada una le pone el numero de su bloque de 7 dias (1 a 4).
+-- los dias desde el primer dia, divididos entre 7 (division entera), dan 0, 1, 2 o 3; +1 da la semana.
+-- las de fuera del periodo quedan con semana 0: no se botan para que toda herramienta que se
+-- completo alguna vez aparezca, aunque tenga 0 en las 4 semanas
+sessions_with_week AS (
   SELECT
     s.tool,
     s.device_type,
     s.is_test_account,
-    COUNTIF(s.week_start = p.first_monday) AS week_1,
-    COUNTIF(s.week_start = DATE_ADD(p.first_monday, INTERVAL 7 DAY)) AS week_2,
-    COUNTIF(s.week_start = DATE_ADD(p.first_monday, INTERVAL 14 DAY)) AS week_3,
-    COUNTIF(s.week_start = DATE_ADD(p.first_monday, INTERVAL 21 DAY)) AS week_4,
-    -- la ultima sesion de esta herramienta dentro del periodo
-    MAX(IF(s.in_last_4_weeks, s.happened_at, NULL)) AS last_session_of_tool
+    s.happened_at,
+    s.in_last_4_weeks,
+    IF(s.in_last_4_weeks, DIV(DATE_DIFF(s.day, p.first_day, DAY), 7) + 1, 0) AS week_number
   FROM `ark-mobiles.ark_dashboards.completed_tool_sessions` AS s
   CROSS JOIN period AS p
-  GROUP BY s.tool, s.device_type, s.is_test_account
+),
+-- cuenta las sesiones de cada herramienta en cada una de las 4 semanas
+completions_per_tool AS (
+  SELECT
+    tool,
+    device_type,
+    is_test_account,
+    COUNTIF(week_number = 1) AS week_1,
+    COUNTIF(week_number = 2) AS week_2,
+    COUNTIF(week_number = 3) AS week_3,
+    COUNTIF(week_number = 4) AS week_4,
+    -- la ultima sesion de esta herramienta dentro del periodo
+    MAX(IF(in_last_4_weeks, happened_at, NULL)) AS last_session_of_tool
+  FROM sessions_with_week
+  GROUP BY tool, device_type, is_test_account
 ),
 -- la lista fija de las 4 semanas, para pasar las columnas week_1 ... week_4 a filas
 the_4_weeks AS (
-  SELECT 1 AS week_number, first_monday AS week_start FROM period
-  UNION ALL SELECT 2, DATE_ADD(first_monday, INTERVAL 7 DAY) FROM period
-  UNION ALL SELECT 3, DATE_ADD(first_monday, INTERVAL 14 DAY) FROM period
-  UNION ALL SELECT 4, DATE_ADD(first_monday, INTERVAL 21 DAY) FROM period
+  SELECT 1 AS week_number, first_day AS week_start FROM period
+  UNION ALL SELECT 2, DATE_ADD(first_day, INTERVAL 7 DAY) FROM period
+  UNION ALL SELECT 3, DATE_ADD(first_day, INTERVAL 14 DAY) FROM period
+  UNION ALL SELECT 4, DATE_ADD(first_day, INTERVAL 21 DAY) FROM period
 )
 SELECT
   c.tool,
   w.week_number,
-  -- "W1 Oct 26 - Nov 01": el numero deja las semanas en orden en Data Studio
+  -- "W4 Nov 19 - Nov 25": el numero deja las semanas en orden en Data Studio
   FORMAT('W%d %s - %s', w.week_number, FORMAT_DATE('%b %d', w.week_start),
     FORMAT_DATE('%b %d', DATE_ADD(w.week_start, INTERVAL 6 DAY))) AS week,
   w.week_start,
@@ -180,7 +197,8 @@ SELECT
 FROM completions_per_tool AS c
 CROSS JOIN the_4_weeks AS w;
 
--- BQ14: cuanto se demoran los usuarios completando cada herramienta, en 3 rangos fijos:
+-- BQ14: cuanto se demoran los usuarios completando cada herramienta en los ultimos 28 dias
+-- (in_last_4_weeks), en 3 rangos fijos:
 -- menos de 1 minuto (1 a 59 s), de 1 a 3 minutos (60 a 180 s) y mas de 3 minutos (mas de 180 s).
 -- Una fila por herramienta, rango, tipo de dispositivo y cuenta de prueba, con 0 en los rangos sin
 -- sesiones (asi la barra al 100 % siempre tiene los 3 pedazos en el mismo orden).
