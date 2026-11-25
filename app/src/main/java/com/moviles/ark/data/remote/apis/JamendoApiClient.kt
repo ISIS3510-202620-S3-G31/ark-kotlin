@@ -54,7 +54,7 @@ class JamendoApiClient(
                 val id = trackJson.optString("id", "")
                 val name = trackJson.optString("name", "Ambient Track")
                 val duration = trackJson.optInt("duration", 0)
-                val artistName = trackJson.optString("artist_name", "Jamendo Artist")
+                val artistName = trackJson.optString("artist_name", "Unknown artist")
                 //audio es la cancion completa (no un preview de 30 s); se puede reproducir por streaming
                 val audioUrl = trackJson.optString("audio", "")
                 val albumImage = trackJson.optString("album_image", "")

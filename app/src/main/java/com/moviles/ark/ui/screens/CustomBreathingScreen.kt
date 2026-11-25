@@ -692,9 +692,9 @@ private fun AmbientMusicList(
     onTrackTapped: (AmbientTrackModel) -> Unit,
     onRetry: () -> Unit
 ) {
-    //si todas las de abajo ya estan descargadas es porque no hay internet y se muestran las del telefono
-    val allMoreTracksAreSaved = moreTracks.all { it.isAvailableOffline }
-    val moreTracksTitle = if (allMoreTracksAreSaved) "Saved on this phone" else "From Jamendo"
+    //sin internet se esconden las pistas que solo estan en jamendo; queda la que esta sonando para poder pausarla
+    val visibleMoreTracks = moreTracks.filter { uiState.canPlay(it) || isTrackSounding(it, uiState) }
+    val moreTracksTitle = if (uiState.isOnline) "More tracks" else "Saved on this phone"
 
     Column(
         modifier = Modifier
@@ -713,15 +713,24 @@ private fun AmbientMusicList(
             color = TextColor.copy(alpha = 0.7f),
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 12.dp)
         )
+        //aviso fijo en la hoja mientras no hay internet
+        if (!uiState.isOnline) {
+            Text(
+                text = OFFLINE_MUSIC_SHEET_MESSAGE,
+                style = SecondaryTextStyle,
+                color = TextColor,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)
+            )
+        }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(builtInTracks, key = { it.id }) { track ->
                 TrackRow(track = track, uiState = uiState, onClick = { onTrackTapped(track) })
             }
-            if (moreTracks.isNotEmpty()) {
+            if (visibleMoreTracks.isNotEmpty()) {
                 item(key = "more_tracks_label") {
                     SectionLabel(text = moreTracksTitle)
                 }
-                items(moreTracks, key = { it.id }) { track ->
+                items(visibleMoreTracks, key = { it.id }) { track ->
                     TrackRow(track = track, uiState = uiState, onClick = { onTrackTapped(track) })
                 }
             }
@@ -734,6 +743,12 @@ private fun AmbientMusicList(
             }
         }
     }
+}
+
+//la pista elegida que esta sonando o cargando
+private fun isTrackSounding(track: AmbientTrackModel, uiState: BreathingUiState): Boolean {
+    val isSelected = track.id == uiState.selectedTrack?.id
+    return isSelected && (uiState.isMusicPlaying || uiState.isTrackBuffering)
 }
 
 //snackbar de la pantalla con los colores de la paleta: texto claro sobre el color del texto
@@ -853,7 +868,7 @@ private fun TracksStatus(isLoading: Boolean, loadFailed: Boolean, onRetry: () ->
         ) {
             CircularProgressIndicator(modifier = Modifier.size(16.dp), color = SecondaryColor, strokeWidth = 2.dp)
             Spacer(modifier = Modifier.width(12.dp))
-            Text(text = "Loading more tracks from Jamendo…", style = MaterialTheme.typography.bodyLarge, color = TextColor)
+            Text(text = "Loading more tracks…", style = MaterialTheme.typography.bodyLarge, color = TextColor)
         }
         loadFailed -> Row(
             modifier = Modifier
@@ -1006,6 +1021,8 @@ private const val DISABLED_ALPHA = 0.4f
 private const val UNPLAYABLE_TRACK_MESSAGE = "Couldn't play. Check your connection"
 //pista de jamendo sin descargar mientras no hay internet
 private const val NEEDS_INTERNET_TRACK_MESSAGE = "Needs internet to play"
+//aviso de la hoja de musica mientras no hay internet
+private const val OFFLINE_MUSIC_SHEET_MESSAGE = "No internet connection: showing downloaded music only"
 
 @Preview(showBackground = true, name = "Ready")
 @Composable
