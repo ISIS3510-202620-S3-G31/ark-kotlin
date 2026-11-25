@@ -7,30 +7,38 @@ import androidx.room.Query
 import com.moviles.ark.data.local.entities.FavoriteFortuneCookieEntity
 import kotlinx.coroutines.flow.Flow
 
-//dao de room para consultar, insertar y borrar frases favoritas de la galleta
+//consultas de las frases favoritas
 @Dao
 interface FavoriteFortuneCookieDao {
-    //obtiene todas las frases favoritas ordenadas de la mas reciente a la mas antigua
-    @Query("SELECT * FROM favorite_fortune_cookies ORDER BY savedAt DESC")
-    fun getAllFavorites(): Flow<List<FavoriteFortuneCookieEntity>>
+    //favoritas del usuario de la mas nueva a la mas vieja
+    @Query("SELECT * FROM favorite_fortune_cookies WHERE userId = :userId AND isDeleted = 0 ORDER BY savedAt DESC")
+    fun observeFavorites(userId: String): Flow<List<FavoriteFortuneCookieEntity>>
 
-    //obtiene los ids de todas las favoritas para poder consultar rapido en memoria
-    @Query("SELECT id FROM favorite_fortune_cookies")
-    suspend fun getAllFavoriteIds(): List<Int>
+    //solo los ids, para cargarlos en memoria
+    @Query("SELECT id FROM favorite_fortune_cookies WHERE userId = :userId AND isDeleted = 0")
+    suspend fun getFavoriteIds(userId: String): List<Int>
 
-    //busca una favorita por su id
-    @Query("SELECT * FROM favorite_fortune_cookies WHERE id = :id LIMIT 1")
-    suspend fun getFavoriteById(id: Int): FavoriteFortuneCookieEntity?
+    //busca una favorita aunque este marcada como borrada
+    @Query("SELECT * FROM favorite_fortune_cookies WHERE userId = :userId AND id = :id LIMIT 1")
+    suspend fun getFavorite(userId: String, id: Int): FavoriteFortuneCookieEntity?
 
-    //guarda o reemplaza una frase favorita en la base de datos
+    //guarda o reemplaza una favorita
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertFavorite(fortune: FavoriteFortuneCookieEntity)
+    suspend fun insertFavorite(favorite: FavoriteFortuneCookieEntity)
 
-    //elimina una frase de favoritos por su id
-    @Query("DELETE FROM favorite_fortune_cookies WHERE id = :id")
-    suspend fun deleteFavoriteById(id: Int)
+    //la marca como borrada para borrarla de firestore cuando haya red
+    @Query("UPDATE favorite_fortune_cookies SET isDeleted = 1, isSynced = 0 WHERE userId = :userId AND id = :id")
+    suspend fun markDeleted(userId: String, id: Int)
 
-    //marca una favorita como sincronizada en la nube
-    @Query("UPDATE favorite_fortune_cookies SET isSynced = 1 WHERE id = :id")
-    suspend fun markAsSynced(id: Int)
+    //la borra del todo cuando ya se borro de firestore
+    @Query("DELETE FROM favorite_fortune_cookies WHERE userId = :userId AND id = :id")
+    suspend fun deleteFavorite(userId: String, id: Int)
+
+    //la marca como subida
+    @Query("UPDATE favorite_fortune_cookies SET isSynced = 1 WHERE userId = :userId AND id = :id")
+    suspend fun markSynced(userId: String, id: Int)
+
+    //las que faltan por subir o borrar en firestore
+    @Query("SELECT * FROM favorite_fortune_cookies WHERE userId = :userId AND isSynced = 0")
+    suspend fun getUnsynced(userId: String): List<FavoriteFortuneCookieEntity>
 }

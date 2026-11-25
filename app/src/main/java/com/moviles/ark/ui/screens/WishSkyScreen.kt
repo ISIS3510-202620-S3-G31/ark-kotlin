@@ -259,7 +259,7 @@ private fun ReleasableLantern(wish: WishModel, onReleased: () -> Unit) {
             modifier = Modifier
                 .padding(horizontal = 40.dp)
                 .clip(RoundedCornerShape(16.dp))
-                .background(Color.Black.copy(alpha = 0.3f))
+                .background(TextColor.copy(alpha = 0.3f))
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         )
         Spacer(modifier = Modifier.height(12.dp))
@@ -301,7 +301,7 @@ private fun SkyBottomButtons(onSeeAllWishes: () -> Unit, onFinish: () -> Unit) {
         OutlinedButton(
             onClick = onSeeAllWishes,
             border = BorderStroke(1.dp, BackgroundLightColor.copy(alpha = 0.7f)),
-            colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.Black.copy(alpha = 0.25f))
+            colors = ButtonDefaults.outlinedButtonColors(containerColor = TextColor.copy(alpha = 0.25f))
         ) {
             Text(text = "See all my wishes", style = MaterialTheme.typography.labelLarge, color = BackgroundLightColor)
         }

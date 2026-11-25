@@ -23,9 +23,6 @@ import com.moviles.ark.domain.adapters.FortuneServiceAdapter
 import com.moviles.ark.domain.repositories.FortuneRepository
 import com.moviles.ark.data.remote.apis.FortuneServiceAdapterImpl
 import com.moviles.ark.data.repositories.FortuneRepositoryImpl
-import com.moviles.ark.data.local.FortunePreferencesManager
-import com.moviles.ark.data.local.FortuneCardExporter
-import com.moviles.ark.data.local.FortuneCacheManager
 import com.moviles.ark.data.local.daos.FeedbackDao
 import com.moviles.ark.data.local.daos.ToolRecordDao
 import com.moviles.ark.data.local.sensors.AudioPlayerHelper
@@ -100,9 +97,6 @@ interface AppContainer {
     val fortuneCacheManager: FortuneCacheManager
     val fortuneServiceAdapter: FortuneServiceAdapter
     val fortuneRepository: FortuneRepository
-    val fortunePreferencesManager: FortunePreferencesManager
-    val fortuneCardExporter: FortuneCardExporter
-    val fortuneCacheManager: FortuneCacheManager
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -259,7 +253,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val syncManager: SyncManager by lazy {
         //al arrancar con red y cada vez que vuelve la conexion se trae el catalogo de herramientas: antes solo
         //llegaba por push (FCM) y si el push no llegaba el catalogo quedaba viejo hasta el siguiente
-        SyncManager(context, networkConnectivityObserver, syncRepository, onOnline = { toolRepository.refreshTools().isSuccess })
+        SyncManager(context, networkConnectivityObserver, syncRepository, onOnline = { fortuneRepository.syncPending(); toolRepository.refreshTools().isSuccess })
     }
     // sensor de luz + hora del dia para recomendaciones segun el entorno; uno para toda la app
     override val environmentalSensorManager: EnvironmentalSensorManager by lazy { EnvironmentalSensorManager(context) }

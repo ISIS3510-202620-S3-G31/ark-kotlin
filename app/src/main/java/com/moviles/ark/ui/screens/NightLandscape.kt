@@ -1,5 +1,6 @@
 package com.moviles.ark.ui.screens
 
+import com.moviles.ark.ui.theme.BackgroundLightColor
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -107,7 +108,7 @@ private fun DrawScope.drawStars(stars: List<Star>, twinkle: Float) {
             brightness = 1.3f - twinkle
         }
         drawCircle(
-            color = Color.White.copy(alpha = brightness),
+            color = BackgroundLightColor.copy(alpha = brightness),
             radius = star.radiusDp.dp.toPx(),
             center = Offset(size.width * star.x, size.height * star.y)
         )

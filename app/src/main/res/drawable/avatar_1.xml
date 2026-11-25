@@ -31,7 +31,7 @@
 
     <!-- White Cheeks & Muzzle -->
     <path
-        android:fillColor="#FFFFFF"
+        android:fillColor="#FCEFD5"
         android:pathData="M48,54 C39,54 28,58 24,66 C29,74 38,78 48,78 C58,78 67,74 72,66 C68,58 57,54 48,54 Z" />
 
     <!-- Nose -->
