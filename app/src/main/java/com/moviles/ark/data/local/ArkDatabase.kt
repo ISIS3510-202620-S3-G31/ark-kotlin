@@ -11,6 +11,7 @@ import com.moviles.ark.data.local.daos.BreathingSessionDao
 import com.moviles.ark.data.local.daos.CookieDao
 import com.moviles.ark.data.local.daos.EmotionCheckInDao
 import com.moviles.ark.data.local.daos.FavoriteFortuneCookieDao
+import com.moviles.ark.data.local.daos.SavedFortuneCardDao
 import com.moviles.ark.data.local.daos.FeedbackDao
 import com.moviles.ark.data.local.daos.PhotoEntryDao
 import com.moviles.ark.data.local.daos.SentGiftDao
@@ -18,10 +19,12 @@ import com.moviles.ark.data.local.daos.StatsDailyVisitDao
 import com.moviles.ark.data.local.daos.ToolDao
 import com.moviles.ark.data.local.daos.ToolRecordDao
 import com.moviles.ark.data.local.daos.UserDao
+import com.moviles.ark.data.local.daos.WishDao
 import com.moviles.ark.data.local.entities.BreathingSessionEntity
 import com.moviles.ark.data.local.entities.CheckInEntity
 import com.moviles.ark.data.local.entities.CookieEntity
 import com.moviles.ark.data.local.entities.FavoriteFortuneCookieEntity
+import com.moviles.ark.data.local.entities.SavedFortuneCardEntity
 import com.moviles.ark.data.local.entities.FeedbackEntity
 import com.moviles.ark.data.local.entities.PhotoEntryEntity
 import com.moviles.ark.data.local.entities.SentGiftEntity
@@ -29,18 +32,8 @@ import com.moviles.ark.data.local.entities.StatsDailyVisitEntity
 import com.moviles.ark.data.local.entities.ToolEntity
 import com.moviles.ark.data.local.entities.ToolInteractionEntity
 import com.moviles.ark.data.local.entities.UserEntity
+import com.moviles.ark.data.local.entities.WishEntity
 
-//base de datos local de la app: aqui se registran todas las tablas (entities) y sus daos
-//reemplaza a AppDatabase.kt, que se borra (nadie la usaba)
-//version 2: se agrego breathing_sessions; cada vez que se cambie una tabla se sube el numero
-//version 3: se agrego users, el perfil guardado en el telefono
-//version 7: se agrego stats_daily_visits, conteo de visitas diarias a estadisticas
-//version 8: emociones del feedback y ciudad del check-in, con migracion para no borrar lo que no se ha subido
-//version 9: cuenta del feedback pendiente, para no subirlo a otra cuenta si se cierra sesion sin red
-//version 12: se agrego cookies, las galletas del cookie jar, con migracion para no perder nada de lo anterior
-//version 13: se agrego favorite_fortunes, frases favoritas de la galleta de la fortuna
-//version 14: se agrego sent_gifts, los regalos enviados del cookie jar (solo en el telefono del remitente)
-//(sin migracion para un salto de version, room borra y crea de nuevo la base local)
 @Database(
     entities = [
         ToolEntity::class,
@@ -52,10 +45,12 @@ import com.moviles.ark.data.local.entities.UserEntity
         UserEntity::class,
         StatsDailyVisitEntity::class,
         CookieEntity::class,
-        SentGiftEntity::class,
         FavoriteFortuneCookieEntity::class,
+        SavedFortuneCardEntity::class,
+        WishEntity::class,
+        SentGiftEntity::class,
     ],
-    version = 14,
+    version = 16,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -70,7 +65,9 @@ abstract class ArkDatabase : RoomDatabase() {
     abstract fun statsDailyVisitDao(): StatsDailyVisitDao
     abstract fun cookieDao(): CookieDao
     abstract fun sentGiftDao(): SentGiftDao
+    abstract fun wishDao(): WishDao
     abstract fun favoriteFortuneCookieDao(): FavoriteFortuneCookieDao
+    abstract fun savedFortuneCardDao(): SavedFortuneCardDao
 
     companion object {
         @Volatile
@@ -130,37 +127,57 @@ abstract class ArkDatabase : RoomDatabase() {
         //agrega la tabla de frases favoritas de la galleta de la fortuna
         val MIGRATION_12_13 = object : Migration(12, 13) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                createFavoriteFortunesTable(db)
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `favorite_fortune_cookies` (`id` INTEGER NOT NULL, `quote` TEXT NOT NULL, " +
+                        "`category` TEXT NOT NULL, `luckyNumber` INTEGER NOT NULL, `savedAt` INTEGER NOT NULL, " +
+                        "`isSynced` INTEGER NOT NULL, PRIMARY KEY(`id`))"
+                )
             }
         }
 
-        //agrega la tabla de regalos enviados del cookie jar. tambien crea la de frases favoritas si
-        //falta: hubo telefonos de prueba que llegaron a la version 13 con sent_gifts y sin esa tabla
+        //agrega la tabla de tarjetas de la fortuna guardadas en galeria y nube y la tabla de deseos
         val MIGRATION_13_14 = object : Migration(13, 14) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                createFavoriteFortunesTable(db)
-                createSentGiftsTable(db)
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `saved_fortune_cards` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`cookieId` INTEGER NOT NULL, `userId` TEXT NOT NULL, `quote` TEXT NOT NULL, " +
+                        "`category` TEXT NOT NULL, `luckyNumber` INTEGER NOT NULL, `localImageUri` TEXT NOT NULL, " +
+                        "`remoteImageUrl` TEXT, `savedAt` INTEGER NOT NULL, `isSynced` INTEGER NOT NULL)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `wishes` (`id` TEXT NOT NULL, `userId` TEXT NOT NULL, `text` TEXT NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `isSynced` INTEGER NOT NULL, " +
+                        "`isDeleted` INTEGER NOT NULL, PRIMARY KEY(`id`))"
+                )
             }
         }
 
-        //el sql es el mismo que genera room para FavoriteFortuneCookieEntity
-        private fun createFavoriteFortunesTable(db: SupportSQLiteDatabase) {
-            db.execSQL(
-                "CREATE TABLE IF NOT EXISTS `favorite_fortune_cookies` (`id` INTEGER NOT NULL, `quote` TEXT NOT NULL, " +
-                    "`category` TEXT NOT NULL, `luckyNumber` INTEGER NOT NULL, `savedAt` INTEGER NOT NULL, " +
-                    "`isSynced` INTEGER NOT NULL, PRIMARY KEY(`id`))"
-            )
+        //version 15: las favoritas quedan por usuario y con borrado pendiente, y solo una imagen por frase
+        //las dos tablas de la galleta se crean de nuevo y lo que estaba en la nube se vuelve a bajar
+        //tambien crea wishes por si el telefono quedo en la version 14 sin esa tabla
+        val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP TABLE IF EXISTS `favorite_fortune_cookies`")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `favorite_fortune_cookies` (`userId` TEXT NOT NULL, `id` INTEGER NOT NULL, `quote` TEXT NOT NULL, `category` TEXT NOT NULL, `savedAt` INTEGER NOT NULL, `isSynced` INTEGER NOT NULL, `isDeleted` INTEGER NOT NULL, PRIMARY KEY(`userId`, `id`))")
+                db.execSQL("DROP TABLE IF EXISTS `saved_fortune_cards`")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `saved_fortune_cards` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `cookieId` INTEGER NOT NULL, `userId` TEXT NOT NULL, `quote` TEXT NOT NULL, `localImageUri` TEXT NOT NULL, `remoteImageUrl` TEXT, `savedAt` INTEGER NOT NULL, `isSynced` INTEGER NOT NULL)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_saved_fortune_cards_userId_cookieId` ON `saved_fortune_cards` (`userId`, `cookieId`)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `wishes` (`id` TEXT NOT NULL, `userId` TEXT NOT NULL, `text` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `isSynced` INTEGER NOT NULL, `isDeleted` INTEGER NOT NULL, PRIMARY KEY(`id`))")
+            }
         }
 
-        //solo crea la tabla de regalos enviados y su indice; las galletas y lo demas no se tocan
-        //el sql es el mismo que genera room para SentGiftEntity
-        private fun createSentGiftsTable(db: SupportSQLiteDatabase) {
-            db.execSQL(
-                "CREATE TABLE IF NOT EXISTS `sent_gifts` (`shareId` TEXT NOT NULL, `userId` TEXT NOT NULL, " +
-                    "`toUid` TEXT NOT NULL, `toUsername` TEXT NOT NULL, `title` TEXT NOT NULL, `hasImage` INTEGER NOT NULL, " +
-                    "`sentAt` INTEGER NOT NULL, `expiresAt` INTEGER NOT NULL, PRIMARY KEY(`shareId`))"
-            )
-            db.execSQL("CREATE INDEX IF NOT EXISTS `index_sent_gifts_userId` ON `sent_gifts` (`userId`)")
+        //version 16: agrega sent_gifts, los regalos enviados del cookie jar (solo en el telefono del remitente)
+        //el sql es el mismo que genera room para SentGiftEntity; con IF NOT EXISTS no falla en los telefonos
+        //de prueba que ya tenian la tabla de una version anterior de la rama
+        val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `sent_gifts` (`shareId` TEXT NOT NULL, `userId` TEXT NOT NULL, " +
+                        "`toUid` TEXT NOT NULL, `toUsername` TEXT NOT NULL, `title` TEXT NOT NULL, `hasImage` INTEGER NOT NULL, " +
+                        "`sentAt` INTEGER NOT NULL, `expiresAt` INTEGER NOT NULL, PRIMARY KEY(`shareId`))"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_sent_gifts_userId` ON `sent_gifts` (`userId`)")
+            }
         }
 
         //singleton con doble comprobacion para que toda la app comparta un unico pool de conexiones
@@ -171,7 +188,7 @@ abstract class ArkDatabase : RoomDatabase() {
                     ArkDatabase::class.java,
                     "ark.db"
                 )
-                .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
+                .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
                 .also { INSTANCE = it }

@@ -2,10 +2,11 @@
 -- actualice solo (un cuadro de texto de Data Studio no puede mostrar datos).
 -- Una sola fila con una columna por pregunta. En cada pagina se muestra con una tabla de una
 -- celda (sin encabezado ni paginacion). Cada respuesta empieza con la fecha y hora del ultimo dato
--- que la alimenta, en hora de Bogota. Solo celulares reales y sin cuentas de prueba.
+-- que la alimenta, en hora de Bogota (menos BQ13, que empieza directo con el dato). Solo celulares
+-- reales y sin cuentas de prueba.
 --
--- Uso: correr despues de views.sql, views_analytics.sql, views_bq4_and_age.sql y
--- views_stats_visits.sql (lee sus vistas).
+-- Uso: correr despues de views.sql, views_analytics.sql, views_bq4_and_age.sql,
+-- views_stats_visits.sql y views_tool_sessions.sql (lee sus vistas).
 
 CREATE OR REPLACE FUNCTION `ark-mobiles.ark_dashboards.as_of`(ts TIMESTAMP) AS (
   CONCAT('Updated with data up to ', FORMAT_TIMESTAMP('%b %d, %Y %I:%M %p', ts, 'America/Bogota'),
@@ -23,6 +24,38 @@ CREATE OR REPLACE FUNCTION `ark-mobiles.ark_dashboards.tool_name`(tool_id STRING
 
 CREATE OR REPLACE VIEW `ark-mobiles.ark_dashboards.bq_answers` AS
 WITH
+-- BQ13: sesiones completadas por semana de cada herramienta (ultimas 4 semanas completas).
+-- la respuesta nombra su vista una sola vez (BigQuery recalcula una vista cada vez que se nombra,
+-- y esta sale de completed_tool_sessions): todo se calcula en un solo SELECT sobre la vista.
+-- las partes del texto, cada una en su columna. una fila por herramienta: la de la primera
+-- semana ya trae el total y las 4 semanas
+bq13_parts AS (
+  SELECT
+    MIN(week_start) AS first_monday,
+    STRING_AGG(FORMAT('%s %s (%d in total, completed in %d of 4 weeks)',
+      tool, weekly_completions, completions_4_weeks, active_weeks),
+      '; ' ORDER BY completions_4_weeks DESC, tool) AS per_tool,
+    -- habituales: completadas las 4 semanas; esporadicas: una sola semana (null si no hay)
+    STRING_AGG(IF(active_weeks = 4, tool, NULL), ', ' ORDER BY tool) AS habitual_tools,
+    STRING_AGG(IF(active_weeks = 1, tool, NULL), ', ' ORDER BY tool) AS sporadic_tools
+  FROM `ark-mobiles.ark_dashboards.bq13_weekly_tool_completions`
+  WHERE device_type = 'Real phone' AND NOT is_test_account AND week_number = 1
+),
+-- arma el texto con las partes
+bq13 AS (
+  SELECT CONCAT(
+    FORMAT('Completed sessions per week, %s to %s (W1 / W2 / W3 / W4): ',
+      FORMAT_DATE('%b %d', first_monday), FORMAT_DATE('%b %d', DATE_ADD(first_monday, INTERVAL 27 DAY))),
+    per_tool,
+    '. ',
+    IF(habitual_tools IS NULL,
+      'No tool was completed in all 4 weeks.',
+      CONCAT('Habitual (completed every week): ', habitual_tools, '.')),
+    IF(sporadic_tools IS NULL,
+      '',
+      CONCAT(' Sporadic (a single week): ', sporadic_tools, '.'))) AS answer
+  FROM bq13_parts
+),
 -- BQ1: herramienta mas lenta en abrir (mediana) y las demas
 bq1_rows AS (
   SELECT
@@ -147,4 +180,5 @@ SELECT
   (SELECT answer FROM bq5) AS bq5_answer,
   (SELECT answer FROM bq7) AS bq7_answer,
   (SELECT answer FROM bq8) AS bq8_answer,
-  (SELECT answer FROM bq9) AS bq9_answer;
+  (SELECT answer FROM bq9) AS bq9_answer,
+  (SELECT answer FROM bq13) AS bq13_answer;

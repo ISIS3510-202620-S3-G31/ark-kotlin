@@ -18,7 +18,7 @@
 
     <!-- Panda White Head -->
     <path
-        android:fillColor="#FFFFFF"
+        android:fillColor="#FCEFD5"
         android:pathData="M48,27 C31,27 21,39 21,55 C21,71 33,80 48,80 C63,80 75,71 75,55 C75,39 65,27 48,27 Z" />
 
     <!-- Dark Eye Patches -->
@@ -31,10 +31,10 @@
 
     <!-- White Eye Sparkles -->
     <path
-        android:fillColor="#FFFFFF"
+        android:fillColor="#FCEFD5"
         android:pathData="M36,49 A1.8,1.8 0 1,1 35.99,49 Z" />
     <path
-        android:fillColor="#FFFFFF"
+        android:fillColor="#FCEFD5"
         android:pathData="M60,49 A1.8,1.8 0 1,1 59.99,49 Z" />
 
     <!-- Nose -->
