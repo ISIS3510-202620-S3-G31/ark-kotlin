@@ -1,5 +1,6 @@
 package com.moviles.ark.ui.screens
 
+import com.moviles.ark.ui.theme.BackgroundLightColor
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -29,7 +30,7 @@ private val UnlitEdgeColor = Color(0xFF7D6150)
 //aro de madera de arriba y de abajo
 private val RimColor = Color(0xFF6B3410)
 //llama de la vela
-private val FlameColor = Color(0xFFFFFBE8)
+private val FlameColor = BackgroundLightColor
 
 //dibujo de un farol de papel redondeado
 //encendido: brilla, tiene resplandor y una llama que titila; apagado: papel oscuro sin luz

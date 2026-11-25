@@ -36,24 +36,24 @@
 
     <!-- Left Eye Ring & Pupil -->
     <path
-        android:fillColor="#FFFFFF"
+        android:fillColor="#FCEFD5"
         android:pathData="M37,44 A8,8 0 1,1 36.99,44 Z" />
     <path
         android:fillColor="#221100"
         android:pathData="M37,44 A4.5,4.5 0 1,1 36.99,44 Z" />
     <path
-        android:fillColor="#FFFFFF"
+        android:fillColor="#FCEFD5"
         android:pathData="M35.5,42.5 A1.5,1.5 0 1,1 35.49,42.5 Z" />
 
     <!-- Right Eye Ring & Pupil -->
     <path
-        android:fillColor="#FFFFFF"
+        android:fillColor="#FCEFD5"
         android:pathData="M59,44 A8,8 0 1,1 58.99,44 Z" />
     <path
         android:fillColor="#221100"
         android:pathData="M59,44 A4.5,4.5 0 1,1 58.99,44 Z" />
     <path
-        android:fillColor="#FFFFFF"
+        android:fillColor="#FCEFD5"
         android:pathData="M57.5,42.5 A1.5,1.5 0 1,1 57.49,42.5 Z" />
 
     <!-- Golden Beak -->

@@ -18,10 +18,16 @@ interface WishDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertWish(wish: WishEntity)
 
-    //todos los deseos del usuario, del mas nuevo al mas viejo
+    //todos los deseos del usuario con todos sus datos, para la lista completa
+    //no vienen ordenados: el repositorio los ordena en otro hilo (Dispatchers.Default)
     //es un Flow: room lo vuelve a mandar solo cada vez que la tabla cambia
-    @Query("SELECT * FROM wishes WHERE userId = :userId AND isDeleted = 0 ORDER BY createdAt DESC")
+    @Query("SELECT * FROM wishes WHERE userId = :userId AND isDeleted = 0")
     fun observeWishes(userId: String): Flow<List<WishEntity>>
+
+    //consulta liviana para el cielo: solo los ids, sin el texto
+    //el texto de cada deseo se lee despues, cuando el usuario toca su farol
+    @Query("SELECT id FROM wishes WHERE userId = :userId AND isDeleted = 0")
+    fun observeWishIds(userId: String): Flow<List<String>>
 
     //un solo deseo; null si no existe o si ya se borro
     @Query("SELECT * FROM wishes WHERE id = :id AND userId = :userId AND isDeleted = 0 LIMIT 1")

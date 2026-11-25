@@ -2,7 +2,6 @@ package com.moviles.ark.data.local
 
 import android.content.ContentValues
 import android.content.Context
-import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
@@ -16,130 +15,102 @@ import android.provider.MediaStore
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
+import androidx.core.content.res.ResourcesCompat
+import com.moviles.ark.R
 import com.moviles.ark.domain.models.FortuneModel
-import java.io.OutputStream
+import java.io.ByteArrayOutputStream
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
-//exportador que dibuja la tarjeta de la fortuna como bitmap y la guarda en la galeria publica
+//dibuja la frase como imagen y la guarda en la galeria del telefono
 class FortuneCardExporter(private val context: Context) {
 
-    //renderiza la tarjeta visualmente en un mapa de bits de alta resolucion
-    fun renderCardBitmap(fortune: FortuneModel): Bitmap {
-        val width = 1080
-        val height = 1080
-        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    //dibuja una imagen cuadrada con los colores y las letras de la app, el bloque de texto queda centrado
+    fun renderCardBitmap(fortune: FortuneModel, savedAt: Long = System.currentTimeMillis()): Bitmap {
+        val size = 1080
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
+        val sorean = loadFont(R.font.sorean)
+        val figtree = loadFont(R.font.figtree_normal)
+        val dark = Color.parseColor("#221100")
 
-        //color de fondo calido de la aplicacion
-        canvas.drawColor(Color.parseColor("#FFF5E6"))
+        //los tres textos: titulo, frase y fecha
+        val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = dark; textSize = 56f; typeface = sorean; textAlign = Paint.Align.CENTER }
+        val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = dark; textSize = 48f; typeface = figtree }
+        val datePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#8A5A2B"); textSize = 32f; typeface = figtree; textAlign = Paint.Align.CENTER }
+        val layout = StaticLayout.Builder.obtain(fortune.quote, 0, fortune.quote.length, textPaint, size - 340).setAlignment(Layout.Alignment.ALIGN_CENTER).setLineSpacing(6f, 1f).build()
+        val date = SimpleDateFormat("MMMM d, yyyy", Locale.ENGLISH).format(Date(savedAt))
 
-        //dibujamos la tarjeta central con esquinas redondeadas
-        val cardPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
-        val cardRect = RectF(60f, 60f, (width - 60).toFloat(), (height - 60).toFloat())
-        canvas.drawRoundRect(cardRect, 48f, 48f, cardPaint)
+        //alto del bloque para centrarlo y que el papel no quede con huecos
+        val gap = 44f
+        val blockHeight = 56f + gap + layout.height + gap + 32f
+        val top = size / 2f - blockHeight / 2f
 
-        //borde decorativo sutil
-        val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#F8840E")
-            style = Paint.Style.STROKE
-            strokeWidth = 6f
-        }
-        canvas.drawRoundRect(cardRect, 48f, 48f, borderPaint)
+        //fondo de la paleta y el papelito justo del tamano del bloque
+        canvas.drawColor(Color.parseColor("#F9DEAA"))
+        val paperPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#FAE5BB") }
+        val paper = RectF(110f, top - 90f, size - 110f, top + blockHeight + 90f)
+        canvas.drawRoundRect(paper, 14f, 14f, paperPaint)
 
-        //titulo superior
-        val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#F8840E")
-            textSize = 54f
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            textAlign = Paint.Align.CENTER
-        }
-        canvas.drawText("FORTUNE COOKIE WISDOM", width / 2f, 180f, titlePaint)
+        //dos lineas finas como en los papelitos de verdad
+        val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#59F8840E"); strokeWidth = 3f }
+        canvas.drawLine(paper.left + 36f, paper.top + 36f, paper.right - 36f, paper.top + 36f, linePaint)
+        canvas.drawLine(paper.left + 36f, paper.bottom - 36f, paper.right - 36f, paper.bottom - 36f, linePaint)
 
-        //categoria
-        val catPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#888888")
-            textSize = 36f
-            textAlign = Paint.Align.CENTER
-        }
-        canvas.drawText("Category: ${fortune.category}", width / 2f, 240f, catPaint)
-
-        //frase central con ajuste automatico de lineas
-        val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#221100")
-            textSize = 52f
-            typeface = Typeface.create(Typeface.SERIF, Typeface.ITALIC)
-        }
-        val textWidth = width - 240
-        val staticLayout = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            StaticLayout.Builder.obtain("\"${fortune.quote}\"", 0, fortune.quote.length + 2, textPaint, textWidth)
-                .setAlignment(Layout.Alignment.ALIGN_CENTER)
-                .setLineSpacing(12f, 1f)
-                .build()
-        } else {
-            @Suppress("DEPRECATION")
-            StaticLayout("\"${fortune.quote}\"", textPaint, textWidth, Layout.Alignment.ALIGN_CENTER, 1f, 12f, false)
-        }
-
+        //titulo, frase y fecha uno debajo del otro
+        canvas.drawText("My fortune", size / 2f, top + 50f, titlePaint)
         canvas.save()
-        val textY = (height / 2f) - (staticLayout.height / 2f)
-        canvas.translate(120f, textY)
-        staticLayout.draw(canvas)
+        canvas.translate(170f, top + 56f + gap)
+        layout.draw(canvas)
         canvas.restore()
+        canvas.drawText(date, size / 2f, top + blockHeight - 4f, datePaint)
 
-        //numero de la suerte
-        val luckyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#2BA79B")
-            textSize = 44f
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            textAlign = Paint.Align.CENTER
-        }
-        canvas.drawText("Lucky Number: ${fortune.luckyNumber}", width / 2f, (height - 180).toFloat(), luckyPaint)
-
-        //firma de la aplicacion
-        val footerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#AAAAAA")
-            textSize = 32f
-            textAlign = Paint.Align.CENTER
-        }
-        canvas.drawText("Shared from Ark App", width / 2f, (height - 110).toFloat(), footerPaint)
-
+        //firma de la app debajo del papel
+        val footerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#2BA79B"); textSize = 32f; typeface = figtree; textAlign = Paint.Align.CENTER }
+        canvas.drawText("Ark", size / 2f, paper.bottom + 70f, footerPaint)
         return bitmap
     }
 
-    //guarda el bitmap en mediastore en la carpeta publica pictures
-    fun saveCardToGallery(bitmap: Bitmap, title: String): Uri? {
-        val resolver = context.contentResolver
-        val contentValues = ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, "fortune_${System.currentTimeMillis()}.png")
-            put(MediaStore.Images.Media.MIME_TYPE, "image/png")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/Ark")
-                put(MediaStore.Images.Media.IS_PENDING, 1)
-            }
-        }
-
-        val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues) ?: return null
-        resolver.openOutputStream(uri)?.use { stream: OutputStream ->
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            contentValues.clear()
-            contentValues.put(MediaStore.Images.Media.IS_PENDING, 0)
-            resolver.update(uri, contentValues, null, null)
-        }
-        return uri
+    //carga una fuente de res/font, si falla usa la del sistema
+    private fun loadFont(id: Int): Typeface {
+        return try { ResourcesCompat.getFont(context, id) ?: Typeface.DEFAULT } catch (_: Exception) { Typeface.DEFAULT }
     }
 
-    //lanza el selector del sistema para compartir la tarjeta por cualquier aplicacion
-    fun shareFortuneCard(uri: Uri) {
-        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-            type = "image/png"
-            putExtra(Intent.EXTRA_STREAM, uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    //convierte la imagen en bytes png para subirla a la nube
+    fun toPngBytes(bitmap: Bitmap): ByteArray {
+        val stream = ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+        return stream.toByteArray()
+    }
+
+    //guarda la imagen en la carpeta pictures/ark de la galeria
+    fun saveCardToGallery(bitmap: Bitmap): Uri? {
+        return try {
+            val resolver = context.contentResolver
+            val values = ContentValues()
+            values.put(MediaStore.Images.Media.DISPLAY_NAME, "fortune_${System.currentTimeMillis()}.png")
+            values.put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                values.put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/Ark")
+                values.put(MediaStore.Images.Media.IS_PENDING, 1)
+            }
+            val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return null
+            resolver.openOutputStream(uri)?.use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                values.clear()
+                values.put(MediaStore.Images.Media.IS_PENDING, 0)
+                resolver.update(uri, values, null, null)
+            }
+            uri
+        } catch (_: Exception) {
+            null
         }
-        val chooser = Intent.createChooser(shareIntent, "Share your fortune card").apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        context.startActivity(chooser)
+    }
+
+    //revisa si la imagen sigue en la galeria, por si la borraron
+    fun exists(uri: String): Boolean {
+        if (!uri.startsWith("content://")) return false
+        return try { context.contentResolver.openInputStream(Uri.parse(uri))?.use { true } ?: false } catch (_: Exception) { false }
     }
 }

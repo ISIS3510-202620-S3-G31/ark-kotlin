@@ -57,6 +57,7 @@ import com.moviles.ark.ui.theme.AppTheme
 import com.moviles.ark.ui.theme.BackgroundLightColor
 import com.moviles.ark.ui.theme.PrimaryColor
 import com.moviles.ark.ui.theme.TextColor
+import com.moviles.ark.ui.viewmodels.SkyLantern
 import com.moviles.ark.ui.viewmodels.WishLanternUiState
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
@@ -85,7 +86,7 @@ fun WishSkyScreen(
 
         //capa de atras: los faroles de los deseos
         SkyLanterns(
-            wishes = uiState.skyWishes(),
+            lanterns = uiState.skyLanternsToShow(),
             litWishIds = uiState.litWishIds,
             onLanternTapped = onLanternTapped
         )
@@ -102,7 +103,7 @@ fun WishSkyScreen(
             WishHeader(title = "Wish Lantern", onBack = onBack, textColor = BackgroundLightColor)
             WishOfflineMessage(isOnline = uiState.isOnline, message = WISHES_OFFLINE_MESSAGE)
 
-            if (!uiState.isLoading && uiState.wishes.isEmpty()) {
+            if (uiState.isSkyEmpty()) {
                 Text(
                     text = "Your sky is empty. Write your first wish.",
                     style = MaterialTheme.typography.bodyLarge,
@@ -137,7 +138,7 @@ fun WishSkyScreen(
 //faroles pequenos del fondo; cada uno se puede tocar para leer su deseo
 @Composable
 private fun SkyLanterns(
-    wishes: List<WishModel>,
+    lanterns: List<SkyLantern>,
     litWishIds: Set<String>,
     onLanternTapped: (wishId: String) -> Unit
 ) {
@@ -151,16 +152,16 @@ private fun SkyLanterns(
         val skyWidth = maxWidth - 48.dp
         val skyHeight = maxHeight * 0.45f
 
-        for (wish in wishes) {
-            val position = lanternPosition(wish.id)
+        //la posicion de cada farol ya viene calculada desde el viewmodel (en Dispatchers.Default)
+        for (lantern in lanterns) {
             FloatingLantern(
-                wish = wish,
-                isLit = litWishIds.contains(wish.id),
-                x = skyWidth * position.first,
-                y = skyHeight * position.second,
+                isLit = litWishIds.contains(lantern.wishId),
+                x = skyWidth * lantern.x,
+                y = skyHeight * lantern.y,
                 //los de mas abajo estan mas cerca, entonces se ven mas grandes
-                lanternWidth = 22.dp + 18.dp * position.second,
-                onTap = { onLanternTapped(wish.id) }
+                lanternWidth = 22.dp + 18.dp * lantern.y,
+                floatDurationMillis = lantern.floatDurationMillis,
+                onTap = { onLanternTapped(lantern.wishId) }
             )
         }
     }
@@ -169,20 +170,19 @@ private fun SkyLanterns(
 //un farol del fondo que sube y baja despacio, como si flotara en el aire
 @Composable
 private fun FloatingLantern(
-    wish: WishModel,
     isLit: Boolean,
     x: Dp,
     y: Dp,
     lanternWidth: Dp,
+    //cada farol flota a su propio ritmo para que no se muevan todos iguales
+    floatDurationMillis: Int,
     onTap: () -> Unit
 ) {
-    //cada farol flota a su propio ritmo para que no se muevan todos iguales
-    val floatDuration = 2000 + Math.floorMod(wish.id.hashCode(), 1500)
     val floatTransition = rememberInfiniteTransition(label = "floatingLantern")
     val floatDistance by floatTransition.animateFloat(
         initialValue = 0f,
         targetValue = 8f,
-        animationSpec = infiniteRepeatable(animation = tween(durationMillis = floatDuration), repeatMode = RepeatMode.Reverse),
+        animationSpec = infiniteRepeatable(animation = tween(durationMillis = floatDurationMillis), repeatMode = RepeatMode.Reverse),
         label = "floatDistance"
     )
 
@@ -199,16 +199,6 @@ private fun FloatingLantern(
             .clickable { onTap() }
             .semantics { contentDescription = description }
     )
-}
-
-//lugar de un farol en el cielo, como fraccion del ancho (first) y del alto (second), de 0 a 1
-//sale del id del deseo, asi cada farol queda siempre en el mismo lugar
-private fun lanternPosition(wishId: String): Pair<Float, Float> {
-    //numero entre 0 y 9999 que siempre es el mismo para el mismo id
-    val number = Math.floorMod(wishId.hashCode(), 10000)
-    val x = (number % 100) / 100f
-    val y = (number / 100) / 100f
-    return Pair(x, y)
 }
 
 //farol grande encendido: se desliza hacia arriba para mandarlo a volar
@@ -269,7 +259,7 @@ private fun ReleasableLantern(wish: WishModel, onReleased: () -> Unit) {
             modifier = Modifier
                 .padding(horizontal = 40.dp)
                 .clip(RoundedCornerShape(16.dp))
-                .background(Color.Black.copy(alpha = 0.3f))
+                .background(TextColor.copy(alpha = 0.3f))
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         )
         Spacer(modifier = Modifier.height(12.dp))
@@ -311,7 +301,7 @@ private fun SkyBottomButtons(onSeeAllWishes: () -> Unit, onFinish: () -> Unit) {
         OutlinedButton(
             onClick = onSeeAllWishes,
             border = BorderStroke(1.dp, BackgroundLightColor.copy(alpha = 0.7f)),
-            colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.Black.copy(alpha = 0.25f))
+            colors = ButtonDefaults.outlinedButtonColors(containerColor = TextColor.copy(alpha = 0.25f))
         ) {
             Text(text = "See all my wishes", style = MaterialTheme.typography.labelLarge, color = BackgroundLightColor)
         }
@@ -351,14 +341,14 @@ private fun OpenedWishSheet(wish: WishModel, onClose: () -> Unit) {
 @Preview(showBackground = true)
 @Composable
 fun WishSkyScreenPreview() {
-    val wishes = listOf(
-        WishModel("1", "To travel with my family", 0L, 0L),
-        WishModel("2", "To finish the semester calm", 0L, 0L),
-        WishModel("3", "To sleep better", 0L, 0L)
+    val lanterns = listOf(
+        SkyLantern(wishId = "1", x = 0.1f, y = 0.2f, floatDurationMillis = 2000),
+        SkyLantern(wishId = "2", x = 0.5f, y = 0.6f, floatDurationMillis = 2600),
+        SkyLantern(wishId = "3", x = 0.8f, y = 0.1f, floatDurationMillis = 3200)
     )
     AppTheme {
         WishSkyScreen(
-            uiState = WishLanternUiState(wishes = wishes, litWishIds = setOf("1", "3"), isLoading = false),
+            uiState = WishLanternUiState(skyLanterns = lanterns, litWishIds = setOf("1", "3"), isSkyLoading = false),
             onBack = {},
             onLanternTapped = {},
             onCloseOpenedWish = {},

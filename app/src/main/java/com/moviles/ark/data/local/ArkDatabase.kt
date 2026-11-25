@@ -11,6 +11,7 @@ import com.moviles.ark.data.local.daos.BreathingSessionDao
 import com.moviles.ark.data.local.daos.CookieDao
 import com.moviles.ark.data.local.daos.EmotionCheckInDao
 import com.moviles.ark.data.local.daos.FavoriteFortuneCookieDao
+import com.moviles.ark.data.local.daos.SavedFortuneCardDao
 import com.moviles.ark.data.local.daos.FeedbackDao
 import com.moviles.ark.data.local.daos.PhotoEntryDao
 import com.moviles.ark.data.local.daos.StatsDailyVisitDao
@@ -22,6 +23,7 @@ import com.moviles.ark.data.local.entities.BreathingSessionEntity
 import com.moviles.ark.data.local.entities.CheckInEntity
 import com.moviles.ark.data.local.entities.CookieEntity
 import com.moviles.ark.data.local.entities.FavoriteFortuneCookieEntity
+import com.moviles.ark.data.local.entities.SavedFortuneCardEntity
 import com.moviles.ark.data.local.entities.FeedbackEntity
 import com.moviles.ark.data.local.entities.PhotoEntryEntity
 import com.moviles.ark.data.local.entities.StatsDailyVisitEntity
@@ -30,17 +32,6 @@ import com.moviles.ark.data.local.entities.ToolInteractionEntity
 import com.moviles.ark.data.local.entities.UserEntity
 import com.moviles.ark.data.local.entities.WishEntity
 
-//base de datos local de la app: aqui se registran todas las tablas (entities) y sus daos
-//reemplaza a AppDatabase.kt, que se borra (nadie la usaba)
-//version 2: se agrego breathing_sessions; cada vez que se cambie una tabla se sube el numero
-//version 3: se agrego users, el perfil guardado en el telefono
-//version 7: se agrego stats_daily_visits, conteo de visitas diarias a estadisticas
-//version 8: emociones del feedback y ciudad del check-in, con migracion para no borrar lo que no se ha subido
-//version 9: cuenta del feedback pendiente, para no subirlo a otra cuenta si se cierra sesion sin red
-//version 12: se agrego cookies, las galletas del cookie jar, con migracion para no perder nada de lo anterior
-//version 13: se agrego favorite_fortunes, frases favoritas de la galleta de la fortuna
-//version 14: se agrego wishes, los deseos del farol de deseos, con migracion para no perder nada de lo anterior
-//(sin migracion para un salto de version, room borra y crea de nuevo la base local)
 @Database(
     entities = [
         ToolEntity::class,
@@ -53,9 +44,10 @@ import com.moviles.ark.data.local.entities.WishEntity
         StatsDailyVisitEntity::class,
         CookieEntity::class,
         FavoriteFortuneCookieEntity::class,
+        SavedFortuneCardEntity::class,
         WishEntity::class,
     ],
-    version = 14,
+    version = 15,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -71,6 +63,7 @@ abstract class ArkDatabase : RoomDatabase() {
     abstract fun cookieDao(): CookieDao
     abstract fun wishDao(): WishDao
     abstract fun favoriteFortuneCookieDao(): FavoriteFortuneCookieDao
+    abstract fun savedFortuneCardDao(): SavedFortuneCardDao
 
     companion object {
         @Volatile
@@ -138,15 +131,34 @@ abstract class ArkDatabase : RoomDatabase() {
             }
         }
 
-        //solo crea la tabla nueva del farol de deseos; las demas tablas no se tocan
-        //el sql es el mismo que genera room para WishEntity, si no coincide room no abre la base
+        //agrega la tabla de tarjetas de la fortuna guardadas en galeria y nube y la tabla de deseos
         val MIGRATION_13_14 = object : Migration(13, 14) {
             override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `saved_fortune_cards` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`cookieId` INTEGER NOT NULL, `userId` TEXT NOT NULL, `quote` TEXT NOT NULL, " +
+                        "`category` TEXT NOT NULL, `luckyNumber` INTEGER NOT NULL, `localImageUri` TEXT NOT NULL, " +
+                        "`remoteImageUrl` TEXT, `savedAt` INTEGER NOT NULL, `isSynced` INTEGER NOT NULL)"
+                )
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS `wishes` (`id` TEXT NOT NULL, `userId` TEXT NOT NULL, `text` TEXT NOT NULL, " +
                         "`createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `isSynced` INTEGER NOT NULL, " +
                         "`isDeleted` INTEGER NOT NULL, PRIMARY KEY(`id`))"
                 )
+            }
+        }
+
+        //version 15: las favoritas quedan por usuario y con borrado pendiente, y solo una imagen por frase
+        //las dos tablas de la galleta se crean de nuevo y lo que estaba en la nube se vuelve a bajar
+        //tambien crea wishes por si el telefono quedo en la version 14 sin esa tabla
+        val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP TABLE IF EXISTS `favorite_fortune_cookies`")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `favorite_fortune_cookies` (`userId` TEXT NOT NULL, `id` INTEGER NOT NULL, `quote` TEXT NOT NULL, `category` TEXT NOT NULL, `savedAt` INTEGER NOT NULL, `isSynced` INTEGER NOT NULL, `isDeleted` INTEGER NOT NULL, PRIMARY KEY(`userId`, `id`))")
+                db.execSQL("DROP TABLE IF EXISTS `saved_fortune_cards`")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `saved_fortune_cards` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `cookieId` INTEGER NOT NULL, `userId` TEXT NOT NULL, `quote` TEXT NOT NULL, `localImageUri` TEXT NOT NULL, `remoteImageUrl` TEXT, `savedAt` INTEGER NOT NULL, `isSynced` INTEGER NOT NULL)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_saved_fortune_cards_userId_cookieId` ON `saved_fortune_cards` (`userId`, `cookieId`)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `wishes` (`id` TEXT NOT NULL, `userId` TEXT NOT NULL, `text` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `isSynced` INTEGER NOT NULL, `isDeleted` INTEGER NOT NULL, PRIMARY KEY(`id`))")
             }
         }
 
@@ -158,7 +170,7 @@ abstract class ArkDatabase : RoomDatabase() {
                     ArkDatabase::class.java,
                     "ark.db"
                 )
-                .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
+                .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
                 .also { INSTANCE = it }

@@ -70,5 +70,13 @@
     "category": "behavioral_activation",
     "format": "text",
     "iconName": "ic_tool_cookie_jar"
+  },
+  {
+    "id": "fortune_cookie",
+    "name": "Fortune cookie",
+    "description": "Open a fortune cookie and take a moment with its message.",
+    "category": "emotional_awareness",
+    "format": "touch",
+    "iconName": "ic_tool_fortune_cookie"
   }
 ]
