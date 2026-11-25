@@ -25,6 +25,7 @@ import com.moviles.ark.data.remote.apis.FortuneServiceAdapterImpl
 import com.moviles.ark.data.repositories.FortuneRepositoryImpl
 import com.moviles.ark.data.local.FortunePreferencesManager
 import com.moviles.ark.data.local.FortuneCardExporter
+import com.moviles.ark.data.local.FortuneCacheManager
 import com.moviles.ark.data.local.daos.FeedbackDao
 import com.moviles.ark.data.local.daos.ToolRecordDao
 import com.moviles.ark.data.local.sensors.AudioPlayerHelper
@@ -84,6 +85,7 @@ interface AppContainer {
     val feedbackRepository: FeedbackRepository
     val breathingRepository: BreathingRepository
     val screamTankRepository: com.moviles.ark.domain.repositories.ScreamTankRepository
+    val wishRepository: com.moviles.ark.domain.repositories.WishRepository
     val audioPlayerHelper: AudioPlayerHelper
     val hapticFeedback: com.moviles.ark.domain.adapters.HapticFeedbackAdapter
     val networkConnectivityObserver: NetworkConnectivityObserver
@@ -100,6 +102,7 @@ interface AppContainer {
     val fortuneRepository: FortuneRepository
     val fortunePreferencesManager: FortunePreferencesManager
     val fortuneCardExporter: FortuneCardExporter
+    val fortuneCacheManager: FortuneCacheManager
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -221,6 +224,15 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             toolRecordDao = database.toolRecordDao(),
             auth = auth,
             onInteractionSaved = { syncManager.requestSync() }
+        )
+    }
+    // farol de deseos: los deseos se guardan en room (tabla wishes), por usuario (uid de firebase)
+    // es uno solo para toda la app, asi los faroles encendidos se mantienen al salir y volver a entrar a la herramienta
+    override val wishRepository: com.moviles.ark.domain.repositories.WishRepository by lazy {
+        com.moviles.ark.data.repositories.WishRepositoryImpl(
+            wishDao = database.wishDao(),
+            userIdProvider = { auth.currentUser?.uid },
+            onWishChanged = { syncManager.requestSync() }
         )
     }
     override val audioPlayerHelper: AudioPlayerHelper by lazy { AudioPlayerHelper(context) }

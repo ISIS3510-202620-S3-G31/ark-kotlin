@@ -18,6 +18,7 @@ import com.moviles.ark.data.local.daos.StatsDailyVisitDao
 import com.moviles.ark.data.local.daos.ToolDao
 import com.moviles.ark.data.local.daos.ToolRecordDao
 import com.moviles.ark.data.local.daos.UserDao
+import com.moviles.ark.data.local.daos.WishDao
 import com.moviles.ark.data.local.entities.BreathingSessionEntity
 import com.moviles.ark.data.local.entities.CheckInEntity
 import com.moviles.ark.data.local.entities.CookieEntity
@@ -29,7 +30,7 @@ import com.moviles.ark.data.local.entities.StatsDailyVisitEntity
 import com.moviles.ark.data.local.entities.ToolEntity
 import com.moviles.ark.data.local.entities.ToolInteractionEntity
 import com.moviles.ark.data.local.entities.UserEntity
-
+import com.moviles.ark.data.local.entities.WishEntity
 
 @Database(
     entities = [
@@ -46,8 +47,9 @@ import com.moviles.ark.data.local.entities.UserEntity
         SavedFortuneCardEntity::class,
     ],
     version = 14,
+        WishEntity::class,
     ],
-    version = 13,
+    version = 14,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -61,6 +63,7 @@ abstract class ArkDatabase : RoomDatabase() {
     abstract fun userDao(): UserDao
     abstract fun statsDailyVisitDao(): StatsDailyVisitDao
     abstract fun cookieDao(): CookieDao
+    abstract fun wishDao(): WishDao
     abstract fun favoriteFortuneCookieDao(): FavoriteFortuneCookieDao
     abstract fun savedFortuneCardDao(): SavedFortuneCardDao
 
@@ -138,6 +141,14 @@ abstract class ArkDatabase : RoomDatabase() {
                         "`cookieId` INTEGER NOT NULL, `userId` TEXT NOT NULL, `quote` TEXT NOT NULL, " +
                         "`category` TEXT NOT NULL, `luckyNumber` INTEGER NOT NULL, `localImageUri` TEXT NOT NULL, " +
                         "`remoteImageUrl` TEXT, `savedAt` INTEGER NOT NULL, `isSynced` INTEGER NOT NULL)"
+        //solo crea la tabla nueva del farol de deseos; las demas tablas no se tocan
+        //el sql es el mismo que genera room para WishEntity, si no coincide room no abre la base
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `wishes` (`id` TEXT NOT NULL, `userId` TEXT NOT NULL, `text` TEXT NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `isSynced` INTEGER NOT NULL, " +
+                        "`isDeleted` INTEGER NOT NULL, PRIMARY KEY(`id`))"
                 )
             }
         }
@@ -151,7 +162,6 @@ abstract class ArkDatabase : RoomDatabase() {
                     "ark.db"
                 )
                 .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
-                .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
                 .also { INSTANCE = it }
