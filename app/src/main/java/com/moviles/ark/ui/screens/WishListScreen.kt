@@ -80,7 +80,7 @@ fun WishListScreen(
                 )
             }
 
-            if (uiState.isLoading) {
+            if (uiState.isListLoading) {
                 LoadingWishes()
             } else if (uiState.wishes.isEmpty()) {
                 EmptyWishes(onWriteWish = onWriteWish)
@@ -210,7 +210,7 @@ fun WishListScreenPreview() {
     )
     AppTheme {
         WishListScreen(
-            uiState = WishLanternUiState(wishes = wishes, isLoading = false),
+            uiState = WishLanternUiState(wishes = wishes, isListLoading = false),
             onBack = {},
             onWriteWish = {},
             onEditWish = {},
