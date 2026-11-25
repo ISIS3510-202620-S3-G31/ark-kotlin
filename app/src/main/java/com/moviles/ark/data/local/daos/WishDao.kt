@@ -48,6 +48,17 @@ interface WishDao {
     @Query("UPDATE wishes SET isDeleted = 1, updatedAt = :updatedAt, isSynced = 0 WHERE id = :id AND userId = :userId")
     suspend fun markAsDeleted(id: String, userId: String, updatedAt: Long): Int
 
+    // ---------- lo que usa la recuperacion desde firestore (eventual connectivity) ----------
+
+    //un deseo por su id, este borrado o no; sirve para comparar con la version de la nube
+    @Query("SELECT * FROM wishes WHERE id = :id LIMIT 1")
+    suspend fun getWishById(id: String): WishEntity?
+
+    //guarda varios deseos de una vez; si el id ya existe, lo reemplaza
+    //room guarda toda la lista en una sola transaccion: o se guardan todos o ninguno
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertWishes(wishes: List<WishEntity>)
+
     // ---------- lo que usa el sync (eventual connectivity) ----------
 
     //deseos del usuario con algo por subir: nuevos, editados o borrados

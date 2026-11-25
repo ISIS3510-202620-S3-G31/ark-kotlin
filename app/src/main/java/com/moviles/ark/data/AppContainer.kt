@@ -226,7 +226,10 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         com.moviles.ark.data.repositories.WishRepositoryImpl(
             wishDao = database.wishDao(),
             userIdProvider = { auth.currentUser?.uid },
-            onWishChanged = { syncManager.requestSync() }
+            onWishChanged = { syncManager.requestSync() },
+            firestore = firestore,
+            wishPreferences = com.moviles.ark.data.local.WishPreferences(context),
+            isOnline = networkConnectivityObserver::isConnected
         )
     }
     override val audioPlayerHelper: AudioPlayerHelper by lazy { AudioPlayerHelper(context) }
@@ -247,7 +250,8 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             feedbackDao = database.feedbackDao(),
             statsDailyVisitDao = database.statsDailyVisitDao(),
             syncPendingProfile = { userRepository.syncPendingProfile() },
-            hasPendingProfile = { userRepository.hasPendingProfileChanges() }
+            hasPendingProfile = { userRepository.hasPendingProfileChanges() },
+            wishDao = database.wishDao()
         )
     }
     override val syncManager: SyncManager by lazy {
