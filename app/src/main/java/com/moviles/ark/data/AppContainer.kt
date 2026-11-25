@@ -15,6 +15,14 @@ import com.moviles.ark.data.workers.RemotePhotoDeleteWorker
 import com.moviles.ark.R
 import com.moviles.ark.data.local.ArkDatabase
 import com.moviles.ark.data.local.daos.FavoriteFortuneCookieDao
+import com.moviles.ark.data.local.daos.SavedFortuneCardDao
+import com.moviles.ark.data.local.FortunePreferencesManager
+import com.moviles.ark.data.local.FortuneCardExporter
+import com.moviles.ark.data.local.FortuneCacheManager
+import com.moviles.ark.domain.adapters.FortuneServiceAdapter
+import com.moviles.ark.domain.repositories.FortuneRepository
+import com.moviles.ark.data.remote.apis.FortuneServiceAdapterImpl
+import com.moviles.ark.data.repositories.FortuneRepositoryImpl
 import com.moviles.ark.data.local.FortunePreferencesManager
 import com.moviles.ark.data.local.FortuneCardExporter
 import com.moviles.ark.data.local.FortuneCacheManager
@@ -86,6 +94,12 @@ interface AppContainer {
     val environmentalSensorManager: EnvironmentalSensorManager
     val speechToTextHelper: SpeechToTextHelper
     val favoriteFortuneCookieDao: FavoriteFortuneCookieDao
+    val savedFortuneCardDao: SavedFortuneCardDao
+    val fortunePreferencesManager: FortunePreferencesManager
+    val fortuneCardExporter: FortuneCardExporter
+    val fortuneCacheManager: FortuneCacheManager
+    val fortuneServiceAdapter: FortuneServiceAdapter
+    val fortuneRepository: FortuneRepository
     val fortunePreferencesManager: FortunePreferencesManager
     val fortuneCardExporter: FortuneCardExporter
     val fortuneCacheManager: FortuneCacheManager
@@ -253,10 +267,28 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val speechToTextHelper: SpeechToTextHelper by lazy { SpeechToTextHelper(context) }
     // dao local de room para consultar y guardar frases favoritas de la galleta de la fortuna
     override val favoriteFortuneCookieDao: FavoriteFortuneCookieDao by lazy { database.favoriteFortuneCookieDao() }
+    // dao local de room para trazabilidad de tarjetas de la fortuna guardadas en galeria y nube
+    override val savedFortuneCardDao: SavedFortuneCardDao by lazy { database.savedFortuneCardDao() }
     // gestor de intentos diarios con sharedpreferences para la galleta de la fortuna
     override val fortunePreferencesManager: FortunePreferencesManager by lazy { FortunePreferencesManager(context) }
     // exportador de tarjetas de la fortuna a la galeria publica
     override val fortuneCardExporter: FortuneCardExporter by lazy { FortuneCardExporter(context) }
     // gestor de cache en memoria y disco para la galleta de la fortuna
     override val fortuneCacheManager: FortuneCacheManager by lazy { FortuneCacheManager(context) }
+    // adaptador de la api remota de consejos y frases de sabiduria
+    override val fortuneServiceAdapter: FortuneServiceAdapter by lazy { FortuneServiceAdapterImpl() }
+    // repositorio principal de la galleta de la fortuna que reparte trabajo en hilos
+    override val fortuneRepository: FortuneRepository by lazy {
+        FortuneRepositoryImpl(
+            favoriteFortuneCookieDao = favoriteFortuneCookieDao,
+            savedFortuneCardDao = savedFortuneCardDao,
+            preferencesManager = fortunePreferencesManager,
+            cacheManager = fortuneCacheManager,
+            cardExporter = fortuneCardExporter,
+            serviceAdapter = fortuneServiceAdapter,
+            firestore = firestore,
+            storage = storage,
+            userIdProvider = { auth.currentUser?.uid }
+        )
+    }
 }

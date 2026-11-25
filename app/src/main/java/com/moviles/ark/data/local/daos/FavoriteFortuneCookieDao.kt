@@ -29,4 +29,8 @@ interface FavoriteFortuneCookieDao {
     //elimina una frase de favoritos por su id
     @Query("DELETE FROM favorite_fortune_cookies WHERE id = :id")
     suspend fun deleteFavoriteById(id: Int)
+
+    //marca una favorita como sincronizada en la nube
+    @Query("UPDATE favorite_fortune_cookies SET isSynced = 1 WHERE id = :id")
+    suspend fun markAsSynced(id: Int)
 }
