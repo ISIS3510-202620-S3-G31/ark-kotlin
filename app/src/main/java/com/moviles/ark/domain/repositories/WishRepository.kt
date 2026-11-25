@@ -7,7 +7,11 @@ import kotlinx.coroutines.flow.Flow
 //las pantallas solo hablan con esta interfaz; no saben si los deseos estan en memoria, en room o en firestore
 interface WishRepository {
     //todos los deseos del usuario, del mas nuevo al mas viejo; se actualiza solo cuando algo cambia
+    //es la lista completa (con el texto), la usa la vista "todos mis deseos"
     fun getWishes(): Flow<List<WishModel>>
+
+    //solo los ids de los deseos del usuario; es liviano y lo usa el cielo para dibujar los faroles
+    fun getWishIds(): Flow<List<String>>
 
     //ids de los deseos que estan en la cache (los faroles encendidos)
     fun getLitWishIds(): Flow<Set<String>>
