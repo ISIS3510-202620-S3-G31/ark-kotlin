@@ -1,4 +1,4 @@
--- Sesiones completadas de las herramientas (Sprint 4) y las preguntas que salen de ellas: BQ13 y BQ14.
+-- Sesiones completadas de las herramientas (Sprint 4) y las preguntas que salen de ellas: BQ13, BQ14 y BQ15.
 --
 -- Uso: correr despues de views.sql y views_bq4_and_age.sql (usa tool_interactions, tool_name,
 -- test_accounts y la tabla tool_load_latency_raw_latest de la extension). Despues correr
@@ -261,3 +261,61 @@ SELECT
   device_type,
   is_test_account
 FROM tool_brackets;
+
+-- BQ15: desde que entrada se abren las herramientas que se completan en los ultimos 28 dias
+-- (in_last_4_weeks): las tres tarjetas del Home
+-- (recomendacion, "Leave it to chance" y clima) o el catalogo (pestana Tools o "Browse full
+-- catalog"). La app la guarda en cada apertura (entryPoint de tool_load_latency).
+-- Una fila por entrada, herramienta, tipo de dispositivo y cuenta de prueba, con 0 en las entradas
+-- sin sesiones. Las sesiones sin apertura registrada (versiones de la app anteriores al 27 de
+-- octubre, o abiertas hace mas de 3 horas) van como 'Not recorded' y no se mezclan con las demas.
+-- Lee completed_tool_sessions una sola vez: cuenta las 5 entradas en columnas y despues las pasa a filas.
+-- La respuesta se lee con device_type = 'Real phone' y is_test_account = false.
+CREATE OR REPLACE VIEW `ark-mobiles.ark_dashboards.bq15_entry_points` AS
+WITH
+-- unica lectura de las sesiones del periodo: cuenta las de cada entrada por herramienta
+sessions_per_entry AS (
+  SELECT
+    tool,
+    device_type,
+    is_test_account,
+    COUNTIF(entry_point = 'recommendation') AS from_recommendation,
+    COUNTIF(entry_point = 'surprise_me') AS from_surprise_me,
+    COUNTIF(entry_point = 'weather') AS from_weather,
+    COUNTIF(entry_point = 'catalog') AS from_catalog,
+    -- sin apertura registrada; una entrada que la app no conoce todavia tambien cuenta aqui
+    COUNTIF(entry_point IS NULL
+      OR entry_point NOT IN ('recommendation', 'surprise_me', 'weather', 'catalog')) AS not_recorded,
+    MAX(happened_at) AS last_session_at
+  FROM `ark-mobiles.ark_dashboards.completed_tool_sessions`
+  WHERE in_last_4_weeks
+  GROUP BY tool, device_type, is_test_account
+),
+-- la lista fija de las 5 entradas, en orden
+entry_points AS (
+  SELECT 1 AS entry_order, 'Home: recommendation card' AS entry_point_label,
+    'Home card' AS entry_group, TRUE AS has_entry_point
+  UNION ALL SELECT 2, 'Home: Leave it to chance', 'Home card', TRUE
+  UNION ALL SELECT 3, 'Home: weather card', 'Home card', TRUE
+  UNION ALL SELECT 4, 'Tools catalog', 'Tools catalog', TRUE
+  UNION ALL SELECT 5, 'Not recorded', 'Not recorded', FALSE
+)
+SELECT
+  e.entry_point_label,
+  e.entry_group,
+  e.entry_order,
+  e.has_entry_point,
+  c.tool,
+  -- las sesiones salen de la columna que le toca a la entrada
+  CASE e.entry_order
+    WHEN 1 THEN c.from_recommendation
+    WHEN 2 THEN c.from_surprise_me
+    WHEN 3 THEN c.from_weather
+    WHEN 4 THEN c.from_catalog
+    WHEN 5 THEN c.not_recorded
+  END AS sessions,
+  c.last_session_at,
+  c.device_type,
+  c.is_test_account
+FROM sessions_per_entry AS c
+CROSS JOIN entry_points AS e;
