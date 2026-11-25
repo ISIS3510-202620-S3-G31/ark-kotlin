@@ -62,6 +62,8 @@ data class WishLanternUiState(
     // ---------- general ----------
     //false cuando el telefono no tiene internet
     val isOnline: Boolean = true,
+    //true si faltan por traer de firestore los deseos anteriores y no se pudo (sin internet)
+    val isRestorePending: Boolean = false,
     //mensaje cuando algo sale mal; null si todo va bien
     val errorMessage: String? = null
 ) {

@@ -1,19 +1,28 @@
 package com.moviles.ark.data.repositories
 
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Source
 import com.moviles.ark.data.local.WishMemoryCache
+import com.moviles.ark.data.local.WishPreferences
 import com.moviles.ark.data.local.daos.WishDao
 import com.moviles.ark.data.local.entities.WishEntity
 import com.moviles.ark.data.local.entities.toModel
 import com.moviles.ark.data.remote.CrashlyticsHelper
+import com.moviles.ark.data.remote.dtos.WishDto
+import com.moviles.ark.data.remote.dtos.toEntity
 import com.moviles.ark.domain.models.WishModel
 import com.moviles.ark.domain.repositories.WishRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import java.util.UUID
 
 //repositorio del farol de deseos con room (local storage)
@@ -29,6 +38,10 @@ import java.util.UUID
 //- los faroles encendidos son los deseos que estan en memoryCache, un LruCache de maximo 8 deseos
 //- al tocar un farol primero se busca en la cache; solo si no esta se va a room
 //- al editar o borrar un deseo tambien se cambia la cache, asi el cielo nunca muestra texto viejo
+//
+//eventual connectivity (offline first):
+//- todo se lee y se escribe en room, con o sin internet; el SyncWorker sube los cambios cuando hay red
+//- si el usuario borro los datos de la app, restoreWishesIfNeeded trae sus deseos de firestore
 class WishRepositoryImpl(
     private val wishDao: WishDao,
     //uid del usuario con sesion; null si no hay sesion
@@ -40,7 +53,13 @@ class WishRepositoryImpl(
     //hilo para trabajo pesado de cpu, como ordenar listas
     private val defaultDispatcher: CoroutineDispatcher = Dispatchers.Default,
     //cache en memoria de los faroles encendidos (LruCache de 8 deseos)
-    private val memoryCache: WishMemoryCache = WishMemoryCache()
+    private val memoryCache: WishMemoryCache = WishMemoryCache(),
+    //firestore, para recuperar los deseos de la nube; null en pruebas
+    private val firestore: FirebaseFirestore? = null,
+    //guarda si los deseos de cada usuario ya se recuperaron; null en pruebas
+    private val wishPreferences: WishPreferences? = null,
+    //true si el telefono tiene internet en este momento
+    private val isOnline: () -> Boolean = { true }
 ) : WishRepository {
 
     //de que usuario son los deseos que estan en la cache; si entra otro usuario la cache se vacia
@@ -81,6 +100,13 @@ class WishRepositoryImpl(
     // ---------- lecturas y escrituras de una vez (suspend) ----------
     //cada funcion publica cambia al hilo de IO y la funcion privada de abajo hace el trabajo
 
+    override suspend fun restoreWishesIfNeeded(): Boolean {
+        //bajar de internet y guardar en room va en Dispatchers.IO
+        return withContext(ioDispatcher) {
+            restoreWishesFromFirestore()
+        }
+    }
+
     override suspend fun warmUpCache() {
         withContext(ioDispatcher) {
             warmUpCacheFromRoom()
@@ -112,6 +138,77 @@ class WishRepositoryImpl(
     }
 
     // ---------- el trabajo de verdad (ya corre en IO) ----------
+
+    private suspend fun restoreWishesFromFirestore(): Boolean {
+        //sin sesion no hay deseos que recuperar
+        val userId = userIdProvider()
+        if (userId == null) {
+            return true
+        }
+        //sin firestore o sin preferencias (por ejemplo en pruebas) no se puede recuperar nada
+        val remote = firestore
+        val preferences = wishPreferences
+        if (remote == null || preferences == null) {
+            return true
+        }
+
+        //si ya se recuperaron en este telefono, no hay nada que hacer: room ya los tiene
+        if (preferences.areWishesRestored(userId)) {
+            return true
+        }
+
+        //falta recuperarlos y no hay internet: se intenta otra vez cuando vuelva la conexion
+        if (!isOnline()) {
+            return false
+        }
+
+        try {
+            //1. bajar todos los deseos del usuario de firestore
+            //Source.SERVER: si no hay red falla, en vez de devolver la copia vieja (o vacia) que guarda firestore
+            val documents = withTimeout(RESTORE_TIMEOUT_MS) {
+                remote.collection("users")
+                    .document(userId)
+                    .collection("wishes")
+                    .get(Source.SERVER)
+                    .await()
+            }
+
+            //2. decidir cuales guardar en room
+            val wishesToSave = mutableListOf<WishEntity>()
+            for (document in documents) {
+                val dto = document.toObject(WishDto::class.java)
+                val cloudWish = dto.copy(id = document.id, userId = userId).toEntity()
+                val phoneWish = wishDao.getWishById(cloudWish.id)
+
+                if (phoneWish == null) {
+                    //el telefono no lo tiene: se guarda
+                    wishesToSave.add(cloudWish)
+                } else if (cloudWish.updatedAt > phoneWish.updatedAt) {
+                    //los dos lo tienen: gana el que se cambio mas recientemente
+                    wishesToSave.add(cloudWish)
+                }
+                //si el del telefono es igual o mas nuevo, se deja el del telefono (el sync lo sube despues)
+            }
+
+            //3. guardar todos de una vez (una sola transaccion de room)
+            if (wishesToSave.isNotEmpty()) {
+                wishDao.insertWishes(wishesToSave)
+            }
+
+            //4. listo: no se vuelve a recuperar en este telefono
+            preferences.markWishesRestored(userId)
+            return true
+        } catch (e: TimeoutCancellationException) {
+            //la red no respondio a tiempo: se intenta otra vez despues
+            return false
+        } catch (e: CancellationException) {
+            //la pantalla se cerro: no es un error
+            throw e
+        } catch (e: Exception) {
+            logError("restoreWishes", e)
+            return false
+        }
+    }
 
     private suspend fun warmUpCacheFromRoom() {
         val userId = userIdProvider()
@@ -273,6 +370,11 @@ class WishRepositoryImpl(
             memoryCache.clear()
             cacheUserId = userId
         }
+    }
+
+    companion object {
+        //cuanto se espera a firestore al recuperar los deseos
+        private const val RESTORE_TIMEOUT_MS = 20_000L
     }
 
     //guarda el error en crashlytics para poder revisarlo despues

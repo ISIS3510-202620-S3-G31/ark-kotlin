@@ -32,12 +32,34 @@ import com.moviles.ark.ui.theme.BackgroundLightColor
 import com.moviles.ark.ui.theme.ScreenTopPadding
 import com.moviles.ark.ui.theme.SecondaryColor
 import com.moviles.ark.ui.theme.TextColor
+import com.moviles.ark.ui.viewmodels.WishLanternUiState
 import com.moviles.ark.ui.viewmodels.WishLanternView
 import com.moviles.ark.ui.viewmodels.WishLanternViewModel
 
 //mensajes cuando no hay internet
 const val WISHES_OFFLINE_MESSAGE = "You're offline. Your wishes may not be up to date."
 const val EDITOR_OFFLINE_MESSAGE = "You're offline. Your wish will be saved when you're back online."
+const val RESTORE_PENDING_MESSAGE = "We couldn't bring back your previous lanterns. Connect to the internet to recover them."
+
+//aviso del cielo y de la lista; null si no hay que mostrar nada
+//primero va el de recuperar, porque es el mas importante
+fun wishesNotice(uiState: WishLanternUiState): String? {
+    if (uiState.isRestorePending) {
+        return RESTORE_PENDING_MESSAGE
+    }
+    if (!uiState.isOnline) {
+        return WISHES_OFFLINE_MESSAGE
+    }
+    return null
+}
+
+//aviso del editor; null si no hay que mostrar nada
+fun editorNotice(uiState: WishLanternUiState): String? {
+    if (!uiState.isOnline) {
+        return EDITOR_OFFLINE_MESSAGE
+    }
+    return null
+}
 
 //entrada del farol de deseos: tiene el viewmodel y decide cual de las tres vistas se muestra
 //onBack recibe si el usuario termino la herramienta (chulito) y cuantos segundos la uso
@@ -138,10 +160,10 @@ fun WishRoundButton(
     }
 }
 
-//aviso de que no hay internet; solo se dibuja si isOnline es false
+//aviso de internet (sin conexion o deseos sin recuperar); si message es null no se dibuja nada
 @Composable
-fun WishOfflineMessage(isOnline: Boolean, message: String) {
-    if (isOnline) {
+fun WishOfflineMessage(message: String?) {
+    if (message == null) {
         return
     }
     Row(

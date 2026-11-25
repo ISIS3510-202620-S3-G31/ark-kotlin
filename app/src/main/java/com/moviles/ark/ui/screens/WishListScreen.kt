@@ -68,7 +68,7 @@ fun WishListScreen(
                 .navigationBarsPadding()
         ) {
             WishHeader(title = "All my wishes", onBack = onBack)
-            WishOfflineMessage(isOnline = uiState.isOnline, message = WISHES_OFFLINE_MESSAGE)
+            WishOfflineMessage(message = wishesNotice(uiState))
 
             val errorMessage = uiState.errorMessage
             if (errorMessage != null) {

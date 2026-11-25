@@ -61,7 +61,7 @@ fun WishEditorScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             WishHeader(title = title, onBack = onBack)
-            WishOfflineMessage(isOnline = uiState.isOnline, message = EDITOR_OFFLINE_MESSAGE)
+            WishOfflineMessage(message = editorNotice(uiState))
 
             Spacer(modifier = Modifier.height(16.dp))
             //el farol apagado espera el deseo; se enciende al guardar
