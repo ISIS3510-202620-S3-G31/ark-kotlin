@@ -11,33 +11,27 @@ import com.moviles.ark.data.local.daos.BreathingSessionDao
 import com.moviles.ark.data.local.daos.CookieDao
 import com.moviles.ark.data.local.daos.EmotionCheckInDao
 import com.moviles.ark.data.local.daos.FavoriteFortuneCookieDao
+import com.moviles.ark.data.local.daos.SavedFortuneCardDao
 import com.moviles.ark.data.local.daos.FeedbackDao
 import com.moviles.ark.data.local.daos.PhotoEntryDao
 import com.moviles.ark.data.local.daos.StatsDailyVisitDao
 import com.moviles.ark.data.local.daos.ToolDao
 import com.moviles.ark.data.local.daos.ToolRecordDao
 import com.moviles.ark.data.local.daos.UserDao
+import com.moviles.ark.data.local.daos.WishDao
 import com.moviles.ark.data.local.entities.BreathingSessionEntity
 import com.moviles.ark.data.local.entities.CheckInEntity
 import com.moviles.ark.data.local.entities.CookieEntity
 import com.moviles.ark.data.local.entities.FavoriteFortuneCookieEntity
+import com.moviles.ark.data.local.entities.SavedFortuneCardEntity
 import com.moviles.ark.data.local.entities.FeedbackEntity
 import com.moviles.ark.data.local.entities.PhotoEntryEntity
 import com.moviles.ark.data.local.entities.StatsDailyVisitEntity
 import com.moviles.ark.data.local.entities.ToolEntity
 import com.moviles.ark.data.local.entities.ToolInteractionEntity
 import com.moviles.ark.data.local.entities.UserEntity
+import com.moviles.ark.data.local.entities.WishEntity
 
-//base de datos local de la app: aqui se registran todas las tablas (entities) y sus daos
-//reemplaza a AppDatabase.kt, que se borra (nadie la usaba)
-//version 2: se agrego breathing_sessions; cada vez que se cambie una tabla se sube el numero
-//version 3: se agrego users, el perfil guardado en el telefono
-//version 7: se agrego stats_daily_visits, conteo de visitas diarias a estadisticas
-//version 8: emociones del feedback y ciudad del check-in, con migracion para no borrar lo que no se ha subido
-//version 9: cuenta del feedback pendiente, para no subirlo a otra cuenta si se cierra sesion sin red
-//version 12: se agrego cookies, las galletas del cookie jar, con migracion para no perder nada de lo anterior
-//version 13: se agrego favorite_fortunes, frases favoritas de la galleta de la fortuna
-//(sin migracion para un salto de version, room borra y crea de nuevo la base local)
 @Database(
     entities = [
         ToolEntity::class,
@@ -50,8 +44,10 @@ import com.moviles.ark.data.local.entities.UserEntity
         StatsDailyVisitEntity::class,
         CookieEntity::class,
         FavoriteFortuneCookieEntity::class,
+        SavedFortuneCardEntity::class,
+        WishEntity::class,
     ],
-    version = 13,
+    version = 14,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -65,7 +61,9 @@ abstract class ArkDatabase : RoomDatabase() {
     abstract fun userDao(): UserDao
     abstract fun statsDailyVisitDao(): StatsDailyVisitDao
     abstract fun cookieDao(): CookieDao
+    abstract fun wishDao(): WishDao
     abstract fun favoriteFortuneCookieDao(): FavoriteFortuneCookieDao
+    abstract fun savedFortuneCardDao(): SavedFortuneCardDao
 
     companion object {
         @Volatile
@@ -133,6 +131,23 @@ abstract class ArkDatabase : RoomDatabase() {
             }
         }
 
+        //agrega la tabla de tarjetas de la fortuna guardadas en galeria y nube y la tabla de deseos
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `saved_fortune_cards` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`cookieId` INTEGER NOT NULL, `userId` TEXT NOT NULL, `quote` TEXT NOT NULL, " +
+                        "`category` TEXT NOT NULL, `luckyNumber` INTEGER NOT NULL, `localImageUri` TEXT NOT NULL, " +
+                        "`remoteImageUrl` TEXT, `savedAt` INTEGER NOT NULL, `isSynced` INTEGER NOT NULL)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `wishes` (`id` TEXT NOT NULL, `userId` TEXT NOT NULL, `text` TEXT NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `isSynced` INTEGER NOT NULL, " +
+                        "`isDeleted` INTEGER NOT NULL, PRIMARY KEY(`id`))"
+                )
+            }
+        }
+
         //singleton con doble comprobacion para que toda la app comparta un unico pool de conexiones
         fun getInstance(context: Context): ArkDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -141,7 +156,7 @@ abstract class ArkDatabase : RoomDatabase() {
                     ArkDatabase::class.java,
                     "ark.db"
                 )
-                .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
+                .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
                 .also { INSTANCE = it }

@@ -15,6 +15,7 @@ import com.moviles.ark.data.workers.RemotePhotoDeleteWorker
 import com.moviles.ark.R
 import com.moviles.ark.data.local.ArkDatabase
 import com.moviles.ark.data.local.daos.FavoriteFortuneCookieDao
+import com.moviles.ark.data.local.daos.SavedFortuneCardDao
 import com.moviles.ark.data.local.FortunePreferencesManager
 import com.moviles.ark.data.local.FortuneCardExporter
 import com.moviles.ark.data.local.FortuneCacheManager
@@ -81,6 +82,7 @@ interface AppContainer {
     val feedbackRepository: FeedbackRepository
     val breathingRepository: BreathingRepository
     val screamTankRepository: com.moviles.ark.domain.repositories.ScreamTankRepository
+    val wishRepository: com.moviles.ark.domain.repositories.WishRepository
     val audioPlayerHelper: AudioPlayerHelper
     val hapticFeedback: com.moviles.ark.domain.adapters.HapticFeedbackAdapter
     val networkConnectivityObserver: NetworkConnectivityObserver
@@ -89,6 +91,7 @@ interface AppContainer {
     val environmentalSensorManager: EnvironmentalSensorManager
     val speechToTextHelper: SpeechToTextHelper
     val favoriteFortuneCookieDao: FavoriteFortuneCookieDao
+    val savedFortuneCardDao: SavedFortuneCardDao
     val fortunePreferencesManager: FortunePreferencesManager
     val fortuneCardExporter: FortuneCardExporter
     val fortuneCacheManager: FortuneCacheManager
@@ -217,6 +220,15 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             onInteractionSaved = { syncManager.requestSync() }
         )
     }
+    // farol de deseos: los deseos se guardan en room (tabla wishes), por usuario (uid de firebase)
+    // es uno solo para toda la app, asi los faroles encendidos se mantienen al salir y volver a entrar a la herramienta
+    override val wishRepository: com.moviles.ark.domain.repositories.WishRepository by lazy {
+        com.moviles.ark.data.repositories.WishRepositoryImpl(
+            wishDao = database.wishDao(),
+            userIdProvider = { auth.currentUser?.uid },
+            onWishChanged = { syncManager.requestSync() }
+        )
+    }
     override val audioPlayerHelper: AudioPlayerHelper by lazy { AudioPlayerHelper(context) }
     // vibracion de la respiracion guiada
     override val hapticFeedback: com.moviles.ark.domain.adapters.HapticFeedbackAdapter by lazy { com.moviles.ark.data.local.sensors.HapticFeedbackHelper(context) }
@@ -249,6 +261,8 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val speechToTextHelper: SpeechToTextHelper by lazy { SpeechToTextHelper(context) }
     // dao local de room para consultar y guardar frases favoritas de la galleta de la fortuna
     override val favoriteFortuneCookieDao: FavoriteFortuneCookieDao by lazy { database.favoriteFortuneCookieDao() }
+    // dao local de room para trazabilidad de tarjetas de la fortuna guardadas en galeria y nube
+    override val savedFortuneCardDao: SavedFortuneCardDao by lazy { database.savedFortuneCardDao() }
     // gestor de intentos diarios con sharedpreferences para la galleta de la fortuna
     override val fortunePreferencesManager: FortunePreferencesManager by lazy { FortunePreferencesManager(context) }
     // exportador de tarjetas de la fortuna a la galeria publica
@@ -261,10 +275,14 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val fortuneRepository: FortuneRepository by lazy {
         FortuneRepositoryImpl(
             favoriteFortuneCookieDao = favoriteFortuneCookieDao,
+            savedFortuneCardDao = savedFortuneCardDao,
             preferencesManager = fortunePreferencesManager,
             cacheManager = fortuneCacheManager,
             cardExporter = fortuneCardExporter,
-            serviceAdapter = fortuneServiceAdapter
+            serviceAdapter = fortuneServiceAdapter,
+            firestore = firestore,
+            storage = storage,
+            userIdProvider = { auth.currentUser?.uid }
         )
     }
 }
