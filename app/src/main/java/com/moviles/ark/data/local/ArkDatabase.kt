@@ -18,6 +18,7 @@ import com.moviles.ark.data.local.daos.StatsDailyVisitDao
 import com.moviles.ark.data.local.daos.ToolDao
 import com.moviles.ark.data.local.daos.ToolRecordDao
 import com.moviles.ark.data.local.daos.UserDao
+import com.moviles.ark.data.local.daos.WishDao
 import com.moviles.ark.data.local.entities.BreathingSessionEntity
 import com.moviles.ark.data.local.entities.CheckInEntity
 import com.moviles.ark.data.local.entities.CookieEntity
@@ -29,6 +30,7 @@ import com.moviles.ark.data.local.entities.StatsDailyVisitEntity
 import com.moviles.ark.data.local.entities.ToolEntity
 import com.moviles.ark.data.local.entities.ToolInteractionEntity
 import com.moviles.ark.data.local.entities.UserEntity
+import com.moviles.ark.data.local.entities.WishEntity
 
 //base de datos local de la app: aqui se registran todas las tablas (entities) y sus daos
 //reemplaza a AppDatabase.kt, que se borra (nadie la usaba)
@@ -54,6 +56,7 @@ import com.moviles.ark.data.local.entities.UserEntity
         CookieEntity::class,
         FavoriteFortuneCookieEntity::class,
         SavedFortuneCardEntity::class,
+        WishEntity::class,
     ],
     version = 14,
     exportSchema = false,
@@ -69,6 +72,7 @@ abstract class ArkDatabase : RoomDatabase() {
     abstract fun userDao(): UserDao
     abstract fun statsDailyVisitDao(): StatsDailyVisitDao
     abstract fun cookieDao(): CookieDao
+    abstract fun wishDao(): WishDao
     abstract fun favoriteFortuneCookieDao(): FavoriteFortuneCookieDao
     abstract fun savedFortuneCardDao(): SavedFortuneCardDao
 
@@ -138,7 +142,7 @@ abstract class ArkDatabase : RoomDatabase() {
             }
         }
 
-        //agrega la tabla de tarjetas de la fortuna guardadas en galeria y nube
+        //agrega la tabla de tarjetas de la fortuna guardadas en galeria y nube y la tabla de deseos
         val MIGRATION_13_14 = object : Migration(13, 14) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
@@ -146,6 +150,11 @@ abstract class ArkDatabase : RoomDatabase() {
                         "`cookieId` INTEGER NOT NULL, `userId` TEXT NOT NULL, `quote` TEXT NOT NULL, " +
                         "`category` TEXT NOT NULL, `luckyNumber` INTEGER NOT NULL, `localImageUri` TEXT NOT NULL, " +
                         "`remoteImageUrl` TEXT, `savedAt` INTEGER NOT NULL, `isSynced` INTEGER NOT NULL)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `wishes` (`id` TEXT NOT NULL, `userId` TEXT NOT NULL, `text` TEXT NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `isSynced` INTEGER NOT NULL, " +
+                        "`isDeleted` INTEGER NOT NULL, PRIMARY KEY(`id`))"
                 )
             }
         }

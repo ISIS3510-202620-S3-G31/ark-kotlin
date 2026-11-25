@@ -17,10 +17,32 @@ class ToolCatalogFileStore(private val context: Context) {
     private val catalogFile: File get() = File(context.filesDir, FILE_NAME)
 
     //lee el catalogo del archivo interno y, si no sirve, el de assets
-    suspend fun readCatalog(): List<ToolDto> = withContext(Dispatchers.IO) {
-        //si no se puede restaurar la copia interna igual se devuelve el respaldo
-        readInternalCatalog() ?: readBundledCatalog().also { bundled -> runCatching { writeCatalog(bundled) } }
+    suspend fun readCatalog(): List<ToolDto> {
+    // todo en segundo plano para no congelar la pantalla
+    return withContext(Dispatchers.IO) {
+
+        // intentar la copia del celular 
+        val copiaDelCelular = readInternalCatalog()
+
+        if (copiaDelCelular != null) {
+           
+            copiaDelCelular
+        } else {
+            // la copia no existe o está dañada: usamos la de 
+            val catalogoDeFabrica = readBundledCatalog()
+
+            //  de paso, creamos/reparamos la copia del celular con el de fábrica
+            try {
+                writeCatalog(catalogoDeFabrica)
+            } catch (error: Exception) {
+                // si no se pudo guardar no importa: igual devolvemos el de fábrica
+            }
+
+           
+            catalogoDeFabrica
+        }
     }
+}
 
     //sobrescribe filesDir/tools.json; primero en un temporal y luego se renombra para no dejar el archivo a medias
     suspend fun writeCatalog(tools: List<ToolDto>) = withContext(Dispatchers.IO) {
