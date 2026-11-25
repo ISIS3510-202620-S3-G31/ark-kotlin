@@ -1,9 +1,9 @@
 package com.moviles.ark.data.repositories
 
-import android.graphics.Bitmap
 import android.net.Uri
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
+import com.google.firebase.storage.StorageMetadata
 import com.moviles.ark.data.local.FortuneCacheManager
 import com.moviles.ark.data.local.FortuneCardExporter
 import com.moviles.ark.data.local.FortunePreferencesManager
@@ -11,19 +11,27 @@ import com.moviles.ark.data.local.daos.FavoriteFortuneCookieDao
 import com.moviles.ark.data.local.daos.SavedFortuneCardDao
 import com.moviles.ark.data.local.entities.FavoriteFortuneCookieEntity
 import com.moviles.ark.data.local.entities.SavedFortuneCardEntity
+import com.moviles.ark.data.remote.dtos.FavoriteFortuneDto
+import com.moviles.ark.data.remote.dtos.FortuneCardDto
+import com.moviles.ark.data.remote.dtos.toDto
 import com.moviles.ark.domain.adapters.FortuneServiceAdapter
+import com.moviles.ark.domain.models.FortuneCardModel
 import com.moviles.ark.domain.models.FortuneCrackResult
 import com.moviles.ark.domain.models.FortuneModel
+import com.moviles.ark.domain.models.FortuneShareResult
+import com.moviles.ark.domain.models.FortuneSource
+import com.moviles.ark.domain.models.TableFortune
 import com.moviles.ark.domain.repositories.FortuneRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
-import java.io.ByteArrayOutputStream
+import kotlinx.coroutines.withTimeout
 
-//implementacion del repositorio que maneja favoritos en room y cache falling back to network
+//repositorio de la galleta: room y disco son la fuente de verdad y firestore y storage son el respaldo
 class FortuneRepositoryImpl(
     private val favoriteFortuneCookieDao: FavoriteFortuneCookieDao,
     private val savedFortuneCardDao: SavedFortuneCardDao,
@@ -36,221 +44,153 @@ class FortuneRepositoryImpl(
     private val userIdProvider: () -> String? = { null }
 ) : FortuneRepository {
 
-    //observa la lista de favoritos de room y sincroniza el estado con la cache en memoria
+    //una sola subida a la vez, la pueden pedir la pantalla y la vuelta de la red al mismo tiempo
+    private val syncMutex = Mutex()
+
+    //sin sesion lo guardado queda a nombre de un usuario local
+    private fun userId(): String = userIdProvider() ?: LOCAL_USER
+
     override fun observeFavorites(): Flow<List<FortuneModel>> {
-        return favoriteFortuneCookieDao.getAllFavorites().map { entities ->
-            val list = entities.map { it.toDomain() }
-            val ids = list.map { it.id }
-            cacheManager.loadFavoriteIds(ids)
-            list
+        return favoriteFortuneCookieDao.observeFavorites(userId()).map { list ->
+            cacheManager.loadFavoriteIds(list.map { it.id })
+            list.map { it.toModel() }
         }
     }
 
-    //observa todas las tarjetas guardadas en galeria y nube para el usuario con sesion
-    override fun observeSavedCards(): Flow<List<SavedFortuneCardEntity>> {
-        val userId = userIdProvider() ?: return flowOf(emptyList())
-        return savedFortuneCardDao.observeSavedCards(userId)
+    override fun observeSavedCards(): Flow<List<FortuneCardModel>> {
+        return savedFortuneCardDao.observeCards(userId()).map { list -> list.map { it.toModel() } }
     }
 
-    //carga los identificadores de favoritos de room a memoria para acceso en tiempo constante
-    override suspend fun initCache(): Unit = withContext(Dispatchers.IO) {
-        val ids = favoriteFortuneCookieDao.getAllFavoriteIds()
-        cacheManager.loadFavoriteIds(ids)
+    override suspend fun initCache() = withContext(Dispatchers.IO) {
+        cacheManager.loadFavoriteIds(favoriteFortuneCookieDao.getFavoriteIds(userId()))
     }
 
-    //obtiene las galletas recientes almacenadas en el cache de disco lru
     override suspend fun getRecentCookies(): List<FortuneModel> = withContext(Dispatchers.IO) {
-        cacheManager.getRecentCookies()
+        cacheManager.getRecentCookies().map { it.copy(isFavorite = cacheManager.isFavorite(it.id)) }
     }
 
-    //agrega o quita de favoritos en room, memoria y sube a la nube si hay sesion
+    override suspend fun getRemainingChances(): Int = withContext(Dispatchers.IO) { preferencesManager.getChancesLeft(userId()) }
+
+    //cache falling back to network: si en el telefono hay 3 frases guardadas no se llama al api
+    override suspend fun getTable(): List<TableFortune> = withContext(Dispatchers.IO) {
+        val deck = cacheManager.getDeck()
+        if (deck.size >= 3) return@withContext deck.take(3).map { TableFortune(withFavorite(it), FortuneSource.PHONE, false) }
+
+        //quedan pocas, se traen 2 de cada api y se guardan en disco
+        val fresh = serviceAdapter.fetchTwoAndTwo()
+        val isOffline = fresh.isEmpty()
+        if (!isOffline) cacheManager.appendDeck(fresh)
+        val freshIds = fresh.map { it.id }.toSet()
+        val table = cacheManager.getDeck().take(3).map { TableFortune(withFavorite(it), if (it.id in freshIds) FortuneSource.INTERNET else FortuneSource.PHONE, isOffline) }.toMutableList()
+
+        //si aun faltan galletas se completan con las frases que trae la app
+        for (seed in cacheManager.getSeeds().shuffled()) {
+            if (table.size >= 3) break
+            if (table.none { it.fortune.quote == seed.quote }) table.add(TableFortune(withFavorite(seed), FortuneSource.BUILT_IN, isOffline))
+        }
+        table
+    }
+
+    //abre una galleta, solo esa sale del disco y las otras dos se quedan para la proxima vez
+    override suspend fun openCookie(cookie: TableFortune): Result<FortuneCrackResult> = withContext(Dispatchers.IO) {
+        if (preferencesManager.getChancesLeft(userId()) <= 0) return@withContext Result.failure(Exception("no cookies left today"))
+        cacheManager.removeFromDeck(cookie.fortune.id)
+        val remaining = preferencesManager.decrementChances(userId())
+        val fortune = withFavorite(cookie.fortune)
+        cacheManager.addRecentCookie(fortune)
+        Result.success(FortuneCrackResult(fortune, remaining))
+    }
+
+    //le pone a la frase si es favorita segun la memoria
+    private fun withFavorite(fortune: FortuneModel): FortuneModel = fortune.copy(isFavorite = cacheManager.isFavorite(fortune.id))
+
+    //primero se guarda en memoria y room, luego se intenta subir, sin red queda pendiente
     override suspend fun toggleFavorite(fortune: FortuneModel): Boolean = withContext(Dispatchers.IO) {
-        val currentlyFav = cacheManager.isFavorite(fortune.id)
-        val newFav = !currentlyFav
-        cacheManager.setFavorite(fortune.id, newFav)
-
-        val userId = userIdProvider()
-        if (newFav) {
-            val entity = FavoriteFortuneCookieEntity.fromDomain(fortune.copy(isFavorite = true), isSynced = false)
-            favoriteFortuneCookieDao.insertFavorite(entity)
-            if (firestore != null && userId != null) {
-                try {
-                    val map = hashMapOf("id" to fortune.id, "quote" to fortune.quote, "category" to fortune.category, "luckyNumber" to fortune.luckyNumber, "savedAt" to fortune.savedAt)
-                    firestore.collection("users").document(userId).collection("favorite_fortunes").document(fortune.id.toString()).set(map).await()
-                    favoriteFortuneCookieDao.markAsSynced(fortune.id)
-                } catch (_: Exception) {
-                    //si no hay internet queda guardado en room con isSynced false
-                }
-            }
+        val user = userId()
+        val nowFavorite = !cacheManager.isFavorite(fortune.id)
+        cacheManager.setFavorite(fortune.id, nowFavorite)
+        if (nowFavorite) {
+            favoriteFortuneCookieDao.insertFavorite(FavoriteFortuneCookieEntity(user, fortune.id, fortune.quote, fortune.category, System.currentTimeMillis()))
         } else {
-            favoriteFortuneCookieDao.deleteFavoriteById(fortune.id)
-            if (firestore != null && userId != null) {
-                try {
-                    firestore.collection("users").document(userId).collection("favorite_fortunes").document(fortune.id.toString()).delete().await()
-                } catch (_: Exception) {
-                    //si falla el borrado remoto se omite
-                }
-            }
+            favoriteFortuneCookieDao.markDeleted(user, fortune.id)
         }
-        newFav
+        nowFavorite
     }
 
-    //obtiene los intentos disponibles de hoy en shared preferences
-    override suspend fun getRemainingChances(): Int = withContext(Dispatchers.IO) {
-        preferencesManager.getChancesLeft()
+    //si la imagen ya existe se reutiliza, si no se dibuja en un hilo de computo y se guarda una sola vez
+    override suspend fun getOrCreateCard(fortune: FortuneModel): FortuneShareResult? {
+        val user = userId()
+        val saved = withContext(Dispatchers.IO) { savedFortuneCardDao.getCard(user, fortune.id) }
+        if (saved != null && withContext(Dispatchers.IO) { cardExporter.exists(saved.localImageUri) }) return FortuneShareResult(Uri.parse(saved.localImageUri), false)
+
+        val savedAt = saved?.savedAt ?: System.currentTimeMillis()
+        val bitmap = withContext(Dispatchers.Default) { cardExporter.renderCardBitmap(fortune, savedAt) }
+        val uri = withContext(Dispatchers.IO) { cardExporter.saveCardToGallery(bitmap) } ?: return null
+        withContext(Dispatchers.IO) {
+            val card = SavedFortuneCardEntity(id = saved?.id ?: 0, cookieId = fortune.id, userId = user, quote = fortune.quote, localImageUri = uri.toString(), remoteImageUrl = saved?.remoteImageUrl, savedAt = savedAt, isSynced = saved?.isSynced ?: false)
+            savedFortuneCardDao.insertCard(card)
+        }
+        return FortuneShareResult(uri, saved == null)
     }
 
-    //rompe una galleta usando estrategia cache falling back to network
-    override suspend fun crackCookie(): Result<FortuneCrackResult> = withContext(Dispatchers.IO) {
-        val chances = preferencesManager.getChancesLeft()
-        if (chances <= 0) {
-            return@withContext Result.failure(Exception("no chances left today"))
-        }
-
-        val deckCount = cacheManager.getDeckCount()
-        val fortune: FortuneModel
-        var isOfflineFallback = false
-
-        //si en disco quedan al menos 3 galletas no se consulta el api
-        if (deckCount >= 3) {
-            fortune = cacheManager.popDeckCookie() ?: cacheManager.getDefaultFallback()
-        } else {
-            //si quedan pocas galletas en disco se consulta la red para traer 2 y 2
-            val freshCookies = serviceAdapter.fetchTwoAndTwo()
-            if (freshCookies.isNotEmpty()) {
-                cacheManager.appendDeck(freshCookies)
-                fortune = cacheManager.popDeckCookie() ?: freshCookies.first()
-            } else {
-                //si la red falla sacamos de lo que quede en disco o del respaldo local
-                val cached = cacheManager.popDeckCookie()
-                if (cached != null) {
-                    fortune = cached
-                } else {
-                    fortune = cacheManager.getDefaultFallback()
-                }
-                isOfflineFallback = true
-            }
-        }
-
-        //descontamos el intento y registramos en recientes de disco
-        val remaining = preferencesManager.decrementChances()
-        val isFav = cacheManager.isFavorite(fortune.id)
-        val finalFortune = fortune.copy(isFavorite = isFav)
-        cacheManager.addRecentCookie(finalFortune)
-        Result.success(FortuneCrackResult(fortune = finalFortune, isFromOfflineReserve = isOfflineFallback, remainingChances = remaining))
-    }
-
-    //dibuja el bitmap en dispatchers.default, lo guarda en mediastore y lo respalda en firebase storage
-    override suspend fun saveCardToGallery(fortune: FortuneModel): Uri? {
-        val bitmap: Bitmap = withContext(Dispatchers.Default) {
-            cardExporter.renderCardBitmap(fortune)
-        }
-        val uri: Uri? = withContext(Dispatchers.IO) {
-            cardExporter.saveCardToGallery(bitmap, "fortune_${fortune.id}")
-        }
-        if (uri != null) {
-            withContext(Dispatchers.IO) {
-                val userId = userIdProvider() ?: "local_user"
-                val cardEntity = SavedFortuneCardEntity(
-                    cookieId = fortune.id,
-                    userId = userId,
-                    quote = fortune.quote,
-                    category = fortune.category,
-                    luckyNumber = fortune.luckyNumber,
-                    localImageUri = uri.toString(),
-                    savedAt = System.currentTimeMillis(),
-                    isSynced = false
-                )
-                val cardId = savedFortuneCardDao.insertCard(cardEntity)
-
-                //si hay sesion y conexion subimos la imagen comprimida a storage y su documento a firestore
-                if (storage != null && firestore != null && userId != "local_user") {
-                    try {
-                        val stream = ByteArrayOutputStream()
-                        bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
-                        val bytes = stream.toByteArray()
-                        val storageRef = storage.reference.child("users/$userId/fortune_cards/card_${cardId}_${fortune.id}.png")
-                        storageRef.putBytes(bytes).await()
-                        val downloadUrl = storageRef.downloadUrl.await().toString()
-                        val map = hashMapOf(
-                            "id" to cardId,
-                            "cookieId" to fortune.id,
-                            "userId" to userId,
-                            "quote" to fortune.quote,
-                            "category" to fortune.category,
-                            "luckyNumber" to fortune.luckyNumber,
-                            "remoteImageUrl" to downloadUrl,
-                            "savedAt" to cardEntity.savedAt
-                        )
-                        firestore.collection("users").document(userId).collection("saved_fortune_cards").document(cardId.toString()).set(map).await()
-                        savedFortuneCardDao.markCardSynced(cardId, downloadUrl)
-                    } catch (_: Exception) {
-                        //si falla la subida queda registrado localmente en room para sincronizarse despues
+    //sube lo pendiente, si algo falla se para y se reintenta cuando vuelva la red
+    override suspend fun syncPending() = withContext(Dispatchers.IO) {
+        val user = userIdProvider() ?: return@withContext
+        if (firestore == null || storage == null) return@withContext
+        syncMutex.withLock {
+            try {
+                for (favorite in favoriteFortuneCookieDao.getUnsynced(user)) {
+                    val doc = firestore.collection("users").document(user).collection("favorite_fortunes").document(favorite.id.toString())
+                    if (favorite.isDeleted) {
+                        withTimeout(TIMEOUT_MS) { doc.delete().await() }
+                        favoriteFortuneCookieDao.deleteFavorite(user, favorite.id)
+                    } else {
+                        withTimeout(TIMEOUT_MS) { doc.set(favorite.toDto().toMap()).await() }
+                        favoriteFortuneCookieDao.markSynced(user, favorite.id)
                     }
                 }
-            }
-        }
-        return uri
-    }
-
-    //sincroniza las favoritas desde la nube para restaurarlas si room se vacia
-    override suspend fun syncFavoritesFromRemote(): Unit = withContext(Dispatchers.IO) {
-        val userId = userIdProvider()
-        if (firestore != null && userId != null) {
-            try {
-                val snapshot = firestore.collection("users").document(userId).collection("favorite_fortunes").get().await()
-                val entities = snapshot.documents.mapNotNull { doc ->
-                    val id = doc.getLong("id")?.toInt() ?: return@mapNotNull null
-                    val quote = doc.getString("quote") ?: ""
-                    val category = doc.getString("category") ?: "Wisdom"
-                    val luckyNumber = doc.getLong("luckyNumber")?.toInt() ?: 7
-                    val savedAt = doc.getLong("savedAt") ?: System.currentTimeMillis()
-                    FavoriteFortuneCookieEntity(id = id, quote = quote, category = category, luckyNumber = luckyNumber, savedAt = savedAt, isSynced = true)
+                for (card in savedFortuneCardDao.getUnsynced(user)) {
+                    //la imagen se vuelve a dibujar desde la frase, asi se sube aunque la borren de la galeria
+                    val bitmap = withContext(Dispatchers.Default) { cardExporter.renderCardBitmap(FortuneModel(card.cookieId, card.quote), card.savedAt) }
+                    val bytes = withContext(Dispatchers.Default) { cardExporter.toPngBytes(bitmap) }
+                    val ref = storage.reference.child("users/$user/fortune_cards/card_${card.cookieId}.png")
+                    val metadata = StorageMetadata.Builder().setContentType("image/png").build()
+                    withTimeout(UPLOAD_TIMEOUT_MS) { ref.putBytes(bytes, metadata).await() }
+                    val url = withTimeout(TIMEOUT_MS) { ref.downloadUrl.await() }.toString()
+                    val cardDoc = firestore.collection("users").document(user).collection("saved_fortune_cards").document(card.cookieId.toString())
+                    withTimeout(TIMEOUT_MS) { cardDoc.set(card.toDto(url).toMap()).await() }
+                    savedFortuneCardDao.markSynced(card.id, url)
                 }
-                for (entity in entities) {
-                    favoriteFortuneCookieDao.insertFavorite(entity)
-                }
-                val ids = entities.map { it.id }
-                cacheManager.loadFavoriteIds(ids)
             } catch (_: Exception) {
-                //si falla la consulta remota se conservan los datos de room
+                //sin red o tiempo agotado, lo que falta sigue pendiente en room
             }
         }
     }
 
-    //sincroniza las tarjetas guardadas desde la nube si el usuario cambia de celular
-    override suspend fun syncSavedCardsFromRemote(): Unit = withContext(Dispatchers.IO) {
-        val userId = userIdProvider()
-        if (firestore != null && userId != null) {
-            try {
-                val snapshot = firestore.collection("users").document(userId).collection("saved_fortune_cards").get().await()
-                val entities = snapshot.documents.mapNotNull { doc ->
-                    val cardId = doc.getLong("id") ?: return@mapNotNull null
-                    val cookieId = doc.getLong("cookieId")?.toInt() ?: return@mapNotNull null
-                    val quote = doc.getString("quote") ?: ""
-                    val category = doc.getString("category") ?: "Wisdom"
-                    val luckyNumber = doc.getLong("luckyNumber")?.toInt() ?: 7
-                    val remoteImageUrl = doc.getString("remoteImageUrl")
-                    val savedAt = doc.getLong("savedAt") ?: System.currentTimeMillis()
-                    SavedFortuneCardEntity(
-                        id = cardId,
-                        cookieId = cookieId,
-                        userId = userId,
-                        quote = quote,
-                        category = category,
-                        luckyNumber = luckyNumber,
-                        localImageUri = remoteImageUrl ?: "",
-                        remoteImageUrl = remoteImageUrl,
-                        savedAt = savedAt,
-                        isSynced = true
-                    )
-                }
-                for (entity in entities) {
-                    savedFortuneCardDao.insertCard(entity)
-                }
-            } catch (_: Exception) {
-                //si falla la consulta remota se conservan los datos locales
+    //trae de la nube lo que no este en el telefono, sin revivir lo que se quito sin red
+    override suspend fun syncFromRemote() = withContext(Dispatchers.IO) {
+        val user = userIdProvider() ?: return@withContext
+        if (firestore == null) return@withContext
+        try {
+            val favorites = withTimeout(TIMEOUT_MS) { firestore.collection("users").document(user).collection("favorite_fortunes").get().await() }
+            for (doc in favorites.documents) {
+                val dto = doc.toObject(FavoriteFortuneDto::class.java) ?: continue
+                if (dto.quote.isNotEmpty() && favoriteFortuneCookieDao.getFavorite(user, dto.id) == null) favoriteFortuneCookieDao.insertFavorite(dto.toEntity(user))
             }
+            cacheManager.loadFavoriteIds(favoriteFortuneCookieDao.getFavoriteIds(user))
+            val cards = withTimeout(TIMEOUT_MS) { firestore.collection("users").document(user).collection("saved_fortune_cards").get().await() }
+            for (doc in cards.documents) {
+                val dto = doc.toObject(FortuneCardDto::class.java) ?: continue
+                if (dto.remoteImageUrl.isNotEmpty() && savedFortuneCardDao.getCard(user, dto.cookieId) == null) savedFortuneCardDao.insertCard(dto.toEntity(user))
+            }
+        } catch (_: Exception) {
+            //sin red se queda con lo que hay en el telefono
         }
+    }
+
+    companion object {
+        private const val LOCAL_USER = "local_user"
+        private const val TIMEOUT_MS = 10_000L
+        private const val UPLOAD_TIMEOUT_MS = 30_000L
     }
 }

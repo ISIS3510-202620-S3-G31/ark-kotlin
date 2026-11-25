@@ -253,7 +253,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val syncManager: SyncManager by lazy {
         //al arrancar con red y cada vez que vuelve la conexion se trae el catalogo de herramientas: antes solo
         //llegaba por push (FCM) y si el push no llegaba el catalogo quedaba viejo hasta el siguiente
-        SyncManager(context, networkConnectivityObserver, syncRepository, onOnline = { toolRepository.refreshTools().isSuccess })
+        SyncManager(context, networkConnectivityObserver, syncRepository, onOnline = { fortuneRepository.syncPending(); toolRepository.refreshTools().isSuccess })
     }
     // sensor de luz + hora del dia para recomendaciones segun el entorno; uno para toda la app
     override val environmentalSensorManager: EnvironmentalSensorManager by lazy { EnvironmentalSensorManager(context) }
