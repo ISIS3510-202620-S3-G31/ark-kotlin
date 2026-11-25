@@ -2,8 +2,8 @@
 -- actualice solo (un cuadro de texto de Data Studio no puede mostrar datos).
 -- Una sola fila con una columna por pregunta. En cada pagina se muestra con una tabla de una
 -- celda (sin encabezado ni paginacion). Cada respuesta empieza con la fecha y hora del ultimo dato
--- que la alimenta, en hora de Bogota (menos BQ13, que empieza directo con el dato). Solo celulares
--- reales y sin cuentas de prueba.
+-- que la alimenta, en hora de Bogota (menos BQ13 y BQ14, que empiezan directo con el dato). Solo
+-- celulares reales y sin cuentas de prueba.
 --
 -- Uso: correr despues de views.sql, views_analytics.sql, views_bq4_and_age.sql,
 -- views_stats_visits.sql y views_tool_sessions.sql (lee sus vistas).
@@ -24,14 +24,15 @@ CREATE OR REPLACE FUNCTION `ark-mobiles.ark_dashboards.tool_name`(tool_id STRING
 
 CREATE OR REPLACE VIEW `ark-mobiles.ark_dashboards.bq_answers` AS
 WITH
--- BQ13: sesiones completadas por semana de cada herramienta (ultimas 4 semanas completas).
+-- BQ13: sesiones completadas por semana de cada herramienta (ultimos 28 dias, en 4 bloques de 7).
 -- la respuesta nombra su vista una sola vez (BigQuery recalcula una vista cada vez que se nombra,
 -- y esta sale de completed_tool_sessions): todo se calcula en un solo SELECT sobre la vista.
 -- las partes del texto, cada una en su columna. una fila por herramienta: la de la primera
 -- semana ya trae el total y las 4 semanas
 bq13_parts AS (
   SELECT
-    MIN(week_start) AS first_monday,
+    -- el primer dia del periodo: la W1 empieza ahi
+    MIN(week_start) AS first_day,
     STRING_AGG(FORMAT('%s %s (%d in total, completed in %d of 4 weeks)',
       tool, weekly_completions, completions_4_weeks, active_weeks),
       '; ' ORDER BY completions_4_weeks DESC, tool) AS per_tool,
@@ -45,7 +46,7 @@ bq13_parts AS (
 bq13 AS (
   SELECT CONCAT(
     FORMAT('Completed sessions per week, %s to %s (W1 / W2 / W3 / W4): ',
-      FORMAT_DATE('%b %d', first_monday), FORMAT_DATE('%b %d', DATE_ADD(first_monday, INTERVAL 27 DAY))),
+      FORMAT_DATE('%b %d', first_day), FORMAT_DATE('%b %d', DATE_ADD(first_day, INTERVAL 27 DAY))),
     per_tool,
     '. ',
     IF(habitual_tools IS NULL,
@@ -55,6 +56,60 @@ bq13 AS (
       '',
       CONCAT(' Sporadic (a single week): ', sporadic_tools, '.'))) AS answer
   FROM bq13_parts
+),
+-- BQ14: cuanto se demoran completando cada herramienta, en 3 rangos (ultimos 28 dias).
+-- lee la vista una sola vez; las ROW_NUMBER marcan el rango mas comun de cada herramienta y la
+-- herramienta con mas porcentaje en cada rango, para no tener que volver a leer la vista
+bq14_rows AS (
+  SELECT
+    tool,
+    bracket_order,
+    -- "under 1 min", "1 to 3 min" u "over 3 min"
+    LOWER(SUBSTR(duration_bracket, 4)) AS bracket_name,
+    sessions,
+    pct_of_tool_sessions,
+    invalid_duration_sessions,
+    -- 1 = el rango con mas sesiones de la herramienta (si empatan, el mas corto)
+    ROW_NUMBER() OVER (PARTITION BY tool ORDER BY sessions DESC, bracket_order) AS place_in_tool,
+    -- 1 = la herramienta con mas porcentaje de sus sesiones en ese rango (si empatan, por nombre)
+    ROW_NUMBER() OVER (PARTITION BY bracket_order ORDER BY pct_of_tool_sessions DESC, sessions DESC, tool)
+      AS place_in_bracket
+  FROM `ark-mobiles.ark_dashboards.bq14_tool_duration_brackets`
+  WHERE device_type = 'Real phone' AND NOT is_test_account
+),
+-- las partes del texto, cada una en su columna
+bq14_parts AS (
+  SELECT
+    SUM(sessions) AS total,
+    SUM(IF(bracket_order = 1, sessions, 0)) AS under_1_min,
+    SUM(IF(bracket_order = 2, sessions, 0)) AS from_1_to_3_min,
+    SUM(IF(bracket_order = 3, sessions, 0)) AS over_3_min,
+    -- el rango mas comun de cada herramienta, "Journaling under 1 min (60%)"
+    STRING_AGG(IF(place_in_tool = 1 AND sessions > 0,
+      CONCAT(tool, ' ', bracket_name, ' (', CAST(CAST(ROUND(pct_of_tool_sessions) AS INT64) AS STRING), '%)'),
+      NULL), ', ' ORDER BY tool) AS most_common_per_tool,
+    -- la que mas sesiones de mas de 3 minutos tiene: la que mas le cuesta terminar al usuario.
+    -- solo una fila cumple, MAX la saca (null si ninguna)
+    MAX(IF(bracket_order = 3 AND place_in_bracket = 1 AND sessions > 0,
+      CONCAT(tool, ' (', CAST(CAST(ROUND(pct_of_tool_sessions) AS INT64) AS STRING), '% of its sessions over 3 min)'),
+      NULL)) AS takes_longest,
+    -- invalid_duration_sessions se repite en los 3 rangos de cada herramienta: se cuenta una vez
+    SUM(IF(bracket_order = 1, invalid_duration_sessions, 0)) AS invalid
+  FROM bq14_rows
+),
+-- arma el texto con las partes
+bq14 AS (
+  SELECT CONCAT(
+    FORMAT('Of %d completed sessions in the last 28 days: ', total),
+    'under 1 min ', CAST(CAST(ROUND(100 * SAFE_DIVIDE(under_1_min, total)) AS INT64) AS STRING), '%, ',
+    '1 to 3 min ', CAST(CAST(ROUND(100 * SAFE_DIVIDE(from_1_to_3_min, total)) AS INT64) AS STRING), '%, ',
+    'over 3 min ', CAST(CAST(ROUND(100 * SAFE_DIVIDE(over_3_min, total)) AS INT64) AS STRING), '%',
+    '. Most common per tool: ',
+    most_common_per_tool,
+    '. ',
+    IF(takes_longest IS NULL, 'No tool took over 3 min.', CONCAT('Takes longest: ', takes_longest, '.')),
+    IF(invalid > 0, FORMAT(' %d sessions with a duration of 0 s or less were left out.', invalid), '')) AS answer
+  FROM bq14_parts
 ),
 -- BQ1: herramienta mas lenta en abrir (mediana) y las demas
 bq1_rows AS (
@@ -181,4 +236,5 @@ SELECT
   (SELECT answer FROM bq7) AS bq7_answer,
   (SELECT answer FROM bq8) AS bq8_answer,
   (SELECT answer FROM bq9) AS bq9_answer,
-  (SELECT answer FROM bq13) AS bq13_answer;
+  (SELECT answer FROM bq13) AS bq13_answer,
+  (SELECT answer FROM bq14) AS bq14_answer;
