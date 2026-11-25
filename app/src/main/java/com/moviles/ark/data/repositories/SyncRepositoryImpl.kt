@@ -13,6 +13,7 @@ import com.moviles.ark.data.local.daos.FeedbackDao
 import com.moviles.ark.data.local.daos.PhotoEntryDao
 import com.moviles.ark.data.local.daos.StatsDailyVisitDao
 import com.moviles.ark.data.local.daos.ToolRecordDao
+import com.moviles.ark.data.local.daos.WishDao
 import com.moviles.ark.data.local.entities.PhotoEntryEntity
 import com.moviles.ark.data.remote.CrashlyticsHelper
 import com.moviles.ark.data.remote.dtos.documentId
@@ -49,7 +50,9 @@ class SyncRepositoryImpl(
     //sube las galletas del cookie jar pendientes, imagen y documento (CookieRepository.uploadPending)
     private val syncPendingCookies: suspend () -> CookieUploadResult = { CookieUploadResult() },
     //cuantas galletas faltan por subir (CookieRepository.pendingUploadCount)
-    private val pendingCookieCount: suspend () -> Int = { 0 }
+    private val pendingCookieCount: suspend () -> Int = { 0 },
+    //deseos del farol de deseos (tabla wishes)
+    private val wishDao: WishDao? = null
 ) : SyncRepository {
 
     //una sola subida a la vez: el check-in pide subida al guardarse y el SyncManager al volver la red
@@ -89,6 +92,7 @@ class SyncRepositoryImpl(
             emotionCheckInDao.getUnsyncedCheckIns(userId).size +
             feedbackDao.getUnsyncedFeedback(userId).size +
             (statsDailyVisitDao?.getUnsyncedVisits(userId)?.size ?: 0) +
+            (wishDao?.getUnsyncedWishes(userId)?.size ?: 0) +
             (if (hasPendingProfile()) 1 else 0) +
             pendingCookieCount()
     }
@@ -242,12 +246,18 @@ class SyncRepositoryImpl(
             tally.failed += result.failed
         }
 
-        // 6. Subir las galletas del cookie jar pendientes (isSynced = 0): primero la imagen y luego el documento
+        // 6a. Subir las galletas del cookie jar pendientes (isSynced = 0): primero la imagen y luego el documento
         //las cuenta el repositorio de galletas; si alguna falla el SyncWorker reintenta con backoff
         tally.step("syncCookies", currentUserId) {
             val result = syncPendingCookies()
             tally.synced += result.synced
             tally.failed += result.failed
+        }
+
+        // 6b. Sincronizar los deseos del farol pendientes (isSynced = 0): nuevos, editados o borrados
+        //cada deseo va a users/{uid}/wishes/{id del deseo}: si se sube dos veces queda un solo documento
+        tally.step("syncWishes", currentUserId) {
+            syncWishes(tally)
         }
 
         // 7. Sincronizar fotos pendientes (isSynced = 0)
@@ -284,6 +294,41 @@ class SyncRepositoryImpl(
         Log.d("SyncRepository", "Synced ${tally.synced} pending items to Firebase, ${tally.failed} failed")
         if (tally.failed > 0) throw PendingUploadsException(tally.synced, tally.failed)
         tally.synced
+    }
+
+    //sube los deseos pendientes del usuario con sesion
+    //- deseo nuevo o editado: se guarda en firestore y se marca como sincronizado
+    //- deseo borrado: se borra de firestore y despues se borra la fila del telefono
+    private suspend fun syncWishes(tally: SyncTally) {
+        val dao = wishDao
+        if (dao == null) {
+            return
+        }
+        //sin sesion no se sube nada: las reglas de firestore no dejan escribir en la carpeta de otro
+        val sessionUserId = auth.currentUser?.uid
+        if (sessionUserId == null) {
+            return
+        }
+
+        val pendingWishes = dao.getUnsyncedWishes(sessionUserId)
+        for (wish in pendingWishes) {
+            tally.upload("wish id=${wish.id}") {
+                val document = firestore.collection("users")
+                    .document(sessionUserId)
+                    .collection("wishes")
+                    .document(wish.id)
+
+                if (wish.isDeleted) {
+                    //borrar en firestore algo que no existe no da error, asi que sirve aunque nunca se haya subido
+                    document.delete().awaitWithTimeout()
+                    dao.deleteForever(wish.id)
+                } else {
+                    document.set(wish.toDto()).awaitWithTimeout()
+                    //solo queda sincronizado si nadie lo cambio mientras subia; si cambio, se sube en el siguiente sync
+                    dao.markAsSynced(wish.id, wish.updatedAt)
+                }
+            }
+        }
     }
 
     companion object {

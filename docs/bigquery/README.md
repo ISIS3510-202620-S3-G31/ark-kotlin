@@ -102,7 +102,7 @@ query*. Una corrida por colección.
 4. Correr `views_bq4_and_age.sql` (BQ4 y edad de los usuarios activos; usa las vistas de los
    dos pasos anteriores).
 5. Correr `views_tool_sessions.sql` (sesiones completadas de cada herramienta, con su celular y
-   su punto de entrada, y las vistas de BQ13; usa `tool_interactions`, `test_accounts` y la
+   su punto de entrada, y las vistas de BQ13, BQ14 y BQ15; usa `tool_interactions`, `test_accounts` y la
    tabla de aperturas de Firestore).
 6. Correr `views_answers.sql` al final: escribe la respuesta de cada BQ como texto (ver
    "Respuestas en vivo" en la sección 5).
@@ -127,9 +127,11 @@ Quedan en el dataset `ark_dashboards`:
 | `test_accounts` (tabla) | cuentas de prueba creadas a mano en la app; se marcan con `is_test_account`, no se borran |
 | `bq4_tool_formats` | BQ4, sesiones completadas por formato, tipo de dispositivo y cuenta de prueba |
 | `bq_age_distribution` | edad de los usuarios activos en 30 días, por grupo de MinSalud y cuenta de prueba |
-| `completed_tool_sessions` | una fila por sesión completada de una herramienta (la foto del día, una por día), con su celular, punto de entrada, semana de lunes a domingo e `in_last_4_weeks` |
-| `bq13_weekly_tool_completions` | BQ13, sesiones completadas por herramienta en cada una de las últimas 4 semanas completas (con 0 en las semanas sin sesiones) |
-| `bq_answers` | una fila con la respuesta de cada BQ (`bq1_answer` … `bq13_answer`); las de BQ1 a BQ9 empiezan con la fecha del último dato |
+| `completed_tool_sessions` | una fila por sesión completada de una herramienta (la foto del día, una por día), con su celular, punto de entrada, semana de lunes a domingo e `in_last_4_weeks` (true si cae en los últimos 28 días; conserva el nombre porque Data Studio ya está conectado a él) |
+| `bq13_weekly_tool_completions` | BQ13, sesiones completadas por herramienta en cada uno de los 4 bloques de 7 días de los últimos 28 días (con 0 en las semanas sin sesiones) |
+| `bq14_tool_duration_brackets` | BQ14, sesiones completadas por herramienta en 3 rangos de duración (menos de 1 min, 1 a 3 min, más de 3 min) |
+| `bq15_entry_points` | BQ15, sesiones completadas por punto de entrada (3 tarjetas del Home, catálogo o no registrado) y herramienta |
+| `bq_answers` | una fila con la respuesta de cada BQ (`bq1_answer` … `bq15_answer`); las de BQ1 a BQ9 empiezan con la fecha del último dato |
 
 Los dos bloques "PASO 2" del final de `views_analytics.sql` ya se corrieron: `tool_load_latency`
 y `app_screen_time` leen de Firestore (llega en segundos) y de Analytics solo lo anterior a la
@@ -161,11 +163,10 @@ Un cuadro de texto de Data Studio no puede mostrar datos, así que una respuesta
 ("Voice 54 %") queda vieja apenas llega otro dato. Por eso las respuestas no van en cuadros de
 texto: `views_answers.sql` las escribe en BigQuery y cada página las muestra con una **tabla de una
 celda** (fuente `bq_answers`, dimensión `bqN_answer`, sin métrica). En la fuente, los campos
-`*_answer` van con tipo **Text** (Data Studio los toma como fecha porque empiezan con una) y
+`*_answer` van con tipo **Text** (si no, Data Studio puede tomarlos como fecha) y
 frescura de 1 minuto. En la tabla: sin encabezado, sin números de fila, con *Wrap text* y sin
-dimensión de rango de fechas. Cada respuesta empieza con "Updated with data up to …", la hora del
-último dato en hora de Bogotá (menos `bq13_answer`, que empieza directo con el dato). En los cuadros de texto solo van el título, la pregunta y las
-definiciones que no cambian.
+dimensión de rango de fechas. Cada respuesta empieza directo con el dato. En los cuadros de texto
+solo van el título y la pregunta.
 
 ### Página BQ1 (latencia de render de una herramienta)
 
@@ -242,8 +243,16 @@ Activo = al menos un check-in o una herramienta en los últimos 30 días.
 
 Fuente `bq13_weekly_tool_completions`. Pregunta: ¿cuántas veces por semana completan los usuarios
 cada herramienta, en las últimas 4 semanas? Unidad: una sesión completada (la foto del día cuenta
-una vez por usuario y día). Semanas de lunes a domingo en hora de Bogotá; la semana en curso no
-cuenta porque está a medias.
+una vez por usuario y día).
+
+**Periodo** (el mismo de BQ13, BQ14 y BQ15): una ventana móvil de 28 días que termina hoy, en hora
+de Bogotá: del día hoy − 27 hasta hoy, con hoy incluido. BQ13 la parte en 4 bloques de 7 días
+contados desde el primer día: W1 = días 1 a 7, W2 = 8 a 14, W3 = 15 a 21 y W4 = los últimos 7 días
+(con hoy), por ejemplo "W4 Nov 19 - Nov 25". No son semanas de lunes a domingo: con semanas de
+calendario la semana en curso no contaba y el dashboard se quedaba quieto hasta el lunes. Así, cada
+sesión nueva aparece en uno o dos minutos (lo que tarda en llegar a BigQuery más la frescura de 1
+minuto de la fuente). La columna `in_last_4_weeks` conserva su nombre (Data Studio ya está
+conectado a ella), pero ahora quiere decir "en los últimos 28 días".
 
 1. Controles *Drop-down list* `device_type` (por defecto `Real phone`) e `is_test_account` (por
    defecto `false`).
@@ -259,6 +268,38 @@ Las vistas leen las aperturas directo de la tabla de Firestore (`tool_load_laten
 y cada una lee `completed_tool_sessions` una sola vez (la respuesta también lee su vista una sola
 vez): BigQuery recalcula una vista cada vez que se nombra, y la vista `tool_load_latency` recorre
 todos los eventos de Analytics. Así cada consulta tarda alrededor de 1 s.
+
+### Página BQ14 Tool Session Completion Duration
+
+Fuente `bq14_tool_duration_brackets`. Pregunta: ¿cuánto se demoran los usuarios completando cada
+herramienta? Rangos fijos: menos de 1 min (1 a 59 s), 1 a 3 min (60 a 180 s) y más de 3 min.
+Mismo periodo y unidad que BQ13. Una duración de 0 s o negativa es un error del reloj: no entra en
+los rangos y se cuenta en `invalid_duration_sessions`.
+
+1. Controles `device_type` (por defecto `Real phone`) e `is_test_account` (por defecto `false`).
+2. Barras horizontales **apiladas al 100 %**: dimensión `tool`, desglose `duration_bracket`
+   (orden ascendente), métrica `SUM(sessions)`. La herramienta con más "más de 3 min" es la que
+   más le cuesta terminar al usuario.
+3. Anillo `duration_bracket` × `SUM(sessions)`: el reparto de todas las herramientas juntas.
+4. Scorecard `SUM(sessions)`: sesiones analizadas.
+5. Respuesta en vivo: tabla de una celda con `bq14_answer`.
+
+### Página BQ15 Tool Launch Entry Points
+
+Fuente `bq15_entry_points`. Pregunta: ¿desde qué entrada se abren las herramientas que se
+completan: las tarjetas del Home (recomendación, "Leave it to chance", clima) o el catálogo?
+La entrada sale de la apertura de la misma herramienta justo antes de terminarla (la que mide BQ1).
+Mismo periodo y unidad que BQ13. Las sesiones sin apertura registrada (versiones anteriores al 27
+de octubre) van como `Not recorded`.
+
+1. Controles `device_type` (por defecto `Real phone`) e `is_test_account` (por defecto `false`).
+2. Anillo `entry_point_label` × `SUM(sessions)`. `Not recorded` queda como su propia categoría:
+   si algún día aparece, se ve aparte y no se mezcla con las demás.
+3. Barras horizontales `entry_point_label` × `SUM(sessions)`, orden descendente por la métrica.
+4. Scorecard `SUM(sessions)` con el filtro de gráfico `has_entry_point = true` (filtro
+   "BQ15 recorded entry point"): sesiones con entrada registrada, la base de los porcentajes de
+   la respuesta.
+5. Respuesta en vivo: tabla de una celda con `bq15_answer`.
 
 Los campos nuevos (`entry_point`, `first_open`, `app_screen_time`, `user_id`, las colecciones
 `tool_load_latency` y `screen_time`) solo llegan desde la versión de la app que los trae; antes
