@@ -48,6 +48,19 @@ class BreathingRepositoryImpl(
         }
     }
 
+    //la pista de la app va primero y despues las que ya se descargaron, sin repetir ninguna
+    override suspend fun getOfflineTracks(): List<AmbientTrackModel> {
+        val offlineTracks = mutableListOf(defaultTrack)
+        val cachedTracks = musicServiceAdapter.getCachedTracks()
+        for (cachedTrack in cachedTracks) {
+            val alreadyInList = offlineTracks.any { it.id == cachedTrack.id }
+            if (!alreadyInList) {
+                offlineTracks.add(cachedTrack)
+            }
+        }
+        return offlineTracks
+    }
+
     override suspend fun offlineTrackIds(): Set<String> =
         musicServiceAdapter.getCachedTracks().map { it.id }.toSet() + BUNDLED_TRACK_ID
 

@@ -44,11 +44,16 @@ data class BreathingUiState(
     val tracksLoadFailed: Boolean = false,
     //pista que no se pudo reproducir, para avisarlo en su fila
     val unplayableTrackId: String? = null,
-    val showTrackSelector: Boolean = false
+    val showTrackSelector: Boolean = false,
+    //false mientras el celular no tiene internet: las pistas que solo estan en jamendo quedan deshabilitadas
+    val isOnline: Boolean = true
 ) {
     //la musica esta sonando o a punto de sonar: el boton muestra pausa
     val isMusicActive: Boolean
         get() = isMusicPlaying || isTrackBuffering
+
+    //la regla de que pista suena sin internet vive en el modelo
+    fun canPlay(track: AmbientTrackModel): Boolean = track.isPlayable(isOnline)
 
     //ritmo actual como modelo del dominio
     val pattern: BreathingPattern
