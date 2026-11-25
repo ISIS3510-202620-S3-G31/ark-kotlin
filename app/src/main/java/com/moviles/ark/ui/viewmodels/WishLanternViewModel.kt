@@ -48,9 +48,17 @@ class WishLanternViewModel(
     private var fullListJob: Job? = null
 
     init {
+        warmUpLanternCache()
         listenToSkyLanterns()
         listenToLitLanterns()
         listenToConnectivity()
+    }
+
+    //al abrir la herramienta se encienden los faroles de los 8 deseos mas recientes (se llena la cache)
+    private fun warmUpLanternCache() {
+        viewModelScope.launch {
+            wishRepository.warmUpCache()
+        }
     }
 
     //cada vez que cambian los deseos (guardar, editar o borrar) llegan los ids nuevos

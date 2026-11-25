@@ -29,6 +29,11 @@ interface WishDao {
     @Query("SELECT id FROM wishes WHERE userId = :userId AND isDeleted = 0")
     fun observeWishIds(userId: String): Flow<List<String>>
 
+    //los deseos mas recientes del usuario, del mas nuevo al mas viejo
+    //se usa para llenar la cache (los faroles encendidos) al abrir la herramienta
+    @Query("SELECT * FROM wishes WHERE userId = :userId AND isDeleted = 0 ORDER BY createdAt DESC LIMIT :limit")
+    suspend fun getNewestWishes(userId: String, limit: Int): List<WishEntity>
+
     //un solo deseo; null si no existe o si ya se borro
     @Query("SELECT * FROM wishes WHERE id = :id AND userId = :userId AND isDeleted = 0 LIMIT 1")
     suspend fun getWish(id: String, userId: String): WishEntity?

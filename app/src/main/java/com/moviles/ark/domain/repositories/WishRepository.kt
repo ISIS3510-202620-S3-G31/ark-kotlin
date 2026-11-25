@@ -16,6 +16,10 @@ interface WishRepository {
     //ids de los deseos que estan en la cache (los faroles encendidos)
     fun getLitWishIds(): Flow<Set<String>>
 
+    //al abrir la herramienta: si la cache esta vacia, la llena con los deseos mas recientes
+    //asi el cielo arranca con faroles encendidos
+    suspend fun warmUpCache()
+
     //busca un deseo y lo mete a la cache: su farol queda encendido; null si no existe
     suspend fun openWish(wishId: String): WishModel?
 
