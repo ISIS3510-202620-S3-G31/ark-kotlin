@@ -105,7 +105,7 @@ bq14 AS (
     IF(invalid > 0, FORMAT(' %d sessions with a duration of 0 s or less were left out.', invalid), '')) AS answer
   FROM bq14_parts
 ),
--- BQ15: desde que entrada se abren las herramientas que se completan (ultimas 4 semanas completas).
+-- BQ15: desde que entrada se abren las herramientas que se completan (ultimos 28 dias).
 -- lee la vista una sola vez y suma las sesiones de cada entrada (todas las herramientas juntas)
 bq15_entries AS (
   SELECT
@@ -147,7 +147,7 @@ bq15_parts AS (
 -- arma el texto con las partes
 bq15 AS (
   SELECT CONCAT(
-    FORMAT('Of %d completed sessions with a recorded entry point (last 4 complete weeks): ', recorded),
+    FORMAT('Of %d completed sessions with a recorded entry point (last 28 days): ', recorded),
     per_entry,
     '. The three Home cards together: ',
     CAST(CAST(ROUND(100 * SAFE_DIVIDE(home, recorded)) AS INT64) AS STRING),

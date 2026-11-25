@@ -262,7 +262,8 @@ SELECT
   is_test_account
 FROM tool_brackets;
 
--- BQ15: desde que entrada se abren las herramientas que se completan: las tres tarjetas del Home
+-- BQ15: desde que entrada se abren las herramientas que se completan en los ultimos 28 dias
+-- (in_last_4_weeks): las tres tarjetas del Home
 -- (recomendacion, "Leave it to chance" y clima) o el catalogo (pestana Tools o "Browse full
 -- catalog"). La app la guarda en cada apertura (entryPoint de tool_load_latency).
 -- Una fila por entrada, herramienta, tipo de dispositivo y cuenta de prueba, con 0 en las entradas

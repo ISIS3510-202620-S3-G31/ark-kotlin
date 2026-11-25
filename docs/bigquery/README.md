@@ -245,7 +245,7 @@ Fuente `bq13_weekly_tool_completions`. Pregunta: ¿cuántas veces por semana com
 cada herramienta, en las últimas 4 semanas? Unidad: una sesión completada (la foto del día cuenta
 una vez por usuario y día).
 
-**Periodo** (el mismo de BQ13 y BQ14): una ventana móvil de 28 días que termina hoy, en hora
+**Periodo** (el mismo de BQ13, BQ14 y BQ15): una ventana móvil de 28 días que termina hoy, en hora
 de Bogotá: del día hoy − 27 hasta hoy, con hoy incluido. BQ13 la parte en 4 bloques de 7 días
 contados desde el primer día: W1 = días 1 a 7, W2 = 8 a 14, W3 = 15 a 21 y W4 = los últimos 7 días
 (con hoy), por ejemplo "W4 Nov 19 - Nov 25". No son semanas de lunes a domingo: con semanas de
