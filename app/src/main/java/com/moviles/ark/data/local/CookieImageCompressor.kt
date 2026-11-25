@@ -14,6 +14,8 @@ import java.io.ByteArrayOutputStream
 //comprime la imagen de una galleta una sola vez, al crearla: lado mayor 1440 px y jpeg calidad 85 (~300-500 kb)
 //esa misma version se guarda en privado y es la que se sube a la nube; asi nunca se comprime dos veces
 //corre en Dispatchers.Default porque decodificar y comprimir es trabajo de cpu
+//la lectura del archivo va dentro del mismo Default a proposito: BitmapFactory lee el stream mientras decodifica, y
+//separarla en Dispatchers.IO obligaria a cargar antes la foto original entera (3-5 mb o mas) en memoria
 class CookieImageCompressor(private val context: Context) {
 
     suspend fun compress(sourceUri: String): ByteArray = withContext(Dispatchers.Default) {

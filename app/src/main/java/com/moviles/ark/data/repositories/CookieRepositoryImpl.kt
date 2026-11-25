@@ -22,14 +22,21 @@ import com.moviles.ark.domain.models.CookieUploadResult
 import com.moviles.ark.domain.models.StoredCookieImage
 import com.moviles.ark.domain.repositories.CookieRepository
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.util.Collections
 import java.util.UUID
@@ -41,6 +48,8 @@ import java.util.concurrent.ConcurrentHashMap
 //cada fila lleva el uid de firebase del dueno, como photo_entries; cada cambio queda con isSynced = false para la nube
 //nube (CookieCloudStore): el sync sube lo pendiente, al abrir el jarro se bajan los cambios de otros telefonos
 //y las imagenes que faltan se bajan cuando se necesitan
+//hilos: room, archivos y red corren en Dispatchers.IO (cada funcion hace withContext(IO), asi nadie puede llamarlas
+//desde el hilo principal por error); comprimir y decodificar van en Dispatchers.Default (cpu)
 class CookieRepositoryImpl(
     private val cookieDao: CookieDao,
     private val imageStore: CookiePrivateImageStore,
@@ -76,16 +85,23 @@ class CookieRepositoryImpl(
     private val deletedHere: MutableSet<String> = Collections.synchronizedSet(HashSet())
     //un candado por galleta para no bajar dos veces la misma imagen
     private val downloadLocks = ConcurrentHashMap<String, Mutex>()
+    //una sola bajada de cambios a la vez: dos refrescos juntos (dos pantallas, o una pantalla y un reintento) leerian
+    //la misma foto de room y aplicarian dos veces lo mismo (por ejemplo dos sufijos al mismo titulo repetido)
+    private val refreshMutex = Mutex()
 
+    //room hace la consulta en su propio hilo de fondo; flowOn(Dispatchers.Default) deja tambien fuera del hilo principal
+    //el paso de filas a modelos (todas las galletas en cada cambio), y la pantalla recibe la lista ya lista
     override fun observeCookies(): Flow<List<CookieModel>> {
         //sin sesion no se muestran galletas de nadie
         val userId = currentUserId() ?: return flowOf(emptyList())
-        return cookieDao.observeCookies(userId).map { entities -> entities.map { it.toModel() } }
+        val cookies = cookieDao.observeCookies(userId).map { entities -> entities.map { it.toModel() } }
+        return cookies.flowOn(Dispatchers.Default)
     }
 
     override fun observeCookieList(): Flow<List<CookieListItem>> {
         val userId = currentUserId() ?: return flowOf(emptyList())
-        return cookieDao.observeList(userId).map { rows -> rows.map { it.toItem() } }
+        val items = cookieDao.observeList(userId).map { rows -> rows.map { it.toItem() } }
+        return items.flowOn(Dispatchers.Default)
     }
 
     override suspend fun getCookie(cookieId: String): CookieModel? = withContext(Dispatchers.IO) {
@@ -157,11 +173,12 @@ class CookieRepositoryImpl(
         return cookieDao.observeUnsyncedCount(userId)
     }
 
+    //shared preferences lee un archivo la primera vez: en Dispatchers.IO para no leer disco en el hilo principal
     //sin sesion o sin preferencias (pruebas) se responde true, asi no se muestra el aviso de telefono nuevo
-    override fun hasDownloadedFromCloud(): Boolean {
-        val userId = currentUserId() ?: return true
-        val preferences = syncPreferences ?: return true
-        return preferences.hasDownloaded(userId)
+    override suspend fun hasDownloadedFromCloud(): Boolean = withContext(Dispatchers.IO) {
+        val userId = currentUserId() ?: return@withContext true
+        val preferences = syncPreferences ?: return@withContext true
+        preferences.hasDownloaded(userId)
     }
 
     override suspend fun pendingUploadCount(): Int = withContext(Dispatchers.IO) {
@@ -171,8 +188,18 @@ class CookieRepositoryImpl(
 
     //cached then network, paso 2: la pantalla ya mostro room; aqui se traen los metadatos de la nube y se juntan
     //room vuelve a emitir con cada cambio y la pantalla se actualiza sola
+    //el Mutex hace que un segundo refresco espere a que termine el primero en vez de correr encima de el
     override suspend fun refreshFromCloud(): Result<CookieRefreshResult> = withContext(Dispatchers.IO) {
-        runCatching {
+        if (refreshMutex.isLocked) {
+            Log.d(SYNC_TAG, "refresh waiting: another refresh is running")
+        }
+        refreshMutex.withLock { refreshNow() }
+    }
+
+    //se llama con refreshMutex tomado
+    private suspend fun refreshNow(): Result<CookieRefreshResult> {
+        return runCatching {
+            Log.d(SYNC_TAG, "refresh start on ${Thread.currentThread().name}")
             val userId = currentUserId() ?: error("No user is logged in")
             val cloud = cloudStore ?: error("The cloud is not available")
             //foto de room antes de preguntarle a la nube: solo una fila que ya estaba sincronizada antes de la consulta
@@ -194,7 +221,9 @@ class CookieRepositoryImpl(
             result
         }.onFailure { error ->
             Log.w(SYNC_TAG, "refresh failed: ${error.javaClass.simpleName} ${error.message}")
-            CrashlyticsHelper.logNonFatal(componentName = "CookieRepository", action = "refreshFromCloud", throwable = error)
+            if (error !is CancellationException) {
+                CrashlyticsHelper.logNonFatal(componentName = "CookieRepository", action = "refreshFromCloud", throwable = error)
+            }
         }
     }
 
@@ -356,6 +385,10 @@ class CookieRepositoryImpl(
     }
 
     //sube las pendientes de a una; si una falla se cuenta y se sigue con las demas (el SyncWorker reintenta con backoff)
+    //en secuencia a proposito (las descargas si van en paralelo): corre en segundo plano y nadie la espera en pantalla,
+    //y todas comparten la misma subida del telefono, asi que en paralelo no suben mas rapido en total: cada foto tardaria
+    //mas y con red lenta todas llegarian juntas al timeout sin marcar ninguna; de a una, cada galleta que termina queda
+    //marcada como subida aunque la red se caiga despues
     override suspend fun uploadPending(): CookieUploadResult = withContext(Dispatchers.IO) {
         val userId = currentUserId() ?: return@withContext CookieUploadResult()
         val cloud = cloudStore ?: return@withContext CookieUploadResult()
@@ -444,6 +477,44 @@ class CookieRepositoryImpl(
         }
     }
 
+    //imagenes que faltan de las 10 del dia: async por cada una en Dispatchers.IO y awaitAll() espera a todas
+    //supervisorScope: si una descarga falla (por ejemplo se cae la red) las otras siguen y las que ya bajaron quedan
+    //guardadas; cada una devuelve su propio Result y el ViewModel decide que hacer con las que fallaron
+    //el Semaphore deja maximo 4 a la vez: el tiempo de cada foto (~400 kb) es sobre todo la espera de la respuesta, y
+    //varias a la vez la esconden; mas de 4 solo se reparten el mismo ancho de banda y suman ~400 kb de ram cada una
+    override suspend fun downloadImages(cookieIds: List<String>): Map<String, Result<CookieModel>> = withContext(Dispatchers.IO) {
+        if (cookieIds.isEmpty()) return@withContext emptyMap()
+        val permits = Semaphore(MAX_PARALLEL_DOWNLOADS)
+        val startedAt = System.nanoTime()
+        Log.d(SYNC_TAG, "downloading ${cookieIds.size} pictures of today's jar, up to $MAX_PARALLEL_DOWNLOADS at a time")
+
+        val downloadResults = supervisorScope {
+            //primero se lanzan todas; cada una espera su turno en el Semaphore
+            val downloads = mutableListOf<Deferred<Result<CookieModel>>>()
+            for (cookieId in cookieIds) {
+                val download = async(Dispatchers.IO) {
+                    permits.withPermit { downloadImage(cookieId) }
+                }
+                downloads.add(download)
+            }
+            //despues se espera a que terminen todas
+            downloads.awaitAll()
+        }
+
+        //resultado de cada galleta por su id (las listas van en el mismo orden)
+        val resultsById = HashMap<String, Result<CookieModel>>()
+        var downloaded = 0
+        var failed = 0
+        for (index in cookieIds.indices) {
+            val result = downloadResults[index]
+            resultsById[cookieIds[index]] = result
+            if (result.isSuccess) downloaded++ else failed++
+        }
+        val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
+        Log.d(SYNC_TAG, "today's pictures: $downloaded downloaded, $failed failed in $elapsedMs ms")
+        resultsById
+    }
+
     override suspend fun downloadImage(cookieId: String): Result<CookieModel> = withContext(Dispatchers.IO) {
         runCatching {
             val userId = currentUserId() ?: error("No user is logged in")
@@ -475,6 +546,7 @@ class CookieRepositoryImpl(
         if (!cookie.hasImage || cookie.hasLocalImage()) return cookie
 
         val startedAt = System.nanoTime()
+        Log.d(SYNC_TAG, "download start id=$cookieId on ${Thread.currentThread().name}")
         //se baja completa a memoria y el almacenamiento privado la escribe en {id}.jpg.tmp y la renombra:
         //si la red se cae a mitad no queda ningun archivo a medias
         val bytes = cloud.downloadImage(userId, cookieId)
@@ -571,7 +643,12 @@ class CookieRepositoryImpl(
 
     override fun hasCameraPermission(): Boolean = cameraHelper?.hasCameraPermission() ?: false
 
-    override fun createCaptureUri(): String? = cameraHelper?.createPictureUri()?.toString()
+    //crear el archivo temporal de la camara escribe en disco: en Dispatchers.IO, no en el toque del boton (hilo principal)
+    override suspend fun createCaptureUri(): String? = withContext(Dispatchers.IO) {
+        val camera = cameraHelper ?: return@withContext null
+        val pictureUri = camera.createPictureUri() ?: return@withContext null
+        pictureUri.toString()
+    }
 
     override suspend fun discardCapture(uri: String) = withContext(Dispatchers.IO) {
         runCatching { cameraHelper?.deletePicture(uri) }
@@ -754,6 +831,8 @@ class CookieRepositoryImpl(
 
     companion object {
         private const val MAX_INSERT_ATTEMPTS = 3
+        //descargas de las fotos del jarro de hoy al mismo tiempo
+        private const val MAX_PARALLEL_DOWNLOADS = 4
         //mismo tag de la cache de imagenes para ver todo el caching junto en logcat
         private const val TAG = "CookieCache"
         //subidas, bajadas y cambios con la nube

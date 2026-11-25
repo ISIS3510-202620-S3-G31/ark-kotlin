@@ -79,24 +79,25 @@ fun NewCookieRoute(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
+    val takePictureLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        viewModel.onCaptureResult(success)
+    }
+
     LaunchedEffect(viewModel) {
         viewModel.eventFlow.collect { event ->
             when (event) {
                 is NewCookieEvent.Saved -> onSaved(event.typedTitle, event.cookie)
                 is NewCookieEvent.Message -> snackbarHostState.showSnackbar(event.text, duration = SnackbarDuration.Long)
+                is NewCookieEvent.OpenCamera -> takePictureLauncher.launch(Uri.parse(event.uri))
             }
         }
-    }
-
-    val takePictureLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
-        viewModel.onCaptureResult(success)
     }
     //photo picker del sistema: no pide permisos de galeria
     val pickImageLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) viewModel.onImageSelected(uri.toString())
     }
     val cameraPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) viewModel.prepareCapture()?.let { takePictureLauncher.launch(Uri.parse(it)) }
+        if (granted) viewModel.prepareCapture()
     }
 
     NewCookieScreen(
@@ -107,7 +108,7 @@ fun NewCookieRoute(
         onTextChange = viewModel::onTextChange,
         onTakePhoto = {
             if (viewModel.hasCameraPermission()) {
-                viewModel.prepareCapture()?.let { takePictureLauncher.launch(Uri.parse(it)) }
+                viewModel.prepareCapture()
             } else {
                 cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
             }
