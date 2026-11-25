@@ -62,7 +62,7 @@ open class ToolModel(
 
     companion object {
         //herramientas con pantalla propia en el NavHost; al implementar una nueva se agrega aqui
-        val IMPLEMENTED_TOOL_IDS = setOf("custom_breathing", "scream_tank", "photo_of_the_day", "cookie_jar")
+        val IMPLEMENTED_TOOL_IDS = setOf("custom_breathing", "scream_tank", "photo_of_the_day", "cookie_jar", "fortune_cookie", "wish_lantern")
 
         //herramienta que se abre cuando no se puede elegir otra (siempre esta en el telefono)
         const val FALLBACK_TOOL_ID = "custom_breathing"
@@ -76,7 +76,9 @@ open class ToolModel(
             ToolModel("emotion_detective", "Emotion detective", "Not sure what you feel? Let's find out.", "reflect", "text", "ic_tool_emotion_detective"),
             ToolModel("achievement_jar", "Achievement jar", "Save the good stuff. Read it when you need it.", "celebrate", "text", "ic_tool_achievement_jar"),
             ToolModel("photo_of_the_day", "Photo of the day", "One photo a day, one new memory.", "celebrate", "photo", "ic_tool_photo_of_the_day"),
-            ToolModel("cookie_jar", "Cookie jar", "Keep your best memories. Eat one when you need it.", "celebrate", "text", "ic_tool_cookie_jar")
+            ToolModel("cookie_jar", "Cookie jar", "Keep your best memories. Eat one when you need it.", "celebrate", "text", "ic_tool_cookie_jar"),
+            ToolModel("fortune_cookie", "Fortune cookie", "Open a fortune cookie and take a moment with its message.", "emotional_awareness", "touch", "ic_tool_fortune_cookie"),
+            ToolModel("wish_lantern", "Wish lantern", "Write a wish, light it up and let it fly.", "celebrate", "text", "ic_tool_wish_lantern")
         )
 
         //herramientas con pantalla del catalogo por defecto que faltan en un catalogo guardado
