@@ -14,6 +14,15 @@ import com.google.firebase.storage.storage
 import com.moviles.ark.data.workers.RemotePhotoDeleteWorker
 import com.moviles.ark.R
 import com.moviles.ark.data.local.ArkDatabase
+import com.moviles.ark.data.local.daos.FavoriteFortuneCookieDao
+import com.moviles.ark.data.local.daos.SavedFortuneCardDao
+import com.moviles.ark.data.local.FortunePreferencesManager
+import com.moviles.ark.data.local.FortuneCardExporter
+import com.moviles.ark.data.local.FortuneCacheManager
+import com.moviles.ark.domain.adapters.FortuneServiceAdapter
+import com.moviles.ark.domain.repositories.FortuneRepository
+import com.moviles.ark.data.remote.apis.FortuneServiceAdapterImpl
+import com.moviles.ark.data.repositories.FortuneRepositoryImpl
 import com.moviles.ark.data.local.daos.FeedbackDao
 import com.moviles.ark.data.local.daos.ToolRecordDao
 import com.moviles.ark.data.local.sensors.AudioPlayerHelper
@@ -73,6 +82,7 @@ interface AppContainer {
     val feedbackRepository: FeedbackRepository
     val breathingRepository: BreathingRepository
     val screamTankRepository: com.moviles.ark.domain.repositories.ScreamTankRepository
+    val wishRepository: com.moviles.ark.domain.repositories.WishRepository
     val audioPlayerHelper: AudioPlayerHelper
     val hapticFeedback: com.moviles.ark.domain.adapters.HapticFeedbackAdapter
     val networkConnectivityObserver: NetworkConnectivityObserver
@@ -80,6 +90,13 @@ interface AppContainer {
     val syncManager: SyncManager
     val environmentalSensorManager: EnvironmentalSensorManager
     val speechToTextHelper: SpeechToTextHelper
+    val favoriteFortuneCookieDao: FavoriteFortuneCookieDao
+    val savedFortuneCardDao: SavedFortuneCardDao
+    val fortunePreferencesManager: FortunePreferencesManager
+    val fortuneCardExporter: FortuneCardExporter
+    val fortuneCacheManager: FortuneCacheManager
+    val fortuneServiceAdapter: FortuneServiceAdapter
+    val fortuneRepository: FortuneRepository
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -203,6 +220,15 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             onInteractionSaved = { syncManager.requestSync() }
         )
     }
+    // farol de deseos: los deseos se guardan en room (tabla wishes), por usuario (uid de firebase)
+    // es uno solo para toda la app, asi los faroles encendidos se mantienen al salir y volver a entrar a la herramienta
+    override val wishRepository: com.moviles.ark.domain.repositories.WishRepository by lazy {
+        com.moviles.ark.data.repositories.WishRepositoryImpl(
+            wishDao = database.wishDao(),
+            userIdProvider = { auth.currentUser?.uid },
+            onWishChanged = { syncManager.requestSync() }
+        )
+    }
     override val audioPlayerHelper: AudioPlayerHelper by lazy { AudioPlayerHelper(context) }
     // vibracion de la respiracion guiada
     override val hapticFeedback: com.moviles.ark.domain.adapters.HapticFeedbackAdapter by lazy { com.moviles.ark.data.local.sensors.HapticFeedbackHelper(context) }
@@ -227,10 +253,36 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val syncManager: SyncManager by lazy {
         //al arrancar con red y cada vez que vuelve la conexion se trae el catalogo de herramientas: antes solo
         //llegaba por push (FCM) y si el push no llegaba el catalogo quedaba viejo hasta el siguiente
-        SyncManager(context, networkConnectivityObserver, syncRepository, onOnline = { toolRepository.refreshTools().isSuccess })
+        SyncManager(context, networkConnectivityObserver, syncRepository, onOnline = { fortuneRepository.syncPending(); toolRepository.refreshTools().isSuccess })
     }
     // sensor de luz + hora del dia para recomendaciones segun el entorno; uno para toda la app
     override val environmentalSensorManager: EnvironmentalSensorManager by lazy { EnvironmentalSensorManager(context) }
     // ayudante reutilizable de speech-to-text nativo de android para dictado offline
     override val speechToTextHelper: SpeechToTextHelper by lazy { SpeechToTextHelper(context) }
+    // dao local de room para consultar y guardar frases favoritas de la galleta de la fortuna
+    override val favoriteFortuneCookieDao: FavoriteFortuneCookieDao by lazy { database.favoriteFortuneCookieDao() }
+    // dao local de room para trazabilidad de tarjetas de la fortuna guardadas en galeria y nube
+    override val savedFortuneCardDao: SavedFortuneCardDao by lazy { database.savedFortuneCardDao() }
+    // gestor de intentos diarios con sharedpreferences para la galleta de la fortuna
+    override val fortunePreferencesManager: FortunePreferencesManager by lazy { FortunePreferencesManager(context) }
+    // exportador de tarjetas de la fortuna a la galeria publica
+    override val fortuneCardExporter: FortuneCardExporter by lazy { FortuneCardExporter(context) }
+    // gestor de cache en memoria y disco para la galleta de la fortuna
+    override val fortuneCacheManager: FortuneCacheManager by lazy { FortuneCacheManager(context) }
+    // adaptador de la api remota de consejos y frases de sabiduria
+    override val fortuneServiceAdapter: FortuneServiceAdapter by lazy { FortuneServiceAdapterImpl() }
+    // repositorio principal de la galleta de la fortuna que reparte trabajo en hilos
+    override val fortuneRepository: FortuneRepository by lazy {
+        FortuneRepositoryImpl(
+            favoriteFortuneCookieDao = favoriteFortuneCookieDao,
+            savedFortuneCardDao = savedFortuneCardDao,
+            preferencesManager = fortunePreferencesManager,
+            cacheManager = fortuneCacheManager,
+            cardExporter = fortuneCardExporter,
+            serviceAdapter = fortuneServiceAdapter,
+            firestore = firestore,
+            storage = storage,
+            userIdProvider = { auth.currentUser?.uid }
+        )
+    }
 }
