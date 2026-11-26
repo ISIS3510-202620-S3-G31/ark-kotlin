@@ -140,17 +140,21 @@ class FortuneRepositoryImpl(
         }
     }
 
-    //cache falling back to network: si en el telefono hay 3 frases guardadas no se llama al api
+    //cache falling back to network: la reserva del telefono es del dia; si es de hoy y tiene 3 frases no se llama al api
     //las frases ya abiertas no vuelven a la mesa, y sin red se completa con las de la app (generic fallback)
     override suspend fun getTable(): List<TableFortune> = withContext(Dispatchers.IO) {
         val seen = cacheManager.getSeenIds(userId())
+        val today = preferencesManager.today()
+        val isNewDay = cacheManager.getDeckDay() != today
         val deck = cacheManager.getDeck().filter { it.id !in seen }
-        if (deck.size >= 3) return@withContext deck.take(3).map { TableFortune(withFavorite(it), FortuneSource.PHONE, false) }
+        if (!isNewDay && deck.size >= 3) return@withContext deck.take(3).map { TableFortune(withFavorite(it), FortuneSource.PHONE, false) }
 
-        //quedan pocas: se piden al api, pero se espera maximo un momento para que sin red la mesa salga rapido
+        //dia nuevo o quedan pocas: una llamada que trae 4 frases, esperando maximo un momento para que sin red la mesa salga rapido
         val fresh = withTimeoutOrNull(TABLE_NETWORK_WAIT_MS) { serviceAdapter.fetchTwoAndTwo() }.orEmpty()
         val isOffline = fresh.isEmpty()
-        if (!isOffline) cacheManager.appendDeck(fresh, seen)
+        //en un dia nuevo la reserva se cambia por las frases de hoy; sin red se usan las que quedaron de ayer
+        if (!isOffline && isNewDay) cacheManager.replaceDeck(fresh, seen, today)
+        if (!isOffline && !isNewDay) cacheManager.appendDeck(fresh, seen)
         val freshIds = fresh.map { it.id }.toSet()
         val table = cacheManager.getDeck().filter { it.id !in seen }.take(3).map { TableFortune(withFavorite(it), if (it.id in freshIds) FortuneSource.INTERNET else FortuneSource.PHONE, isOffline) }.toMutableList()
 
@@ -165,16 +169,13 @@ class FortuneRepositoryImpl(
         table
     }
 
-    //llena la reserva del telefono con frases nuevas cuando hay red, sin que la pantalla espere
+    //si a la reserva de hoy le quedan menos de 3 frases se piden 4 mas, una sola llamada y sin que la pantalla espere
     override suspend fun refillDeck() = withContext(Dispatchers.IO) {
         val seen = cacheManager.getSeenIds(userId())
-        //cada llamada trae hasta 4 frases, se intenta unas pocas veces hasta llegar a la meta
-        for (round in 0 until REFILL_ROUNDS) {
-            if (cacheManager.getDeck().count { it.id !in seen } >= DECK_TARGET) return@withContext
-            val fresh = withTimeoutOrNull(REFILL_WAIT_MS) { serviceAdapter.fetchTwoAndTwo() }.orEmpty()
-            if (fresh.isEmpty()) return@withContext
-            cacheManager.appendDeck(fresh, seen)
-        }
+        if (cacheManager.getDeckDay() == preferencesManager.today() && cacheManager.getDeck().count { it.id !in seen } >= 3) return@withContext
+        val fresh = withTimeoutOrNull(REFILL_WAIT_MS) { serviceAdapter.fetchTwoAndTwo() }.orEmpty()
+        if (fresh.isEmpty()) return@withContext
+        if (cacheManager.getDeckDay() == preferencesManager.today()) cacheManager.appendDeck(fresh, seen) else cacheManager.replaceDeck(fresh, seen, preferencesManager.today())
     }
 
     //abre una galleta, solo esa sale del disco y las otras dos se quedan para la proxima vez
@@ -322,8 +323,5 @@ class FortuneRepositoryImpl(
         //lo maximo que la mesa espera al api antes de usar las frases de la app
         private const val TABLE_NETWORK_WAIT_MS = 1_500L
         private const val REFILL_WAIT_MS = 8_000L
-        //frases guardadas para un dia entero sin internet: 3 en la mesa y 1 nueva por cada una de las otras 4 que se abren
-        private const val DECK_TARGET = 8
-        private const val REFILL_ROUNDS = 3
     }
 }

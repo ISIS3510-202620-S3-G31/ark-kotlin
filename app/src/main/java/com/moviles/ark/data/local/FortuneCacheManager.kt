@@ -16,6 +16,8 @@ class FortuneCacheManager(private val context: Context) {
     //cada usuario tiene su propio archivo de recientes, asi no se mezclan al cambiar de cuenta
     private fun recentFile(userId: String) = File(context.cacheDir, "recent_cookies_${userId.hashCode()}.json")
     private val deckFile = File(context.cacheDir, "fortune_deck.json")
+    //dia en que se lleno la reserva, la reserva es de un solo dia
+    private val deckDayFile = File(context.cacheDir, "fortune_deck_day.txt")
     //ids de las frases que este usuario ya abrio, la mas reciente al final; asi no vuelven a salir pronto
     private fun seenFile(userId: String) = File(context.cacheDir, "seen_cookies_${userId.hashCode()}.json")
     private val seenCapacity = 200
@@ -103,6 +105,17 @@ class FortuneCacheManager(private val context: Context) {
             if (cookie.id !in seen && deck.none { it.quote == cookie.quote }) deck.add(cookie)
         }
         writeFile(deckFile, deck)
+    }
+
+    //dia de la reserva actual, null si nunca se ha llenado
+    @Synchronized
+    fun getDeckDay(): String? = try { if (deckDayFile.exists()) deckDayFile.readText().trim() else null } catch (_: Exception) { null }
+
+    //cambia la reserva por las frases de hoy, sin las que ya se abrieron
+    @Synchronized
+    fun replaceDeck(newCookies: List<FortuneModel>, seen: List<Int>, day: String) {
+        writeFile(deckFile, newCookies.filter { it.id !in seen }.distinctBy { it.quote })
+        try { deckDayFile.writeText(day) } catch (_: Exception) { }
     }
 
     //frases ya abiertas, de la mas vieja a la mas reciente
