@@ -162,7 +162,7 @@ fun FortuneCookieScreen(uiState: FortuneUiState, onBack: () -> Unit, onDone: () 
                             //una galleta por visita, despues de leerla se sale
                             FortuneRevealActions(isKept = opened.fortune.isFavorite, isSharing = uiState.isSharing, mainText = "I'm done", onToggleFavorite = { onToggleFavorite(opened.fortune) }, onShare = { onShare(opened.fortune) }, onMain = onDone)
                         } else if (uiState.phase == FortunePhase.CHOOSING) {
-                            RecentFortunesCarousel(recents = uiState.recentFortunes, sharedIds = uiState.savedCards.map { it.cookieId }.toSet(), onSelectFortune = onOpenRecent)
+                            RecentFortunesCarousel(recents = uiState.recentFortunes, sharedIds = uiState.savedCards.map { it.cookieId }.toSet(), isOnline = uiState.isOnline, onSelectFortune = onOpenRecent)
                         }
                     }
                     Spacer(modifier = Modifier.weight(1f))

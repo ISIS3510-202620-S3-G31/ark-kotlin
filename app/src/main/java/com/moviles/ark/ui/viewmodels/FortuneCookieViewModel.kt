@@ -1,5 +1,6 @@
 package com.moviles.ark.ui.viewmodels
 
+import kotlinx.coroutines.flow.Flow
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.viewModelScope
@@ -24,7 +25,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 //viewmodel de la galleta de la fortuna, la pantalla solo lee el estado y llama estas funciones
-class FortuneCookieViewModel(private val fortuneRepository: FortuneRepository, private val toolInteractionRepository: ToolInteractionRepository? = null, private val now: () -> Long = { System.currentTimeMillis() }) : ViewModel() {
+class FortuneCookieViewModel(private val fortuneRepository: FortuneRepository, private val toolInteractionRepository: ToolInteractionRepository? = null, private val connectivity: Flow<Boolean>? = null, private val now: () -> Long = { System.currentTimeMillis() }) : ViewModel() {
 
     private val _uiState = MutableStateFlow(FortuneUiState())
     val uiState: StateFlow<FortuneUiState> = _uiState.asStateFlow()
@@ -68,17 +69,22 @@ class FortuneCookieViewModel(private val fortuneRepository: FortuneRepository, p
                 }
             }
         }
-        //imagenes guardadas en room
+        //conexion en vivo: sin red se explica por que no hay recientes, y al volver se trae lo de la cuenta
         viewModelScope.launch {
-            fortuneRepository.observeSavedCards().collect { cards ->
-                _uiState.update { it.copy(savedCards = cards) }
-                //se preparan las imagenes que faltan, una por una
-                for (card in cards) {
-                    if (_uiState.value.cardPreviews.containsKey(card.cookieId)) continue
-                    val path = fortuneRepository.getCardPreview(card) ?: continue
-                    _uiState.update { it.copy(cardPreviews = it.cardPreviews + (card.cookieId to path)) }
+            connectivity?.collect { online ->
+                val wasOnline = _uiState.value.isOnline
+                _uiState.update { it.copy(isOnline = online) }
+                if (online && !wasOnline) {
+                    fortuneRepository.syncFromRemote()
+                    val recents = fortuneRepository.getRecentCookies()
+                    _uiState.update { it.copy(recentFortunes = recents) }
+                    fortuneRepository.syncPending()
                 }
             }
+        }
+        //imagenes guardadas en room
+        viewModelScope.launch {
+            fortuneRepository.observeSavedCards().collect { cards -> _uiState.update { it.copy(savedCards = cards) } }
         }
     }
 
@@ -207,7 +213,7 @@ class FortuneCookieViewModel(private val fortuneRepository: FortuneRepository, p
         val Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as ArkApplication
-                FortuneCookieViewModel(fortuneRepository = app.container.fortuneRepository, toolInteractionRepository = app.container.toolInteractionRepository)
+                FortuneCookieViewModel(fortuneRepository = app.container.fortuneRepository, toolInteractionRepository = app.container.toolInteractionRepository, connectivity = app.container.networkConnectivityObserver.observe())
             }
         }
     }

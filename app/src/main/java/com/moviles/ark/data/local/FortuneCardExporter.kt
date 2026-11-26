@@ -129,19 +129,6 @@ class FortuneCardExporter(private val context: Context) {
         return try { ResourcesCompat.getFont(context, id) ?: Typeface.DEFAULT } catch (_: Exception) { Typeface.DEFAULT }
     }
 
-    //copia de la imagen dentro de la app para verla en la coleccion, igual a la que se comparte
-    //se dibuja una sola vez por frase y por estilo, despues se reutiliza el archivo
-    fun previewFile(fortune: FortuneModel, savedAt: Long, style: Int): File {
-        val dir = File(context.cacheDir, "fortune_cards")
-        if (!dir.exists()) dir.mkdirs()
-        val file = File(dir, "card_${fortune.id}_v$style.png")
-        if (file.exists() && file.length() > 0) return file
-        val bitmap = renderCardBitmap(fortune, savedAt)
-        file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-        bitmap.recycle()
-        return file
-    }
-
     //convierte la imagen en bytes png para subirla a la nube
     fun toPngBytes(bitmap: Bitmap): ByteArray {
         val stream = ByteArrayOutputStream()

@@ -5,7 +5,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.Dialog
-import java.io.File
 import com.moviles.ark.ui.components.drawFortunePaper
 import com.moviles.ark.R
 import androidx.compose.ui.text.style.TextOverflow
@@ -157,7 +156,7 @@ fun FavoriteFortunesScreen(uiState: FortuneUiState, initialTab: Int, onBack: () 
     //imagen compartida en grande, con compartir otra vez y cerrar
     val viewing = cardToView
     if (viewing != null) {
-        CardViewer(path = uiState.cardPreviews[viewing.cookieId], quote = viewing.quote, onShare = { onShareCard(viewing) }, onClose = { cardToView = null })
+        CardViewer(card = viewing, onShare = { onShareCard(viewing) }, onClose = { cardToView = null })
     }
 
     Scaffold(containerColor = Color.Transparent, contentWindowInsets = WindowInsets(0), snackbarHost = { FortuneSnackbarHost(snackbarHostState) }) { padding ->
@@ -168,7 +167,7 @@ fun FavoriteFortunesScreen(uiState: FortuneUiState, initialTab: Int, onBack: () 
                 if (selectedTab == 0) {
                     KeptList(favorites = uiState.favoriteFortunes, onShare = onShareFortune, onRemove = { phraseToRemove = it })
                 } else {
-                    SharedGrid(cards = uiState.savedCards, previews = uiState.cardPreviews, onOpen = { cardToView = it }, onShare = onShareCard, onRemove = { cardToRemove = it })
+                    SharedGrid(cards = uiState.savedCards, onOpen = { cardToView = it }, onShare = onShareCard, onRemove = { cardToRemove = it })
                 }
             }
         }
@@ -249,22 +248,22 @@ private fun RoundAction(icon: ImageVector, label: String, tint: Color, onClick: 
 
 //cuadricula de imagenes compartidas
 @Composable
-private fun SharedGrid(cards: List<FortuneCardModel>, previews: Map<Int, String>, onOpen: (FortuneCardModel) -> Unit, onShare: (FortuneCardModel) -> Unit, onRemove: (FortuneCardModel) -> Unit) {
+private fun SharedGrid(cards: List<FortuneCardModel>, onOpen: (FortuneCardModel) -> Unit, onShare: (FortuneCardModel) -> Unit, onRemove: (FortuneCardModel) -> Unit) {
     if (cards.isEmpty()) {
         EmptyCollection(title = "Nothing shared yet", body = "When you share a fortune, its image waits for you here.")
         return
     }
     LazyVerticalGrid(columns = GridCells.Fixed(2), modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 32.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        items(cards, key = { it.id }) { card -> SharedImage(card = card, path = previews[card.cookieId], onOpen = { onOpen(card) }, onShare = { onShare(card) }, onRemove = { onRemove(card) }) }
+        items(cards, key = { it.id }) { card -> SharedImage(card = card, onOpen = { onOpen(card) }, onShare = { onShare(card) }, onRemove = { onRemove(card) }) }
     }
 }
 
 //la misma imagen que se comparte, con la fecha y los botones encima abajo; al tocarla se abre en grande
 @Composable
-private fun SharedImage(card: FortuneCardModel, path: String?, onOpen: () -> Unit, onShare: () -> Unit, onRemove: () -> Unit) {
+private fun SharedImage(card: FortuneCardModel, onOpen: () -> Unit, onShare: () -> Unit, onRemove: () -> Unit) {
     val shape = RoundedCornerShape(18.dp)
     Box(modifier = Modifier.fillMaxWidth().aspectRatio(0.8f).shadow(8.dp, shape, ambientColor = PrimaryColor, spotColor = PrimaryColor).clip(shape).background(Brush.linearGradient(listOf(PrimaryColor, AccentColor))).clickable(role = Role.Button, onClickLabel = "See this image", onClick = onOpen)) {
-        if (path != null) AsyncImage(model = File(path), contentDescription = card.quote, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        CardImage(card = card, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         //sombra oscura abajo para que se lea la fecha
         Box(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(58.dp).background(Brush.verticalGradient(listOf(Color.Transparent, TextColor.copy(alpha = 0.55f)))))
         Row(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(start = 12.dp, end = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -280,14 +279,24 @@ private fun SharedImage(card: FortuneCardModel, path: String?, onOpen: () -> Uni
     }
 }
 
+//la imagen compartida: coil la lee de la galeria, la reduce al tamano del espacio y la guarda en su cache lru de memoria
+//si la borraron de la galeria se usa la copia de firebase storage, que coil tambien guarda en su cache de disco
+@Composable
+private fun CardImage(card: FortuneCardModel, contentScale: ContentScale, modifier: Modifier = Modifier) {
+    var useRemote by remember(card.id) { mutableStateOf(card.imageUri.isEmpty()) }
+    val source = if (useRemote) card.remoteImageUrl else card.imageUri
+    if (source.isNullOrEmpty()) return
+    AsyncImage(model = source, contentDescription = card.quote, contentScale = contentScale, modifier = modifier, onError = { if (!useRemote && !card.remoteImageUrl.isNullOrEmpty()) useRemote = true })
+}
+
 //visor a pantalla completa con fondo cafe de la paleta, la imagen grande y dos botones
 @Composable
-private fun CardViewer(path: String?, quote: String, onShare: () -> Unit, onClose: () -> Unit) {
+private fun CardViewer(card: FortuneCardModel, onShare: () -> Unit, onClose: () -> Unit) {
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(modifier = Modifier.fillMaxSize().background(TextColor.copy(alpha = 0.88f)).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClose).navigationBarsPadding().statusBarsPadding(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
                 Box(modifier = Modifier.fillMaxWidth().aspectRatio(0.8f).clip(RoundedCornerShape(22.dp)).background(Brush.linearGradient(listOf(PrimaryColor, AccentColor)))) {
-                    if (path != null) AsyncImage(model = File(path), contentDescription = quote, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
+                    CardImage(card = card, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
                 }
                 Spacer(modifier = Modifier.height(20.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {

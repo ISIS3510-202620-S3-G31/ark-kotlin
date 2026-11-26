@@ -41,13 +41,15 @@ import com.moviles.ark.ui.theme.TextColor
 //las ultimas galletas abiertas con esta cuenta, al tocar una su papelito sale otra vez en el centro de la mesa
 //sharedIds son las frases que ya se compartieron, para marcarlas
 @Composable
-fun RecentFortunesCarousel(recents: List<FortuneModel>, sharedIds: Set<Int>, onSelectFortune: (FortuneModel) -> Unit, modifier: Modifier = Modifier) {
+fun RecentFortunesCarousel(recents: List<FortuneModel>, sharedIds: Set<Int>, isOnline: Boolean, onSelectFortune: (FortuneModel) -> Unit, modifier: Modifier = Modifier) {
     Column(modifier = modifier.fillMaxWidth()) {
         Text(text = "Recent cookies", style = MaterialTheme.typography.headlineLarge.copy(fontSize = 26.sp, lineHeight = 32.sp), color = TextColor, modifier = Modifier.padding(horizontal = 24.dp))
         if (recents.isEmpty()) {
             //la seccion no desaparece, invita a abrir la primera
             Box(modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp).fillMaxWidth().height(84.dp).liquidGlass(RoundedCornerShape(18.dp)).padding(horizontal = 20.dp), contentAlignment = Alignment.Center) {
-                Text(text = "No recent cookies yet. The ones you open will wait here.", style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp, lineHeight = 21.sp), color = FortuneMutedText, textAlign = TextAlign.Center)
+                //sin red puede que las recientes esten en la cuenta y todavia no hayan llegado a este telefono
+                val emptyText = if (isOnline) "No recent cookies yet. The ones you open will wait here." else "You're offline. Your recent cookies will show up when you're back online."
+                Text(text = emptyText, style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp, lineHeight = 21.sp), color = FortuneMutedText, textAlign = TextAlign.Center)
             }
             return@Column
         }

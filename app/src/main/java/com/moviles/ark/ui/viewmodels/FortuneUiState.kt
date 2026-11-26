@@ -25,8 +25,8 @@ data class FortuneUiState(
     val recentFortunes: List<FortuneModel> = emptyList(),
     val favoriteFortunes: List<FortuneModel> = emptyList(),
     val savedCards: List<FortuneCardModel> = emptyList(),
-    //id de la frase -> archivo con su imagen, para verla en shared igual a como se comparte
-    val cardPreviews: Map<Int, String> = emptyMap(),
+    //si hay internet, para explicar por que no salen las recientes
+    val isOnline: Boolean = true,
     val isSharing: Boolean = false,
     val shareUri: Uri? = null,
     val snackbarMessage: String? = null

@@ -231,14 +231,6 @@ class FortuneRepositoryImpl(
     }
 
     //quita la imagen del telefono, si ya estaba en la nube queda anotada para borrarla alla
-    override suspend fun getCardPreview(card: FortuneCardModel): String? = withContext(Dispatchers.IO) {
-        try {
-            cardExporter.previewFile(FortuneModel(card.cookieId, card.quote), card.savedAt, FortunePreferencesManager.CARD_STYLE).absolutePath
-        } catch (_: Exception) {
-            null
-        }
-    }
-
     override suspend fun deleteCard(card: FortuneCardModel) = withContext(Dispatchers.IO) {
         val user = userId()
         savedFortuneCardDao.deleteCard(user, card.cookieId)
