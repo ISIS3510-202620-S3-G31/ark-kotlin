@@ -1,4 +1,4 @@
--- Sesiones terminadas de Custom Breathing y las preguntas que salen de ellas (Sprint 5): BQ16.
+-- Sesiones terminadas de Custom Breathing y las preguntas que salen de ellas (Sprint 5): BQ16 y BQ17.
 -- La app ya guarda los campos de las tres preguntas de respiracion (ciclos, patron y musica):
 -- las otras dos preguntas agregan sus vistas al final de este archivo, sobre custom_breathing_sessions.
 --
@@ -7,8 +7,9 @@
 -- usuario toca Finish despues de al menos un ciclo, asi que cada fila ya es una sesion terminada.
 -- No se llama breathing_sessions porque esa coleccion es de la app de flutter, con otros campos.
 --
--- Uso: correr despues de views.sql y views_bq4_and_age.sql (usa to_ts y test_accounts) y antes
--- de views_answers.sql (que lee bq16_cycles_summary).
+-- Uso: correr despues de views.sql y views_bq4_and_age.sql (usa to_ts y test_accounts).
+-- Cada BQ tiene aqui su propia vista de respuesta (bq16_answer, bq17_answer): no hace falta
+-- correr views_answers.sql.
 
 -- Una fila por sesion terminada de Custom Breathing.
 CREATE OR REPLACE VIEW `ark-mobiles.ark_dashboards.custom_breathing_sessions` AS
@@ -120,3 +121,84 @@ SELECT
 FROM totals AS t
 JOIN cycle_counts AS c
   ON c.device_type = t.device_type AND c.is_test_account = t.is_test_account AND c.place = 1;
+
+-- BQ16: la respuesta escrita para la pagina de Data Studio (una tabla de una celda con bq16_answer).
+-- Va en su propia vista para no tocar bq_answers de las demas BQ.
+-- Solo celulares reales y sin cuentas de prueba.
+CREATE OR REPLACE VIEW `ark-mobiles.ark_dashboards.bq16_answer` AS
+SELECT FORMAT(
+  'Of %d completed Custom Breathing sessions, the typical one (median) reaches %d cycles and the most common is %d cycles (%.1f%% of sessions).',
+  total_sessions, median_cycles, mode_cycles, mode_pct_of_sessions) AS bq16_answer
+FROM `ark-mobiles.ark_dashboards.bq16_cycles_summary`
+WHERE device_type = 'Real phone' AND NOT is_test_account;
+
+-- BQ17: que patrones de respiracion se usan mas en las sesiones terminadas de Custom Breathing.
+-- Una fila por patron, tipo de dispositivo y cuenta de prueba. Los 4 patrones salen siempre, con 0
+-- si nadie los uso: que un patron no se use tambien es una respuesta.
+--   sessions -> sesiones terminadas con ese patron (barras y anillo; el anillo saca el % solo)
+--   users    -> usuarios distintos que terminaron al menos una sesion con ese patron
+-- Las sesiones sin patternType (pruebas de antes de que la app lo guardara) no se cuentan.
+CREATE OR REPLACE VIEW `ark-mobiles.ark_dashboards.bq17_pattern_usage` AS
+WITH
+-- los 4 patrones con el nombre que se muestra en Data Studio y un orden fijo
+patterns AS (
+  SELECT * FROM UNNEST([
+    STRUCT('BOX' AS pattern_type, 'Box Breathing (4-4-4-4)' AS pattern_label, 1 AS pattern_order),
+    ('RELAXING', 'Relaxing (4-7-8)', 2),
+    ('QUICK_CALM', 'Quick Calm (4-6)', 3),
+    ('CUSTOM', 'Custom', 4)
+  ])
+),
+-- los grupos que existen (tipo de dispositivo y cuenta de prueba)
+groups AS (
+  SELECT DISTINCT device_type, is_test_account
+  FROM `ark-mobiles.ark_dashboards.custom_breathing_sessions`
+),
+-- los 4 patrones para cada grupo, aunque no tengan sesiones
+all_rows AS (
+  SELECT g.device_type, g.is_test_account, p.pattern_type, p.pattern_label, p.pattern_order
+  FROM groups AS g
+  CROSS JOIN patterns AS p
+)
+SELECT
+  r.device_type,
+  r.is_test_account,
+  r.pattern_type,
+  r.pattern_label,
+  r.pattern_order,
+  COUNT(s.session_id) AS sessions,
+  COUNT(DISTINCT s.user_id) AS users
+FROM all_rows AS r
+LEFT JOIN `ark-mobiles.ark_dashboards.custom_breathing_sessions` AS s
+  ON s.device_type = r.device_type
+  AND s.is_test_account = r.is_test_account
+  AND s.pattern_type = r.pattern_type
+GROUP BY r.device_type, r.is_test_account, r.pattern_type, r.pattern_label, r.pattern_order;
+
+-- BQ17: la respuesta escrita para la pagina de Data Studio (una tabla de una celda con bq17_answer).
+-- Va en su propia vista para no tocar bq_answers de las demas BQ.
+-- Solo celulares reales y sin cuentas de prueba.
+CREATE OR REPLACE VIEW `ark-mobiles.ark_dashboards.bq17_answer` AS
+WITH
+-- cada patron con el total de sesiones y su puesto (1 = el mas usado; si empatan, el orden fijo)
+usage AS (
+  SELECT
+    pattern_label,
+    sessions,
+    users,
+    SUM(sessions) OVER () AS total_sessions,
+    ROW_NUMBER() OVER (ORDER BY sessions DESC, pattern_order) AS place
+  FROM `ark-mobiles.ark_dashboards.bq17_pattern_usage`
+  WHERE device_type = 'Real phone' AND NOT is_test_account
+)
+SELECT CONCAT(
+  FORMAT('%s is the most used pattern: %d of %d completed sessions (%.1f%%) by %d users. Then ',
+    MAX(IF(place = 1, pattern_label, NULL)),
+    MAX(IF(place = 1, sessions, NULL)),
+    MAX(total_sessions),
+    100 * SAFE_DIVIDE(MAX(IF(place = 1, sessions, NULL)), MAX(total_sessions)),
+    MAX(IF(place = 1, users, NULL))),
+  STRING_AGG(IF(place > 1, FORMAT('%s %.1f%%', pattern_label, 100 * SAFE_DIVIDE(sessions, total_sessions)), NULL),
+    ', ' ORDER BY place),
+  '.') AS bq17_answer
+FROM usage;
