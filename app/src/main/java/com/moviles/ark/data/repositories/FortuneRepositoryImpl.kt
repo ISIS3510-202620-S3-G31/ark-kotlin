@@ -1,5 +1,9 @@
 package com.moviles.ark.data.repositories
 
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.CoroutineScope
 import android.net.Uri
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
@@ -46,6 +50,8 @@ class FortuneRepositoryImpl(
 
     //una sola subida a la vez, la pueden pedir la pantalla y la vuelta de la red al mismo tiempo
     private val syncMutex = Mutex()
+    //lo que se sube a la nube despues de abrir una galleta va aparte, asi la frase no espera a la red
+    private val backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     //sin sesion lo guardado queda a nombre de un usuario local
     private fun userId(): String = userIdProvider() ?: LOCAL_USER
@@ -135,37 +141,56 @@ class FortuneRepositoryImpl(
     }
 
     //cache falling back to network: si en el telefono hay 3 frases guardadas no se llama al api
+    //las frases ya abiertas no vuelven a la mesa, y sin red se completa con las de la app (generic fallback)
     override suspend fun getTable(): List<TableFortune> = withContext(Dispatchers.IO) {
-        val deck = cacheManager.getDeck()
+        val seen = cacheManager.getSeenIds(userId())
+        val deck = cacheManager.getDeck().filter { it.id !in seen }
         if (deck.size >= 3) return@withContext deck.take(3).map { TableFortune(withFavorite(it), FortuneSource.PHONE, false) }
 
-        //quedan pocas, se traen 2 de cada api y se guardan en disco
-        val fresh = serviceAdapter.fetchTwoAndTwo()
+        //quedan pocas: se piden al api, pero se espera maximo un momento para que sin red la mesa salga rapido
+        val fresh = withTimeoutOrNull(TABLE_NETWORK_WAIT_MS) { serviceAdapter.fetchTwoAndTwo() }.orEmpty()
         val isOffline = fresh.isEmpty()
-        if (!isOffline) cacheManager.appendDeck(fresh)
+        if (!isOffline) cacheManager.appendDeck(fresh, seen)
         val freshIds = fresh.map { it.id }.toSet()
-        val table = cacheManager.getDeck().take(3).map { TableFortune(withFavorite(it), if (it.id in freshIds) FortuneSource.INTERNET else FortuneSource.PHONE, isOffline) }.toMutableList()
+        val table = cacheManager.getDeck().filter { it.id !in seen }.take(3).map { TableFortune(withFavorite(it), if (it.id in freshIds) FortuneSource.INTERNET else FortuneSource.PHONE, isOffline) }.toMutableList()
 
-        //si aun faltan galletas se completan con las frases que trae la app
-        for (seed in cacheManager.getSeeds().shuffled()) {
+        //si aun faltan se completan con las frases de la app: primero las que nunca se han abierto, luego las abiertas hace mas tiempo
+        val seeds = cacheManager.getSeeds()
+        val unseenSeeds = seeds.filter { it.id !in seen }.shuffled()
+        val oldestSeenSeeds = seen.mapNotNull { id -> seeds.find { it.id == id } }
+        for (seed in unseenSeeds + oldestSeenSeeds) {
             if (table.size >= 3) break
             if (table.none { it.fortune.quote == seed.quote }) table.add(TableFortune(withFavorite(seed), FortuneSource.BUILT_IN, isOffline))
         }
         table
     }
 
+    //llena la reserva del telefono con frases nuevas cuando hay red, sin que la pantalla espere
+    override suspend fun refillDeck() = withContext(Dispatchers.IO) {
+        val seen = cacheManager.getSeenIds(userId())
+        //cada llamada trae hasta 4 frases, se intenta unas pocas veces hasta llegar a la meta
+        for (round in 0 until REFILL_ROUNDS) {
+            if (cacheManager.getDeck().count { it.id !in seen } >= DECK_TARGET) return@withContext
+            val fresh = withTimeoutOrNull(REFILL_WAIT_MS) { serviceAdapter.fetchTwoAndTwo() }.orEmpty()
+            if (fresh.isEmpty()) return@withContext
+            cacheManager.appendDeck(fresh, seen)
+        }
+    }
+
     //abre una galleta, solo esa sale del disco y las otras dos se quedan para la proxima vez
     override suspend fun openCookie(cookie: TableFortune): Result<FortuneCrackResult> = withContext(Dispatchers.IO) {
-        //primero se mira la nube por si en otro telefono ya se abrieron las de hoy
-        pullDailyChances()
         if (preferencesManager.getChancesLeft(userId()) <= 0) return@withContext Result.failure(Exception("no cookies left today"))
         cacheManager.removeFromDeck(cookie.fortune.id)
+        cacheManager.markSeen(userId(), cookie.fortune.id)
         val remaining = preferencesManager.decrementChances(userId())
-        pushDailyChances()
         //savedAt queda como la hora en que se abrio, asi se ordenan las recientes entre telefonos
         val fortune = withFavorite(cookie.fortune).copy(savedAt = System.currentTimeMillis())
         cacheManager.addRecentCookie(userId(), fortune)
-        mergeRecents()
+        //la nube se actualiza aparte; sin red queda pendiente y la frase sale de una vez
+        backgroundScope.launch {
+            pushDailyChances()
+            mergeRecents()
+        }
         Result.success(FortuneCrackResult(fortune, remaining))
     }
 
@@ -294,5 +319,11 @@ class FortuneRepositoryImpl(
         private const val TIMEOUT_MS = 10_000L
         private const val UPLOAD_TIMEOUT_MS = 30_000L
         private const val DAILY_TIMEOUT_MS = 3_000L
+        //lo maximo que la mesa espera al api antes de usar las frases de la app
+        private const val TABLE_NETWORK_WAIT_MS = 1_500L
+        private const val REFILL_WAIT_MS = 8_000L
+        //frases guardadas para un dia entero sin internet: 3 en la mesa y 1 nueva por cada una de las otras 4 que se abren
+        private const val DECK_TARGET = 8
+        private const val REFILL_ROUNDS = 3
     }
 }

@@ -44,6 +44,8 @@ class FortuneCookieViewModel(private val fortuneRepository: FortuneRepository, p
         tableJob = viewModelScope.launch {
             val table = fortuneRepository.getTable()
             _uiState.update { it.copy(table = table, offlineNotice = offlineNoticeFor(table)) }
+            //con la mesa lista se llena la reserva para la proxima vez, en otra corrutina para que abrir no la espere
+            viewModelScope.launch { fortuneRepository.refillDeck() }
         }
         //con red se trae lo de la nube y se sube lo pendiente
         viewModelScope.launch {
@@ -86,7 +88,7 @@ class FortuneCookieViewModel(private val fortuneRepository: FortuneRepository, p
         if (table.none { it.isOffline }) return null
         //con frases guardadas en el telefono no hace falta avisar nada
         if (table.none { it.source == FortuneSource.BUILT_IN }) return null
-        return "No internet and no saved cookies left, so these come from Ark's own jar."
+        return "You're offline, so today's cookies come from wisdom saved on your phone."
     }
 
     //abre la galleta elegida, solo se puede abrir una por sesion

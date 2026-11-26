@@ -16,6 +16,9 @@ class FortuneCacheManager(private val context: Context) {
     //cada usuario tiene su propio archivo de recientes, asi no se mezclan al cambiar de cuenta
     private fun recentFile(userId: String) = File(context.cacheDir, "recent_cookies_${userId.hashCode()}.json")
     private val deckFile = File(context.cacheDir, "fortune_deck.json")
+    //ids de las frases que este usuario ya abrio, la mas reciente al final; asi no vuelven a salir pronto
+    private fun seenFile(userId: String) = File(context.cacheDir, "seen_cookies_${userId.hashCode()}.json")
+    private val seenCapacity = 200
     private val recentCapacity = 5
 
     //convierte texto json en una lista de frases
@@ -92,14 +95,36 @@ class FortuneCacheManager(private val context: Context) {
     @Synchronized
     fun getDeck(): List<FortuneModel> = readFile(deckFile)
 
-    //agrega frases nuevas al final sin repetir ninguna
+    //agrega frases nuevas al final sin repetir ninguna y sin las que ya se abrieron
     @Synchronized
-    fun appendDeck(newCookies: List<FortuneModel>) {
+    fun appendDeck(newCookies: List<FortuneModel>, seen: List<Int> = emptyList()) {
         val deck = readFile(deckFile).toMutableList()
         for (cookie in newCookies) {
-            if (deck.none { it.quote == cookie.quote }) deck.add(cookie)
+            if (cookie.id !in seen && deck.none { it.quote == cookie.quote }) deck.add(cookie)
         }
         writeFile(deckFile, deck)
+    }
+
+    //frases ya abiertas, de la mas vieja a la mas reciente
+    @Synchronized
+    fun getSeenIds(userId: String): List<Int> {
+        val file = seenFile(userId)
+        if (!file.exists()) return emptyList()
+        return try {
+            val array = JSONArray(file.readText())
+            (0 until array.length()).map { array.getInt(it) }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    //anota una frase como abierta, si ya estaba pasa al final; se guardan las ultimas 200
+    @Synchronized
+    fun markSeen(userId: String, cookieId: Int) {
+        val ids = getSeenIds(userId).filter { it != cookieId } + cookieId
+        val array = JSONArray()
+        for (id in ids.takeLast(seenCapacity)) array.put(id)
+        try { seenFile(userId).writeText(array.toString()) } catch (_: Exception) { }
     }
 
     //saca del disco la frase que se abrio, las demas se quedan
