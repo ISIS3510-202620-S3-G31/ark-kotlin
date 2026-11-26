@@ -18,8 +18,9 @@ class FortuneCacheManager(private val context: Context) {
     private val deckFile = File(context.cacheDir, "fortune_deck.json")
     //dia en que se lleno la reserva, la reserva es de un solo dia
     private val deckDayFile = File(context.cacheDir, "fortune_deck_day.txt")
-    //ids de las frases que este usuario ya abrio, la mas reciente al final; asi no vuelven a salir pronto
-    private fun seenFile(userId: String) = File(context.cacheDir, "seen_cookies_${userId.hashCode()}.json")
+    //ids de las frases que este usuario ya abrio, asi no vuelven a salir pronto
+    //va en filesDir (archivos privados de la app) y no en cacheDir, porque android no borra filesDir por su cuenta
+    private fun seenFile(userId: String) = File(context.filesDir, "seen_cookies_${userId.hashCode()}.json")
     private val seenCapacity = 200
     private val recentCapacity = 5
 
@@ -118,25 +119,37 @@ class FortuneCacheManager(private val context: Context) {
         try { deckDayFile.writeText(day) } catch (_: Exception) { }
     }
 
-    //frases ya abiertas, de la mas vieja a la mas reciente
-    @Synchronized
-    fun getSeenIds(userId: String): List<Int> {
-        val file = seenFile(userId)
-        if (!file.exists()) return emptyList()
-        return try {
-            val array = JSONArray(file.readText())
-            (0 until array.length()).map { array.getInt(it) }
-        } catch (_: Exception) {
-            emptyList()
-        }
+    //lru de frases abiertas: un LinkedHashMap en orden de acceso (accessOrder = true)
+    //al volver a anotar una frase pasa al final, y al pasar de 200 removeEldestEntry saca sola la menos reciente
+    private fun newSeenLru(): LinkedHashMap<Int, Boolean> = object : LinkedHashMap<Int, Boolean>(seenCapacity, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Int, Boolean>?): Boolean = size > seenCapacity
     }
 
-    //anota una frase como abierta, si ya estaba pasa al final; se guardan las ultimas 200
+    //lee el lru del archivo en el mismo orden en que se guardo, de la menos reciente a la mas reciente
+    private fun loadSeenLru(userId: String): LinkedHashMap<Int, Boolean> {
+        val lru = newSeenLru()
+        val file = seenFile(userId)
+        if (!file.exists()) return lru
+        try {
+            val array = JSONArray(file.readText())
+            for (i in 0 until array.length()) lru[array.getInt(i)] = true
+        } catch (_: Exception) {
+            //si el archivo esta danado se empieza de nuevo
+        }
+        return lru
+    }
+
+    //frases ya abiertas, de la menos reciente a la mas reciente
+    @Synchronized
+    fun getSeenIds(userId: String): List<Int> = loadSeenLru(userId).keys.toList()
+
+    //anota una frase como abierta: el lru la deja de ultima y saca la mas vieja si se pasa de 200, luego se guarda
     @Synchronized
     fun markSeen(userId: String, cookieId: Int) {
-        val ids = getSeenIds(userId).filter { it != cookieId } + cookieId
+        val lru = loadSeenLru(userId)
+        lru[cookieId] = true
         val array = JSONArray()
-        for (id in ids.takeLast(seenCapacity)) array.put(id)
+        for (id in lru.keys) array.put(id)
         try { seenFile(userId).writeText(array.toString()) } catch (_: Exception) { }
     }
 
