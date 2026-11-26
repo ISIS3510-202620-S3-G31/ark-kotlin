@@ -137,7 +137,8 @@ Quedan en el dataset `ark_dashboards`:
 | `custom_breathing_sessions` | una fila por sesión terminada de Custom Breathing: ciclos, duración, patrón, música, tipo de dispositivo y cuenta de prueba |
 | `bq16_cycles_distribution` | BQ16, sesiones por número de ciclos (1 a 9 y 10+) y las que llegan por lo menos a cada número |
 | `bq16_cycles_summary` | BQ16, total de sesiones, mediana y moda de ciclos por tipo de dispositivo y cuenta de prueba |
-| `bq_answers` | una fila con la respuesta de cada BQ (`bq1_answer` … `bq16_answer`); las de BQ1 a BQ9 empiezan con la fecha del último dato |
+| `bq16_answer` | BQ16, la respuesta escrita (vista aparte para no tocar `bq_answers`) |
+| `bq_answers` | una fila con la respuesta de cada BQ (`bq1_answer` … `bq15_answer`); las de BQ1 a BQ9 empiezan con la fecha del último dato |
 
 Los dos bloques "PASO 2" del final de `views_analytics.sql` ya se corrieron: `tool_load_latency`
 y `app_screen_time` leen de Firestore (llega en segundos) y de Analytics solo lo anterior a la
@@ -324,7 +325,7 @@ respiración completan los usuarios por sesión de Custom Breathing? Unidad: una
 4. Curva "llegan por lo menos a N ciclos": línea con dimensión `cycles_label` (orden por
    `cycles_order`) y el campo calculado `SUM(sessions_at_least) / SUM(group_sessions)` con
    formato de porcentaje.
-5. Respuesta en vivo: tabla de una celda con `bq16_answer`.
+5. Respuesta en vivo: tabla de una celda con la fuente `bq16_answer` (su propia vista, no `bq_answers`).
 
 Los datos llegan desde la versión de la app que sube `custom_breathing_sessions`; las sesiones
 anteriores no se cuentan.

@@ -8,7 +8,7 @@
 -- No se llama breathing_sessions porque esa coleccion es de la app de flutter, con otros campos.
 --
 -- Uso: correr despues de views.sql y views_bq4_and_age.sql (usa to_ts y test_accounts) y antes
--- de views_answers.sql (que lee bq16_cycles_summary).
+-- de armar la pagina de Data Studio. No hace falta volver a correr views_answers.sql.
 
 -- Una fila por sesion terminada de Custom Breathing.
 CREATE OR REPLACE VIEW `ark-mobiles.ark_dashboards.custom_breathing_sessions` AS
@@ -120,3 +120,13 @@ SELECT
 FROM totals AS t
 JOIN cycle_counts AS c
   ON c.device_type = t.device_type AND c.is_test_account = t.is_test_account AND c.place = 1;
+
+-- BQ16: la respuesta escrita para la pagina de Data Studio (una tabla de una celda con bq16_answer).
+-- Va en su propia vista para no tocar bq_answers de las demas BQ.
+-- Solo celulares reales y sin cuentas de prueba.
+CREATE OR REPLACE VIEW `ark-mobiles.ark_dashboards.bq16_answer` AS
+SELECT FORMAT(
+  'Of %d completed Custom Breathing sessions, the typical one (median) reaches %d cycles and the most common is %d cycles (%.1f%% of sessions).',
+  total_sessions, median_cycles, mode_cycles, mode_pct_of_sessions) AS bq16_answer
+FROM `ark-mobiles.ark_dashboards.bq16_cycles_summary`
+WHERE device_type = 'Real phone' AND NOT is_test_account;
