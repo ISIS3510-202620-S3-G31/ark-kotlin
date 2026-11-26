@@ -518,7 +518,7 @@ class BreathingViewModel(
     }
 
     companion object {
-        const val OFFLINE_MUSIC_NOTICE = "Offline mode: Only downloaded ambient tracks are available"
+        const val OFFLINE_MUSIC_NOTICE = "No internet connection: showing downloaded music only"
         const val TRACK_NEEDS_INTERNET_NOTICE = "This track needs internet. Choose a downloaded one"
 
         val Factory: ViewModelProvider.Factory = viewModelFactory {

@@ -146,7 +146,7 @@ class JamendoServiceAdapterImpl(
             AmbientTrackModel(
                 id = trackId,
                 title = meta?.title ?: fallback?.title ?: "Saved track",
-                artist = meta?.artist ?: fallback?.artist ?: "Jamendo",
+                artist = meta?.artist ?: fallback?.artist ?: "Unknown artist",
                 audioUrl = meta?.audioUrl ?: file.absolutePath,
                 durationSeconds = meta?.duration ?: fallback?.durationSeconds ?: 0,
                 coverImageUrl = meta?.coverUrl ?: fallback?.coverImageUrl,
@@ -175,7 +175,7 @@ class JamendoServiceAdapterImpl(
             val json = JSONObject(file.readText())
             TrackMeta(
                 title = json.optString("title").ifBlank { "Saved track" },
-                artist = json.optString("artist").ifBlank { "Jamendo" },
+                artist = json.optString("artist").ifBlank { "Unknown artist" },
                 duration = json.optInt("duration", 0),
                 coverUrl = json.optString("coverUrl").ifBlank { null },
                 audioUrl = json.optString("audioUrl").ifBlank { null }
