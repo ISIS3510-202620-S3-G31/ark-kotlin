@@ -340,16 +340,15 @@ anteriores no se cuentan.
 
 ### Página BQ17 Breathing Preset Preferences
 
-Fuente `bq17_pattern_usage` (y `bq17_answer` para la respuesta). Pregunta: ¿qué patrones de
+Fuente `bq17_pattern_usage`. Pregunta: ¿qué patrones de
 respiración (Box Breathing 4-4-4-4, Relaxing 4-7-8, Quick Calm 4-6 o Custom) se usan más en las
 sesiones terminadas? Custom cuenta cuando el usuario eligió Custom, aunque su ritmo sea igual a un
 preset. Sin periodo: cuenta todas las sesiones.
 
-1. Controles `device_type` (por defecto `Real phone`) e `is_test_account` (por defecto `false`).
+1. Control `device_type` (por defecto `Real phone`).
 2. Barras: dimensión `pattern_label`, métrica `SUM(sessions)`, orden descendente por la métrica.
 3. Anillo: `pattern_label` × `SUM(sessions)`; el anillo calcula el % de cada patrón.
 4. Barras: `pattern_label` × `SUM(users)`: cuántas personas distintas usan cada patrón.
-5. Respuesta en vivo: tabla de una celda con la fuente `bq17_answer`.
 
 ## Ojo: cuándo sube la app los datos
 
