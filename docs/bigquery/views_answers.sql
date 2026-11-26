@@ -5,7 +5,7 @@
 -- Solo celulares reales y sin cuentas de prueba.
 --
 -- Uso: correr despues de views.sql, views_analytics.sql, views_bq4_and_age.sql,
--- views_stats_visits.sql y views_tool_sessions.sql (lee sus vistas).
+-- views_stats_visits.sql, views_tool_sessions.sql y views_breathing.sql (lee sus vistas).
 
 CREATE OR REPLACE FUNCTION `ark-mobiles.ark_dashboards.tool_name`(tool_id STRING) AS (
   CASE tool_id
@@ -261,6 +261,14 @@ bq8 AS (
     '.') AS answer
   FROM `ark-mobiles.ark_dashboards.bq_age_distribution`
   WHERE NOT is_test_account
+),
+-- BQ16: ciclos de respiracion por sesion terminada de Custom Breathing
+bq16 AS (
+  SELECT FORMAT(
+    'Of %d completed Custom Breathing sessions, the typical one (median) reaches %d cycles and the most common is %d cycles (%.1f%% of sessions).',
+    total_sessions, median_cycles, mode_cycles, mode_pct_of_sessions) AS answer
+  FROM `ark-mobiles.ark_dashboards.bq16_cycles_summary`
+  WHERE device_type = 'Real phone' AND NOT is_test_account
 )
 SELECT
   (SELECT answer FROM bq1) AS bq1_answer,
@@ -271,4 +279,5 @@ SELECT
   (SELECT answer FROM bq9) AS bq9_answer,
   (SELECT answer FROM bq13) AS bq13_answer,
   (SELECT answer FROM bq14) AS bq14_answer,
-  (SELECT answer FROM bq15) AS bq15_answer;
+  (SELECT answer FROM bq15) AS bq15_answer,
+  (SELECT answer FROM bq16) AS bq16_answer;
