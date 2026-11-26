@@ -77,9 +77,11 @@ class BreathingRepositoryImpl(
 
     override suspend fun saveSession(session: BreathingSession): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            //breathing_sessions solo guarda las terminadas; la interaccion se guarda siempre, con complete = true / false
-            if (session.isComplete()) breathingSessionDao.insertSession(session.toEntity())
             val userId = auth.currentUser?.uid ?: "anonymous"
+            //breathing_sessions solo guarda las terminadas; la interaccion se guarda siempre, con complete = true / false
+            if (session.isComplete()) {
+                breathingSessionDao.insertSession(session.toEntity(userId))
+            }
             toolRecordDao.insertInteraction(session.toInteraction(userId).toEntity())
             onInteractionSaved()
             Unit

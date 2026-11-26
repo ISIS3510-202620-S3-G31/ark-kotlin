@@ -30,6 +30,14 @@ interface BreathingSessionDao {
         }
     }
 
+    //sesiones que faltan por subir a firestore: las del usuario con sesion y las guardadas sin sesion
+    @Query("SELECT * FROM breathing_sessions WHERE isSynced = 0 AND (userId = :userId OR userId = 'anonymous')")
+    suspend fun getUnsyncedSessions(userId: String): List<BreathingSessionEntity>
+
+    //la sesion ya esta en firestore
+    @Query("UPDATE breathing_sessions SET isSynced = 1 WHERE id = :id")
+    suspend fun markAsSynced(id: Long)
+
     //todas las sesiones, de la mas nueva a la mas vieja
     @Query("SELECT * FROM breathing_sessions ORDER BY timestamp DESC")
     fun getSessionsRaw(): Flow<List<BreathingSessionEntity>>

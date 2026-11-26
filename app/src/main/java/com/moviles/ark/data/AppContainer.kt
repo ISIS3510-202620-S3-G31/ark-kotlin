@@ -299,7 +299,8 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             hasPendingProfile = { userRepository.hasPendingProfileChanges() },
             syncPendingCookies = { cookieRepository.uploadPending() },
             pendingCookieCount = { cookieRepository.pendingUploadCount() },
-            wishDao = database.wishDao()
+            wishDao = database.wishDao(),
+            breathingSessionDao = database.breathingSessionDao()
         )
     }
     override val syncManager: SyncManager by lazy {
