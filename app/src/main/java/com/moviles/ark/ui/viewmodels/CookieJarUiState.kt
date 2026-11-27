@@ -84,4 +84,6 @@ data class NewCookieUiState(
     val titleError: String? = null,
     val textError: String? = null,
     val isSaving: Boolean = false,
+    //true si se uso el microfono en el titulo o en el texto (para la BQ28)
+    val usedDictation: Boolean = false,
 )

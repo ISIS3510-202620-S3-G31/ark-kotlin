@@ -106,6 +106,7 @@ fun NewCookieRoute(
         onBack = onBack,
         onTitleChange = viewModel::onTitleChange,
         onTextChange = viewModel::onTextChange,
+        onDictationUsed = viewModel::onDictationUsed,
         onTakePhoto = {
             if (viewModel.hasCameraPermission()) {
                 viewModel.prepareCapture()
@@ -131,6 +132,7 @@ fun NewCookieScreen(
     onPickImage: () -> Unit,
     onRemoveImage: () -> Unit,
     onSave: () -> Unit,
+    onDictationUsed: () -> Unit = {},
 ) {
     Scaffold(
         containerColor = BackgroundColor,
@@ -157,6 +159,7 @@ fun NewCookieScreen(
                 ModernVoiceInputBox(
                     value = uiState.title,
                     onValueChange = onTitleChange,
+                    onDictated = onDictationUsed,
                     maxLength = CookieModel.MAX_TITLE_LENGTH,
                     placeholder = "My graduation day",
                     minHeight = 24.dp,
@@ -178,6 +181,7 @@ fun NewCookieScreen(
                 ModernVoiceInputBox(
                     value = uiState.text,
                     onValueChange = onTextChange,
+                    onDictated = onDictationUsed,
                     maxLength = CookieModel.MAX_TEXT_LENGTH,
                     placeholder = "Write it or dictate it…",
                     minHeight = 120.dp,
