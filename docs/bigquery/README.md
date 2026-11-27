@@ -105,8 +105,8 @@ query*. Una corrida por colección.
 5. Correr `views_tool_sessions.sql` (sesiones completadas de cada herramienta, con su celular y
    su punto de entrada, y las vistas de BQ13, BQ14 y BQ15; usa `tool_interactions`, `test_accounts` y la
    tabla de aperturas de Firestore).
-6. Correr `views_breathing.sql` (sesiones terminadas de Custom Breathing y las vistas de BQ16 y
-   BQ17, cada una con su propia vista de respuesta `bqN_answer`; usa `to_ts`, `test_accounts` y la
+6. Correr `views_breathing.sql` (sesiones terminadas de Custom Breathing y las vistas de BQ16,
+   BQ17 y BQ18; BQ16 y BQ17 tienen su propia vista de respuesta `bqN_answer`; usa `to_ts`, `test_accounts` y la
    tabla de la instancia `firestore-bq-custom-breathing`). Para agregar una BQ nueva basta con
    correr su bloque, sin volver a crear las demás vistas.
 7. Correr `views_answers.sql` al final: escribe la respuesta de cada BQ como texto (ver
@@ -142,6 +142,8 @@ Quedan en el dataset `ark_dashboards`:
 | `bq16_answer` | BQ16, la respuesta escrita (vista aparte para no tocar `bq_answers`) |
 | `bq17_pattern_usage` | BQ17, sesiones terminadas y usuarios distintos por patrón (Box, Relaxing, Quick Calm, Custom), con 0 en los que no se usaron |
 | `bq17_answer` | BQ17, la respuesta escrita (vista aparte para no tocar `bq_answers`) |
+| `bq18_music_usage` | BQ18, sesiones terminadas con música de fondo y en silencio |
+| `bq18_music_share` | BQ18, sesiones con música por qué parte del ejercicio sonó (menos de 25 %, 25 a 50 %, 50 a 75 %, 75 a 100 %) |
 | `bq_answers` | una fila con la respuesta de cada BQ (`bq1_answer` … `bq15_answer`); las de BQ1 a BQ9 empiezan con la fecha del último dato |
 
 Los dos bloques "PASO 2" del final de `views_analytics.sql` ya se corrieron: `tool_load_latency`
@@ -350,6 +352,18 @@ preset. Sin periodo: cuenta todas las sesiones.
 3. Anillo: `pattern_label` × `SUM(sessions)`; el anillo calcula el % de cada patrón.
 4. Barras: `pattern_label` × `SUM(users)`: cuántas personas distintas usan cada patrón.
 5. Respuesta en vivo: tabla de una celda con la fuente `bq17_answer`.
+
+### Página BQ18 Breathing Ambient Music
+
+Fuentes `bq18_music_usage` y `bq18_music_share`. Pregunta: ¿qué porcentaje de las sesiones
+terminadas de Custom Breathing se hacen con música ambiental de fondo y cuántas en silencio?
+Con música = la música sonó en algún momento mientras el ejercicio corría. Sin periodo: cuenta
+todas las sesiones.
+
+1. Control `device_type` (por defecto `Real phone`).
+2. Anillo: `music_label` × `SUM(sessions)`; el anillo calcula el % de con música y en silencio.
+3. Barras: `range_label` (orden por `range_order` ascendente) × `SUM(sessions)`: en las sesiones
+   con música, qué parte del ejercicio sonó.
 
 ## Ojo: cuándo sube la app los datos
 
