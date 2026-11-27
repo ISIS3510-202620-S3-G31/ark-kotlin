@@ -1,5 +1,6 @@
 package com.moviles.ark.ui.components
 
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.foundation.layout.navigationBarsPadding
 import com.moviles.ark.ui.theme.SecondaryColor
 import com.moviles.ark.ui.theme.ScreenTopPadding
@@ -155,6 +156,9 @@ fun FortuneOfflineNotice(text: String, modifier: Modifier = Modifier) {
         Text(text = text, style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp, lineHeight = 18.sp), color = TextColor)
     }
 }
+
+//los mensajes largos se quedan mas tiempo en pantalla para que alcancen a leerse
+fun fortuneSnackbarDuration(message: String): SnackbarDuration = if (message.length > 40) SnackbarDuration.Long else SnackbarDuration.Short
 
 //snackbars con la paleta, fondo del color del texto y letra clara
 @Composable

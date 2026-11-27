@@ -1,5 +1,6 @@
 package com.moviles.ark.ui.screens
 
+import com.moviles.ark.ui.components.fortuneSnackbarDuration
 import com.moviles.ark.ui.theme.BackgroundColor
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -137,7 +138,7 @@ fun FavoriteFortunesScreen(uiState: FortuneUiState, initialTab: Int, onBack: () 
     LaunchedEffect(uiState.snackbarMessage) {
         val message = uiState.snackbarMessage
         if (message != null) {
-            snackbarHostState.showSnackbar(message)
+            snackbarHostState.showSnackbar(message, duration = fortuneSnackbarDuration(message))
             onClearSnackbar()
         }
     }

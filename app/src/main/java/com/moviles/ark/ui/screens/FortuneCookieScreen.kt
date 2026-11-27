@@ -1,5 +1,6 @@
 package com.moviles.ark.ui.screens
 
+import com.moviles.ark.ui.components.fortuneSnackbarDuration
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.core.tween
@@ -123,7 +124,7 @@ fun FortuneCookieScreen(uiState: FortuneUiState, onBack: () -> Unit, onDone: () 
     LaunchedEffect(uiState.snackbarMessage) {
         val message = uiState.snackbarMessage
         if (message != null) {
-            snackbarHostState.showSnackbar(message)
+            snackbarHostState.showSnackbar(message, duration = fortuneSnackbarDuration(message))
             onClearSnackbar()
         }
     }
