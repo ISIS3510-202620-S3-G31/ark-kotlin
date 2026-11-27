@@ -1,7 +1,7 @@
 package com.moviles.ark.data.local
 
 import android.content.Context
-import android.util.SparseArray
+import android.util.SparseBooleanArray
 import com.moviles.ark.domain.models.FortuneModel
 import org.json.JSONArray
 import org.json.JSONObject
@@ -10,7 +10,8 @@ import java.io.File
 //cache de la galleta de la fortuna en memoria y en disco
 class FortuneCacheManager(private val context: Context) {
     //en memoria, id de la frase -> si es favorita, se consulta al instante sin ir a room
-    private val favoritesCache = SparseArray<Boolean>()
+    //SparseBooleanArray guarda el true/false directo, sin convertirlo en objeto Boolean como un mapa normal
+    private val favoritesCache = SparseBooleanArray()
 
     //en disco, las ultimas frases abiertas y las frases traidas del api que aun no se abren
     //cada usuario tiene su propio archivo de recientes, asi no se mezclan al cambiar de cuenta

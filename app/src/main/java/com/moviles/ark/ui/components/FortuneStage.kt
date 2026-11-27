@@ -6,9 +6,6 @@ import androidx.lifecycle.Lifecycle
 import kotlin.math.roundToInt
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.layout.offset
-import androidx.compose.ui.platform.LocalContext
-import android.media.MediaPlayer
-import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
@@ -65,21 +62,7 @@ import kotlin.math.sin
 //sonidos hechos con numeros, no necesitan archivos de audio
 object CookieCrunchSoundPlayer {
     //crujido de galleta: muchos chasquidos cortitos y agudos, primero un grupo fuerte, luego otro y al final migajas
-    //si en res/raw hay un archivo cookie_crack se usa ese sonido grabado, si no se arma con numeros
-    fun playCrunch(context: Context) {
-        val recorded = context.resources.getIdentifier("cookie_crack", "raw", context.packageName)
-        if (recorded != 0) {
-            try {
-                val player = MediaPlayer.create(context, recorded)
-                if (player != null) {
-                    player.setOnCompletionListener { it.release() }
-                    player.start()
-                    return
-                }
-            } catch (_: Exception) {
-                //si falla se usa el sonido hecho con numeros
-            }
-        }
+    fun playCrunch() {
         val sampleRate = 44100
         val samples = sampleRate * 340 / 1000
         val random = Random()
@@ -170,7 +153,6 @@ private val CookieLights = listOf(PrimaryColor, SecondaryColor, AccentColor)
 @Composable
 fun FortuneStage(phase: FortunePhase, chosenIndex: Int, hasChances: Boolean, previewing: Boolean, onCrackCookie: (Int) -> Unit, stageHeight: Dp, modifier: Modifier = Modifier, cardContent: @Composable (Float) -> Unit) {
     val haptic = LocalHapticFeedback.current
-    val context = LocalContext.current
 
     //avance de cada parte de la animacion, de 0 a 1
     val travel = remember { Animatable(0f) }
@@ -210,7 +192,7 @@ fun FortuneStage(phase: FortunePhase, chosenIndex: Int, hasChances: Boolean, pre
         shake.animateTo(1f, tween(500, easing = LinearEasing))
         //3. se parte con su sonido
         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-        CookieCrunchSoundPlayer.playCrunch(context)
+        CookieCrunchSoundPlayer.playCrunch()
         split.animateTo(1f, tween(380, easing = FastOutSlowInEasing))
         //4. las mitades se van a los lados, dejando el hueco por donde sale el papel
         fade.animateTo(1f, tween(450, easing = FastOutSlowInEasing))
