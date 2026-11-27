@@ -42,19 +42,19 @@ object CookieMessages {
 
     //conectividad eventual: se perdio la red con la herramienta abierta y cuando vuelve
     const val WENT_OFFLINE = "You're offline. Your cookie jar still works; gifts and friends will wait"
-    const val BACK_ONLINE = "Back online. Syncing your cookies…"
+    const val BACK_ONLINE = "You're back online! Updating your cookies…"
     //ya no queda nada por subir
     const val ALL_BACKED_UP = "All your cookies are backed up ✓"
     //borrar para siempre sin red
-    const val DELETED_OFFLINE = "Deleted from this phone. It will be deleted from the cloud when you're back online"
+    const val DELETED_OFFLINE = "Deleted from this phone. We'll finish deleting it when you're back online"
     //la imagen no esta en el telefono y no hay red
     const val PICTURE_NEEDS_INTERNET = "Connect to the internet to see this picture"
     //fallo la descarga de la imagen
     const val PICTURE_FAILED = "Couldn't load the picture. Check your connection"
     //telefono nuevo (nunca bajo sus galletas) sin red
-    const val COOKIES_IN_CLOUD = "Your cookies are in the cloud. Connect to the internet to bring them here"
+    const val COOKIES_IN_CLOUD = "Your cookies are saved in your account. Connect to the internet to bring them here"
     //la bajada de cambios fallo con red (red lenta)
-    const val SYNC_FAILED = "Couldn't sync right now. We'll keep trying"
+    const val SYNC_FAILED = "We couldn't update your cookies right now. We'll try again soon"
 
     //en el detalle, en lugar de la imagen que no esta en el telefono
     const val PICTURE_WHEN_ONLINE = "The picture will show when you're back online"
