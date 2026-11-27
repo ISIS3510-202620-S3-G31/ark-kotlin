@@ -1,6 +1,6 @@
--- Sesiones terminadas de Custom Breathing y las preguntas que salen de ellas (Sprint 5): BQ16 y BQ17.
--- La app ya guarda los campos de las tres preguntas de respiracion (ciclos, patron y musica):
--- las otras dos preguntas agregan sus vistas al final de este archivo, sobre custom_breathing_sessions.
+-- Sesiones terminadas de Custom Breathing y las preguntas que salen de ellas (Sprint 5): BQ16, BQ17 y BQ18.
+-- La app guarda los campos de las tres preguntas de respiracion (ciclos, patron y musica) y cada
+-- pregunta tiene aqui su bloque de vistas, todas sobre custom_breathing_sessions.
 --
 -- Origen: firestore_export.custom_breathing_sessions_raw_latest, la instancia de "Stream Firestore
 -- to BigQuery" de users/{uid}/custom_breathing_sessions. La app escribe un documento solo cuando el
@@ -202,3 +202,91 @@ SELECT CONCAT(
     ', ' ORDER BY place),
   '.') AS bq17_answer
 FROM usage;
+
+-- BQ18: que porcentaje de las sesiones terminadas de Custom Breathing se hacen con musica de fondo
+-- y cuantas en silencio. Una fila por "With music" / "In silence", tipo de dispositivo y cuenta de
+-- prueba, con 0 si no hay sesiones (para el anillo; el anillo saca el % solo).
+-- Con musica = la musica sono en algun momento mientras el ejercicio corria (withMusic de la app).
+-- Las sesiones sin withMusic (pruebas de antes de que la app lo guardara) no se cuentan.
+CREATE OR REPLACE VIEW `ark-mobiles.ark_dashboards.bq18_music_usage` AS
+WITH
+-- las dos opciones con el nombre que se muestra en Data Studio y un orden fijo
+music_options AS (
+  SELECT * FROM UNNEST([
+    STRUCT(TRUE AS with_music, 'With music' AS music_label, 1 AS music_order),
+    (FALSE, 'In silence', 2)
+  ])
+),
+-- los grupos que existen (tipo de dispositivo y cuenta de prueba)
+grupos AS (
+  SELECT DISTINCT device_type, is_test_account
+  FROM `ark-mobiles.ark_dashboards.custom_breathing_sessions`
+),
+-- las dos opciones para cada grupo, aunque no tengan sesiones
+all_rows AS (
+  SELECT g.device_type, g.is_test_account, m.with_music, m.music_label, m.music_order
+  FROM grupos AS g
+  CROSS JOIN music_options AS m
+)
+SELECT
+  r.device_type,
+  r.is_test_account,
+  r.music_label,
+  r.music_order,
+  COUNT(s.session_id) AS sessions
+FROM all_rows AS r
+LEFT JOIN `ark-mobiles.ark_dashboards.custom_breathing_sessions` AS s
+  ON s.device_type = r.device_type
+  AND s.is_test_account = r.is_test_account
+  AND s.with_music = r.with_music
+GROUP BY r.device_type, r.is_test_account, r.music_label, r.music_order;
+
+-- BQ18: en las sesiones con musica, que parte del ejercicio sono la musica, en 4 rangos.
+-- Parte con musica = music_seconds / duration_s (la app guarda music_seconds sin pasar de duration_s).
+-- Una fila por rango, tipo de dispositivo y cuenta de prueba, con 0 si no hay sesiones (para las barras).
+CREATE OR REPLACE VIEW `ark-mobiles.ark_dashboards.bq18_music_share` AS
+WITH
+-- los 4 rangos con el nombre que se muestra en Data Studio y un orden fijo
+share_ranges AS (
+  SELECT * FROM UNNEST([
+    STRUCT(1 AS range_order, 'Under 25%' AS range_label),
+    (2, '25% to 50%'),
+    (3, '50% to 75%'),
+    (4, '75% to 100%')
+  ])
+),
+-- cada sesion con musica y el numero de su rango
+music_sessions AS (
+  SELECT
+    device_type,
+    is_test_account,
+    CASE
+      WHEN SAFE_DIVIDE(music_seconds, duration_s) < 0.25 THEN 1
+      WHEN SAFE_DIVIDE(music_seconds, duration_s) < 0.50 THEN 2
+      WHEN SAFE_DIVIDE(music_seconds, duration_s) < 0.75 THEN 3
+      ELSE 4
+    END AS range_order
+  FROM `ark-mobiles.ark_dashboards.custom_breathing_sessions`
+  WHERE with_music AND duration_s > 0
+),
+-- los grupos que existen (tipo de dispositivo y cuenta de prueba)
+grupos AS (
+  SELECT DISTINCT device_type, is_test_account
+  FROM `ark-mobiles.ark_dashboards.custom_breathing_sessions`
+),
+-- los 4 rangos para cada grupo, aunque no tengan sesiones
+all_rows AS (
+  SELECT g.device_type, g.is_test_account, r.range_order, r.range_label
+  FROM grupos AS g
+  CROSS JOIN share_ranges AS r
+)
+SELECT
+  a.device_type,
+  a.is_test_account,
+  a.range_label,
+  a.range_order,
+  COUNTIF(m.range_order = a.range_order) AS sessions
+FROM all_rows AS a
+LEFT JOIN music_sessions AS m
+  ON m.device_type = a.device_type AND m.is_test_account = a.is_test_account
+GROUP BY a.device_type, a.is_test_account, a.range_label, a.range_order;
