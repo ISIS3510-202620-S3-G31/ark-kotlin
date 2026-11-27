@@ -170,8 +170,8 @@ class NewCookieViewModel(
 
     companion object {
         private const val TITLE_CHECK_DELAY_MS = 250L
-        const val SAVE_ERROR = "Couldn't save your cookie. Try again"
-        const val CAMERA_ERROR = "Could not open the camera, try again"
+        const val SAVE_ERROR = "We couldn't save your cookie. Please try again"
+        const val CAMERA_ERROR = "We couldn't open the camera. Please try again"
 
         val Factory = viewModelFactory {
             initializer {

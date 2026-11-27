@@ -91,7 +91,7 @@ class FortuneCookieViewModel(private val fortuneRepository: FortuneRepository, p
                 _uiState.update { it.copy(phase = FortunePhase.REVEALED, opened = result.first.copy(fortune = data.fortune), remainingChances = data.remainingChances, recentFortunes = recents) }
             } else {
                 val remaining = fortuneRepository.getRemainingChances()
-                _uiState.update { it.copy(phase = FortunePhase.CHOOSING, chosenIndex = -1, remainingChances = remaining, snackbarMessage = "This cookie couldn't open. Try again.") }
+                _uiState.update { it.copy(phase = FortunePhase.CHOOSING, chosenIndex = -1, remainingChances = remaining, snackbarMessage = "This cookie didn't open. Please try again.") }
             }
         }
     }
@@ -100,7 +100,7 @@ class FortuneCookieViewModel(private val fortuneRepository: FortuneRepository, p
     fun toggleFavorite(fortune: FortuneModel) {
         viewModelScope.launch {
             val saved = fortuneRepository.toggleFavorite(fortune)
-            _uiState.update { it.copy(snackbarMessage = if (saved) "Kept in My collection" else "Removed from My collection") }
+            _uiState.update { it.copy(snackbarMessage = if (saved) "Saved to My collection!" else "Removed from My collection") }
             fortuneRepository.syncPending()
         }
     }
@@ -133,10 +133,10 @@ class FortuneCookieViewModel(private val fortuneRepository: FortuneRepository, p
         viewModelScope.launch {
             val result = fortuneRepository.getOrCreateCard(fortune)
             if (result == null) {
-                _uiState.update { it.copy(isSharing = false, snackbarMessage = "The image couldn't be created. Try again.") }
+                _uiState.update { it.copy(isSharing = false, snackbarMessage = "We couldn't create the image. Please try again.") }
                 return@launch
             }
-            val message = if (result.isNew) "Image saved in your gallery and in My collection" else null
+            val message = if (result.isNew) "Image saved to your gallery and My collection!" else null
             _uiState.update { it.copy(isSharing = false, shareUri = result.uri, snackbarMessage = message ?: it.snackbarMessage) }
             fortuneRepository.syncPending()
         }

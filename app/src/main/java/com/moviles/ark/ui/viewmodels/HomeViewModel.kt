@@ -210,7 +210,7 @@ class HomeViewModel(
                 .catch { error ->
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        errorMessage = error.message ?: "Could not load tools"
+                        errorMessage = "We couldn't load your tools. Check your connection and try again"
                     )
                 }
                 .collect { catalogTools ->
