@@ -122,7 +122,7 @@ class FortuneCookieViewModel(private val fortuneRepository: FortuneRepository, p
                 _uiState.update { it.copy(phase = FortunePhase.REVEALED, opened = result.first.copy(fortune = data.fortune), remainingChances = data.remainingChances, recentFortunes = recents) }
             } else {
                 val remaining = fortuneRepository.getRemainingChances()
-                _uiState.update { it.copy(phase = FortunePhase.CHOOSING, chosenIndex = -1, remainingChances = remaining, snackbarMessage = "This cookie didn't open. Try another one.") }
+                _uiState.update { it.copy(phase = FortunePhase.CHOOSING, chosenIndex = -1, remainingChances = remaining, snackbarMessage = "This cookie didn't open. Please try another one.") }
             }
         }
     }
@@ -131,7 +131,7 @@ class FortuneCookieViewModel(private val fortuneRepository: FortuneRepository, p
     fun toggleFavorite(fortune: FortuneModel) {
         viewModelScope.launch {
             val saved = fortuneRepository.toggleFavorite(fortune)
-            _uiState.update { it.copy(snackbarMessage = if (saved) "Kept" else "Removed from Kept") }
+            _uiState.update { it.copy(snackbarMessage = if (saved) "Saved to Kept!" else "Removed from Kept") }
             fortuneRepository.syncPending()
         }
     }
@@ -172,10 +172,10 @@ class FortuneCookieViewModel(private val fortuneRepository: FortuneRepository, p
         viewModelScope.launch {
             val result = fortuneRepository.getOrCreateCard(fortune)
             if (result == null) {
-                _uiState.update { it.copy(isSharing = false, snackbarMessage = "We couldn't make the image. Try again.") }
+                _uiState.update { it.copy(isSharing = false, snackbarMessage = "We couldn't create the image. Please try again.") }
                 return@launch
             }
-            val message = if (result.isNew) "Saved to your gallery and to Shared" else null
+            val message = if (result.isNew) "Image saved to your gallery and to Shared!" else null
             _uiState.update { it.copy(isSharing = false, shareUri = result.uri, snackbarMessage = message ?: it.snackbarMessage) }
             fortuneRepository.syncPending()
         }

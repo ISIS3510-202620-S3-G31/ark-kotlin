@@ -7,6 +7,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -35,7 +37,9 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -43,6 +47,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
@@ -62,6 +67,12 @@ import com.moviles.ark.ui.viewmodels.WishLanternUiState
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
+//cuanto tarda un farol del fondo en aparecer y en desvanecerse cuando sale del cielo
+private const val APPEAR_FADE_MILLIS = 800
+private const val LEAVING_FADE_MILLIS = 900
+//color del brillo del farol recien lanzado: amarillo calido
+private val HighlightColor = Color(0xFFFFE08A)
+
 //cuantos pixeles hay que deslizar hacia arriba para que el farol salga volando
 private const val RELEASE_DRAG_PIXELS = 250f
 //hasta donde sube el farol cuando sale volando (mas alto que cualquier pantalla)
@@ -78,7 +89,9 @@ fun WishSkyScreen(
     onLanternReleased: () -> Unit,
     onWriteWish: () -> Unit,
     onSeeAllWishes: () -> Unit,
-    onFinish: () -> Unit
+    onFinish: () -> Unit,
+    //la pantalla mide el cielo y se lo dice al viewmodel, para acomodar los faroles sin que se toquen
+    onSkySizeMeasured: (widthDp: Float, heightDp: Float) -> Unit = { _, _ -> }
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         //capa del fondo: el paisaje de noche
@@ -87,8 +100,11 @@ fun WishSkyScreen(
         //capa de atras: los faroles de los deseos
         SkyLanterns(
             lanterns = uiState.skyLanternsToShow(),
+            leavingLanterns = uiState.leavingLanterns,
             litWishIds = uiState.litWishIds,
-            onLanternTapped = onLanternTapped
+            highlightedWishId = uiState.highlightedWishId,
+            onLanternTapped = onLanternTapped,
+            onSkySizeMeasured = onSkySizeMeasured
         )
 
         //capa de adelante: titulo, farol grande y botones
@@ -139,8 +155,11 @@ fun WishSkyScreen(
 @Composable
 private fun SkyLanterns(
     lanterns: List<SkyLantern>,
+    leavingLanterns: List<SkyLantern>,
     litWishIds: Set<String>,
-    onLanternTapped: (wishId: String) -> Unit
+    highlightedWishId: String?,
+    onLanternTapped: (wishId: String) -> Unit,
+    onSkySizeMeasured: (widthDp: Float, heightDp: Float) -> Unit
 ) {
     BoxWithConstraints(
         modifier = Modifier
@@ -152,25 +171,56 @@ private fun SkyLanterns(
         val skyWidth = maxWidth - 48.dp
         val skyHeight = maxHeight * 0.45f
 
-        //la posicion de cada farol ya viene calculada desde el viewmodel (en Dispatchers.Default)
+        //se le dice al viewmodel cuanto mide el cielo en este telefono (solo cuando cambia)
+        LaunchedEffect(skyWidth, skyHeight) {
+            onSkySizeMeasured(skyWidth.value, skyHeight.value)
+        }
+
+        //se dibujan los que estan y los que se estan yendo
+        //key: cada farol se reconoce por su id, asi al pasar de "esta" a "se va" no se dibuja de cero
+        //y puede desvanecerse en vez de desaparecer de golpe
+        val allLanterns = mutableListOf<SkyLantern>()
+        val visibleIds = mutableSetOf<String>()
         for (lantern in lanterns) {
-            FloatingLantern(
-                isLit = litWishIds.contains(lantern.wishId),
-                x = skyWidth * lantern.x,
-                y = skyHeight * lantern.y,
-                //los de mas abajo estan mas cerca, entonces se ven mas grandes
-                lanternWidth = 22.dp + 18.dp * lantern.y,
-                floatDurationMillis = lantern.floatDurationMillis,
-                onTap = { onLanternTapped(lantern.wishId) }
-            )
+            allLanterns.add(lantern)
+            visibleIds.add(lantern.wishId)
+        }
+        val leavingIds = mutableSetOf<String>()
+        for (lantern in leavingLanterns) {
+            //si un farol se fue y justo volvio a entrar, se dibuja solo una vez (el que esta)
+            if (!visibleIds.contains(lantern.wishId)) {
+                allLanterns.add(lantern)
+                leavingIds.add(lantern.wishId)
+            }
+        }
+
+        for (lantern in allLanterns) {
+            key(lantern.wishId) {
+                FloatingLantern(
+                    isLit = litWishIds.contains(lantern.wishId),
+                    isLeaving = leavingIds.contains(lantern.wishId),
+                    isHighlighted = lantern.wishId == highlightedWishId,
+                    //la posicion de cada farol ya viene calculada desde el viewmodel (en Dispatchers.Default)
+                    x = skyWidth * lantern.x,
+                    y = skyHeight * lantern.y,
+                    lanternWidth = lantern.widthDp().dp,
+                    floatDurationMillis = lantern.floatDurationMillis,
+                    onTap = { onLanternTapped(lantern.wishId) }
+                )
+            }
         }
     }
 }
 
 //un farol del fondo que sube y baja despacio, como si flotara en el aire
+//- al aparecer, se hace visible poco a poco
+//- si se esta yendo del cielo, se desvanece
+//- si es el que se acaba de lanzar, tiene un brillo que late para que el usuario vea donde quedo
 @Composable
 private fun FloatingLantern(
     isLit: Boolean,
+    isLeaving: Boolean,
+    isHighlighted: Boolean,
     x: Dp,
     y: Dp,
     lanternWidth: Dp,
@@ -186,19 +236,60 @@ private fun FloatingLantern(
         label = "floatDistance"
     )
 
+    //que tan visible esta el farol: empieza invisible (0) y aparece (1); si se va, vuelve a 0
+    val visibility = remember { Animatable(0f) }
+    LaunchedEffect(isLeaving) {
+        if (isLeaving) {
+            visibility.animateTo(0f, animationSpec = tween(durationMillis = LEAVING_FADE_MILLIS))
+        } else {
+            visibility.animateTo(1f, animationSpec = tween(durationMillis = APPEAR_FADE_MILLIS))
+        }
+    }
+
     var description = "Unlit lantern. Tap to light it and read the wish"
     if (isLit) {
         description = "Lit lantern. Tap to read the wish"
     }
 
-    LanternDrawing(
-        isLit = isLit,
+    Box(
         modifier = Modifier
             .offset(x = x, y = y + floatDistance.dp)
             .size(width = lanternWidth, height = lanternWidth * 1.25f)
-            .clickable { onTap() }
-            .semantics { contentDescription = description }
+            .alpha(visibility.value),
+        contentAlignment = Alignment.Center
+    ) {
+        if (isHighlighted) {
+            HighlightGlow(lanternWidth = lanternWidth)
+        }
+        LanternDrawing(
+            isLit = isLit,
+            modifier = Modifier
+                .fillMaxSize()
+                //un farol que se esta yendo ya no se puede tocar
+                .clickable(enabled = !isLeaving) { onTap() }
+                .semantics { contentDescription = description }
+        )
+    }
+}
+
+//brillo que crece y se achica detras del farol recien lanzado
+@Composable
+private fun HighlightGlow(lanternWidth: Dp) {
+    val pulseTransition = rememberInfiniteTransition(label = "highlightPulse")
+    val pulse by pulseTransition.animateFloat(
+        initialValue = 0.6f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(animation = tween(durationMillis = 700), repeatMode = RepeatMode.Reverse),
+        label = "pulse"
     )
+
+    //el brillo es mas grande que el farol: se sale de sus bordes
+    Canvas(modifier = Modifier.requiredSize(lanternWidth * 3)) {
+        val glow = Brush.radialGradient(
+            colors = listOf(HighlightColor.copy(alpha = 0.7f * pulse), Color.Transparent)
+        )
+        drawCircle(brush = glow, radius = size.minDimension / 2 * pulse)
+    }
 }
 
 //farol grande encendido: se desliza hacia arriba para mandarlo a volar

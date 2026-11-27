@@ -23,7 +23,18 @@ data class SkyLantern(
     val y: Float,
     //cuanto tarda en subir y bajar flotando, en milisegundos; cada farol tiene su ritmo
     val floatDurationMillis: Int
-)
+) {
+    //ancho del farol en dp: los de mas abajo estan mas cerca, entonces se ven mas grandes
+    //lo usan la pantalla (para dibujarlo) y SkyLanternPlacer (para que no se toquen)
+    fun widthDp(): Float {
+        return 22f + 18f * y
+    }
+
+    //alto del farol en dp; el dibujo del farol es 1.25 veces mas alto que ancho
+    fun heightDp(): Float {
+        return widthDp() * 1.25f
+    }
+}
 
 //estado del farol de deseos; lo comparten las tres vistas
 data class WishLanternUiState(
@@ -31,8 +42,12 @@ data class WishLanternUiState(
     val currentView: WishLanternView = WishLanternView.SKY,
 
     // ---------- cielo ----------
-    //faroles del fondo con su posicion ya calculada
+    //faroles del fondo con su posicion ya calculada (maximo 20)
     val skyLanterns: List<SkyLantern> = emptyList(),
+    //faroles que acaban de salir del cielo; se dibujan un momento mientras se desvanecen
+    val leavingLanterns: List<SkyLantern> = emptyList(),
+    //id del farol que se acaba de mandar a volar; brilla un momento para que el usuario vea donde quedo
+    val highlightedWishId: String? = null,
     //true hasta que llegan los faroles por primera vez
     val isSkyLoading: Boolean = true,
     //ids de los faroles encendidos (los que estan en la cache)

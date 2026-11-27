@@ -24,9 +24,10 @@ interface WishDao {
     @Query("SELECT * FROM wishes WHERE userId = :userId AND isDeleted = 0")
     fun observeWishes(userId: String): Flow<List<WishEntity>>
 
-    //consulta liviana para el cielo: solo los ids, sin el texto
+    //consulta liviana para el cielo: solo los ids, sin el texto, del mas nuevo al mas viejo
+    //el orden sirve para saber cuales son los mas recientes (el cielo muestra maximo 20)
     //el texto de cada deseo se lee despues, cuando el usuario toca su farol
-    @Query("SELECT id FROM wishes WHERE userId = :userId AND isDeleted = 0")
+    @Query("SELECT id FROM wishes WHERE userId = :userId AND isDeleted = 0 ORDER BY createdAt DESC")
     fun observeWishIds(userId: String): Flow<List<String>>
 
     //los deseos mas recientes del usuario, del mas nuevo al mas viejo
