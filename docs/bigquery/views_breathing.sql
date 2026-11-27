@@ -57,7 +57,7 @@ sessions AS (
   FROM `ark-mobiles.ark_dashboards.custom_breathing_sessions`
 ),
 -- los grupos que existen (tipo de dispositivo y cuenta de prueba) con su total de sesiones
-groups AS (
+grupos AS (
   SELECT device_type, is_test_account, COUNT(*) AS group_sessions
   FROM sessions
   GROUP BY device_type, is_test_account
@@ -65,7 +65,7 @@ groups AS (
 -- los 10 numeros de ciclos para cada grupo, aunque no tengan sesiones
 all_rows AS (
   SELECT g.device_type, g.is_test_account, g.group_sessions, cycles_order
-  FROM groups AS g
+  FROM grupos AS g
   CROSS JOIN UNNEST(GENERATE_ARRAY(1, 10)) AS cycles_order
 )
 SELECT
