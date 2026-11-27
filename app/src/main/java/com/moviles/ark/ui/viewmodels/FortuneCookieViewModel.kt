@@ -73,11 +73,18 @@ class FortuneCookieViewModel(private val fortuneRepository: FortuneRepository, p
         viewModelScope.launch {
             connectivity?.collect { online ->
                 val wasOnline = _uiState.value.isOnline
-                _uiState.update { it.copy(isOnline = online) }
+                //con internet el aviso de "you're offline" ya no es cierto, se quita de una vez
+                _uiState.update { it.copy(isOnline = online, offlineNotice = if (online) null else it.offlineNotice) }
                 if (online && !wasOnline) {
+                    //se llena la reserva con frases nuevas para la proxima mesa
+                    launch { fortuneRepository.refillDeck() }
+                    //firestore tarda un momento en reconectarse despues de que vuelve la red
+                    delay(RECONNECT_WAIT_MILLIS)
                     fortuneRepository.syncFromRemote()
+                    //lo que llego de la cuenta, recientes y galletas de hoy, se muestra de una vez
+                    val remaining = fortuneRepository.getRemainingChances()
                     val recents = fortuneRepository.getRecentCookies()
-                    _uiState.update { it.copy(recentFortunes = recents) }
+                    _uiState.update { it.copy(remainingChances = remaining, recentFortunes = recents) }
                     fortuneRepository.syncPending()
                 }
             }
@@ -209,6 +216,8 @@ class FortuneCookieViewModel(private val fortuneRepository: FortuneRepository, p
         private const val INTERACTION_TYPE = "touch"
         //lo que dura la galleta en subir al centro, temblar, partirse y sacar el papel
         private const val OPENING_MILLIS = 2700L
+        //espera para que firestore se reconecte antes de pedirle datos al servidor
+        private const val RECONNECT_WAIT_MILLIS = 1500L
 
         val Factory = viewModelFactory {
             initializer {

@@ -6,6 +6,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.CoroutineScope
 import android.net.Uri
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Source
 import com.google.firebase.storage.FirebaseStorage
 import com.google.firebase.storage.StorageMetadata
 import com.moviles.ark.data.local.FortuneCacheManager
@@ -89,7 +90,8 @@ class FortuneRepositoryImpl(
         val user = userIdProvider() ?: return
         val doc = dailyDoc(user) ?: return
         try {
-            val snapshot = withTimeout(DAILY_TIMEOUT_MS) { doc.get().await() }
+            //Source.SERVER: si no hay red falla en vez de devolver la copia vieja que firestore guarda en el telefono
+            val snapshot = withTimeout(DAILY_TIMEOUT_MS) { doc.get(Source.SERVER).await() }
             val remoteUsed = (snapshot.getLong("used") ?: 0L).toInt()
             preferencesManager.setUsedToday(user, remoteUsed)
             if (preferencesManager.getUsedToday(user) > remoteUsed || preferencesManager.isDailyPending(user)) pushDailyChances()
@@ -103,7 +105,8 @@ class FortuneRepositoryImpl(
         val user = userIdProvider() ?: return
         val doc = firestore?.collection("users")?.document(user)?.collection("fortune_daily")?.document("recent") ?: return
         try {
-            val snapshot = withTimeout(DAILY_TIMEOUT_MS) { doc.get().await() }
+            //Source.SERVER: con la copia vieja del telefono se borrarian las recientes de la cuenta al subir las del telefono
+            val snapshot = withTimeout(DAILY_TIMEOUT_MS) { doc.get(Source.SERVER).await() }
             val remote = (snapshot.get("items") as? List<*>).orEmpty().mapNotNull { item ->
                 val map = item as? Map<*, *> ?: return@mapNotNull null
                 val quote = map["quote"] as? String ?: return@mapNotNull null
@@ -286,16 +289,17 @@ class FortuneRepositoryImpl(
     override suspend fun syncFromRemote() = withContext(Dispatchers.IO) {
         val user = userIdProvider() ?: return@withContext
         if (firestore == null) return@withContext
+        //las recientes y las galletas de hoy van primero y aparte, asi si falla traer las favoritas igual llegan
+        mergeRecents()
+        pullDailyChances()
         try {
-            val favorites = withTimeout(TIMEOUT_MS) { firestore.collection("users").document(user).collection("favorite_fortunes").get().await() }
+            val favorites = withTimeout(TIMEOUT_MS) { firestore.collection("users").document(user).collection("favorite_fortunes").get(Source.SERVER).await() }
             for (doc in favorites.documents) {
                 val dto = doc.toObject(FavoriteFortuneDto::class.java) ?: continue
                 if (dto.quote.isNotEmpty() && favoriteFortuneCookieDao.getFavorite(user, dto.id) == null) favoriteFortuneCookieDao.insertFavorite(dto.toEntity(user))
             }
             cacheManager.loadFavoriteIds(favoriteFortuneCookieDao.getFavoriteIds(user))
-            mergeRecents()
-            pullDailyChances()
-            val cards = withTimeout(TIMEOUT_MS) { firestore.collection("users").document(user).collection("saved_fortune_cards").get().await() }
+            val cards = withTimeout(TIMEOUT_MS) { firestore.collection("users").document(user).collection("saved_fortune_cards").get(Source.SERVER).await() }
             val deleted = preferencesManager.getDeletedCards(user)
             for (doc in cards.documents) {
                 val dto = doc.toObject(FortuneCardDto::class.java) ?: continue
