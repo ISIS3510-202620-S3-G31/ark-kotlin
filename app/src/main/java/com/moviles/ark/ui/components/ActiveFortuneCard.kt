@@ -1,5 +1,6 @@
 package com.moviles.ark.ui.components
 
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,7 +21,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -38,7 +38,11 @@ import com.moviles.ark.ui.theme.TextColor
 //queda entre las dos mitades, que tapan sus puntas
 @Composable
 fun FortuneGlassPaper(quote: String, modifier: Modifier = Modifier, alpha: Float = 1f, quoteSize: Int = 20) {
-    val paper = Modifier.drawBehind { drawFortunePaper(0f, 0f, size.width, size.height, FortunePaperHeight.toPx() * 0.035f) }
+    //el papel se arma una sola vez con drawWithCache, y otra vez solo si cambia su tamano
+    val paper = Modifier.drawWithCache {
+        val shape = fortunePaperShape(0f, 0f, size.width, size.height, FortunePaperHeight.toPx() * 0.035f, 4.dp.toPx(), 1.dp.toPx())
+        onDrawBehind { drawFortunePaperShape(shape) }
+    }
     Box(modifier = modifier.graphicsLayer { this.alpha = alpha }.padding(horizontal = FortunePaperSidePadding).fillMaxWidth().heightIn(min = FortunePaperHeight).then(paper).padding(horizontal = 22.dp, vertical = 16.dp), contentAlignment = Alignment.Center) {
         Text(text = quote, style = MaterialTheme.typography.headlineLarge.copy(fontSize = quoteSize.sp, lineHeight = (quoteSize + 7).sp), color = TextColor, textAlign = TextAlign.Center)
     }

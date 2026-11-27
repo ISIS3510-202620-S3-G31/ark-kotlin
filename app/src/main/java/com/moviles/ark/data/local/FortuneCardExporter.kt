@@ -22,6 +22,10 @@ import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
 import androidx.core.content.res.ResourcesCompat
+import androidx.core.graphics.createBitmap
+import androidx.core.graphics.toColorInt
+import androidx.core.graphics.withTranslation
+import androidx.core.net.toUri
 import com.moviles.ark.R
 import com.moviles.ark.domain.models.FortuneModel
 import java.io.ByteArrayOutputStream
@@ -33,18 +37,18 @@ import java.util.Locale
 class FortuneCardExporter(private val context: Context) {
 
     //colores de la paleta de la app
-    private val textColor = Color.parseColor("#221100")
-    private val backgroundLight = Color.parseColor("#FCEFD5")
-    private val orange = Color.parseColor("#F8840E")
-    private val coral = Color.parseColor("#EB5249")
-    private val paperTop = Color.parseColor("#FBEACB")
-    private val paperBottom = Color.parseColor("#FAE3B8")
+    private val textColor = "#221100".toColorInt()
+    private val backgroundLight = "#FCEFD5".toColorInt()
+    private val orange = "#F8840E".toColorInt()
+    private val coral = "#EB5249".toColorInt()
+    private val paperTop = "#FBEACB".toColorInt()
+    private val paperBottom = "#FAE3B8".toColorInt()
 
     //imagen de 1080 x 1350 con fondo naranja a coral, la galleta abierta con el papelito en la mitad y la firma abajo
     fun renderCardBitmap(fortune: FortuneModel, savedAt: Long = System.currentTimeMillis()): Bitmap {
         val width = 1080
         val height = 1350
-        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val bitmap = createBitmap(width, height)
         val canvas = Canvas(bitmap)
         val sorean = loadFont(R.font.sorean)
         val figtree = loadFont(R.font.figtree_normal)
@@ -84,7 +88,7 @@ class FortuneCardExporter(private val context: Context) {
         canvas.rotate(-2f, width / 2f, centerY)
         val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = paperTop; setShadowLayer(44f, 0f, 20f, Color.argb(80, 34, 17, 0)) }
         canvas.drawRoundRect(paper, 10f, 10f, shadowPaint)
-        val paperPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { shader = LinearGradient(0f, paper.top, 0f, paper.bottom, Color.parseColor("#FFF8EA"), paperBottom, Shader.TileMode.CLAMP) }
+        val paperPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { shader = LinearGradient(0f, paper.top, 0f, paper.bottom, "#FFF8EA".toColorInt(), paperBottom, Shader.TileMode.CLAMP) }
         canvas.drawRoundRect(paper, 10f, 10f, paperPaint)
         canvas.save()
         canvas.translate(width / 2f - textWidth / 2f, paper.top + 70f)
@@ -114,13 +118,13 @@ class FortuneCardExporter(private val context: Context) {
         val size = 420f
         //donde queda el centro de la galleta dentro de la imagen de cada mitad
         val contentX = if (side < 0f) 0.30f else 0.63f
-        canvas.save()
-        canvas.translate(x, y)
-        canvas.rotate(-side * 16f)
-        val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(90, 34, 17, 0); maskFilter = BlurMaskFilter(20f, BlurMaskFilter.Blur.NORMAL) }
-        canvas.drawOval(RectF(-size * 0.22f, size * 0.36f, size * 0.22f, size * 0.48f), shadowPaint)
-        canvas.drawBitmap(half, null, RectF(-contentX * size, -0.5f * size, (1f - contentX) * size, 0.5f * size), Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
-        canvas.restore()
+        //withTranslation mueve el lienzo y lo devuelve a su sitio al terminar
+        canvas.withTranslation(x, y) {
+            rotate(-side * 16f)
+            val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(90, 34, 17, 0); maskFilter = BlurMaskFilter(20f, BlurMaskFilter.Blur.NORMAL) }
+            drawOval(RectF(-size * 0.22f, size * 0.36f, size * 0.22f, size * 0.48f), shadowPaint)
+            drawBitmap(half, null, RectF(-contentX * size, -0.5f * size, (1f - contentX) * size, 0.5f * size), Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
+        }
         half.recycle()
     }
 
@@ -163,6 +167,6 @@ class FortuneCardExporter(private val context: Context) {
     //revisa si la imagen sigue en la galeria, por si la borraron
     fun exists(uri: String): Boolean {
         if (!uri.startsWith("content://")) return false
-        return try { context.contentResolver.openInputStream(Uri.parse(uri))?.use { true } ?: false } catch (_: Exception) { false }
+        return try { context.contentResolver.openInputStream(uri.toUri())?.use { true } ?: false } catch (_: Exception) { false }
     }
 }

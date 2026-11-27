@@ -1,5 +1,7 @@
 package com.moviles.ark.ui.components
 
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.Modifier
 import com.moviles.ark.ui.theme.BackgroundLightColor
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.geometry.Rect
@@ -29,18 +31,31 @@ val CookieCrumbDark = lerp(PrimaryColor, TextColor, 0.3f)
 private const val LightLeft = 0.2f
 private const val LightRight = 0.8f
 
-//disco de color en el piso, va detras de la galleta
-fun DrawScope.drawCookieFloor(color: Color, strength: Float) {
+//intensidad de la luz segun el flotar, entre 0.7 y 1
+fun lightStrength(wave: Float): Float = 0.85f + 0.15f * sin(wave)
+
+//disco de color en el piso y halo detras de la galleta
+//drawWithCache: el degradado se crea una sola vez (y otra vez solo si cambia el tamano)
+//en cada cuadro solo se pide la intensidad y se pinta con alpha, sin crear objetos nuevos
+fun Modifier.cookieFloorLight(color: Color, strength: () -> Float): Modifier = this.drawWithCache {
     val w = size.width
     val h = size.height
-    //halo suave para que la galleta tambien se vea iluminada desde atras
     val haloCenter = Offset(w * 0.5f, h * 0.42f)
-    drawCircle(brush = Brush.radialGradient(listOf(color.copy(alpha = 0.28f * strength), Color.Transparent), center = haloCenter, radius = w * 0.55f), radius = w * 0.55f, center = haloCenter)
-    drawOval(color = color.copy(alpha = 0.95f * strength), topLeft = Offset(w * LightLeft, h * 0.685f), size = Size(w * (LightRight - LightLeft), h * 0.05f))
+    val haloRadius = w * 0.55f
+    val haloBrush = Brush.radialGradient(listOf(color.copy(alpha = 0.28f), Color.Transparent), center = haloCenter, radius = haloRadius)
+    val discColor = color.copy(alpha = 0.95f)
+    val discTopLeft = Offset(w * LightLeft, h * 0.685f)
+    val discSize = Size(w * (LightRight - LightLeft), h * 0.05f)
+    onDrawBehind {
+        val alpha = strength()
+        drawCircle(brush = haloBrush, radius = haloRadius, center = haloCenter, alpha = alpha)
+        drawOval(color = discColor, topLeft = discTopLeft, size = discSize, alpha = alpha)
+    }
 }
 
 //cilindro de luz que va encima de la galleta, casi blanco arriba y del color abajo, asi la tine
-fun DrawScope.drawCookieBeam(color: Color, strength: Float) {
+//igual que el disco: el camino y el degradado se arman una vez y en cada cuadro solo cambia el alpha
+fun Modifier.cookieBeamLight(color: Color, strength: () -> Float): Modifier = this.drawWithCache {
     val w = size.width
     val h = size.height
     val left = w * LightLeft
@@ -49,7 +64,7 @@ fun DrawScope.drawCookieBeam(color: Color, strength: Float) {
     val capTop = h * 0.685f
     val capBottom = h * 0.735f
     val glow = lerp(color, Color.White, 0.75f)
-    val brush = Brush.verticalGradient(0f to glow.copy(alpha = 0f), 0.3f to lerp(color, Color.White, 0.5f).copy(alpha = 0.3f * strength), 0.7f to lerp(color, Color.White, 0.2f).copy(alpha = 0.62f * strength), 1f to color.copy(alpha = 0.86f * strength), startY = top, endY = capBottom)
+    val brush = Brush.verticalGradient(0f to glow.copy(alpha = 0f), 0.3f to lerp(color, Color.White, 0.5f).copy(alpha = 0.3f), 0.7f to lerp(color, Color.White, 0.2f).copy(alpha = 0.62f), 1f to color.copy(alpha = 0.86f), startY = top, endY = capBottom)
     val beam = Path().apply {
         moveTo(left, top)
         lineTo(right, top)
@@ -57,7 +72,9 @@ fun DrawScope.drawCookieBeam(color: Color, strength: Float) {
         arcTo(Rect(left, capTop, right, capBottom), 0f, 180f, false)
         close()
     }
-    drawPath(beam, brush)
+    onDrawBehind {
+        drawPath(path = beam, brush = brush, alpha = strength())
+    }
 }
 
 //pedacitos de galleta que saltan hacia arriba al partirse y caen con la gravedad
@@ -92,13 +109,27 @@ fun DrawScope.drawPaperRibbon(progress: Float, finalWidth: Float, finalHeight: F
     drawFortunePaper(center.x - width / 2f, center.y - height / 2f, width, height, wave)
 }
 
-//papelito de la galleta: bordes de arriba y abajo ondulados, esquinas redondas, sombra suave y un brillo en el medio
-fun DrawScope.drawFortunePaper(left: Float, top: Float, width: Float, height: Float, wave: Float) {
+//todo lo que hace falta para pintar un papelito: su forma, su sombra, el degradado y el borde
+class FortunePaperShape(val path: Path, val shadow: Path, val brush: Brush, val border: Stroke)
+
+//arma el papelito; la animacion lo pide en cada cuadro porque cambia de tamano, el papel con la frase lo arma una sola vez
+fun fortunePaperShape(left: Float, top: Float, width: Float, height: Float, wave: Float, shadowOffset: Float, borderWidth: Float): FortunePaperShape {
     val path = fortunePaperPath(left, top, width, height, wave)
-    //sombra corrida hacia abajo
-    drawPath(path = fortunePaperPath(left, top + 4.dp.toPx(), width, height, wave), color = TextColor.copy(alpha = 0.16f))
-    drawPath(path = path, brush = Brush.verticalGradient(listOf(FortunePaperColor, FortunePaperColor, lerp(FortunePaperColor, PrimaryColor, 0.1f)), startY = top, endY = top + height))
-    drawPath(path = path, color = PrimaryColor.copy(alpha = 0.5f), style = Stroke(width = 1.dp.toPx(), cap = StrokeCap.Round))
+    val shadow = fortunePaperPath(left, top + shadowOffset, width, height, wave)
+    val brush = Brush.verticalGradient(listOf(FortunePaperColor, FortunePaperColor, lerp(FortunePaperColor, PrimaryColor, 0.1f)), startY = top, endY = top + height)
+    return FortunePaperShape(path, shadow, brush, Stroke(width = borderWidth, cap = StrokeCap.Round))
+}
+
+//pinta un papelito ya armado
+fun DrawScope.drawFortunePaperShape(shape: FortunePaperShape) {
+    drawPath(path = shape.shadow, color = TextColor.copy(alpha = 0.16f))
+    drawPath(path = shape.path, brush = shape.brush)
+    drawPath(path = shape.path, color = PrimaryColor.copy(alpha = 0.5f), style = shape.border)
+}
+
+//papelito de la galleta: bordes de arriba y abajo ondulados, esquinas redondas y sombra suave
+fun DrawScope.drawFortunePaper(left: Float, top: Float, width: Float, height: Float, wave: Float) {
+    drawFortunePaperShape(fortunePaperShape(left, top, width, height, wave, 4.dp.toPx(), 1.dp.toPx()))
 }
 
 //camino del papelito, la onda es una sola curva suave de punta a punta

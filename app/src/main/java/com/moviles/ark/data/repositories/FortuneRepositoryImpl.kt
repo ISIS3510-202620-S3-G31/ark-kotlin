@@ -4,7 +4,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.CoroutineScope
-import android.net.Uri
+import androidx.core.net.toUri
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
 import com.google.firebase.storage.StorageMetadata
@@ -216,7 +216,7 @@ class FortuneRepositoryImpl(
         val user = userId()
         val saved = withContext(Dispatchers.IO) { savedFortuneCardDao.getCard(user, fortune.id) }
         val isCurrent = preferencesManager.isCardCurrent(user, fortune.id)
-        if (saved != null && isCurrent && withContext(Dispatchers.IO) { cardExporter.exists(saved.localImageUri) }) return FortuneShareResult(Uri.parse(saved.localImageUri), false)
+        if (saved != null && isCurrent && withContext(Dispatchers.IO) { cardExporter.exists(saved.localImageUri) }) return FortuneShareResult(saved.localImageUri.toUri(), false)
 
         val savedAt = saved?.savedAt ?: System.currentTimeMillis()
         val bitmap = withContext(Dispatchers.Default) { cardExporter.renderCardBitmap(fortune, savedAt) }

@@ -7,6 +7,7 @@ import com.moviles.ark.ui.theme.ScreenTopPadding
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.material3.CircularProgressIndicator
@@ -121,7 +122,8 @@ fun FortuneHeader(title: String, onBack: () -> Unit, trailing: @Composable () ->
 //titulo grande que se achica solo si no cabe en el ancho del telefono
 @Composable
 private fun FortuneTitle(text: String, modifier: Modifier = Modifier) {
-    var fontSize by remember(text) { mutableStateOf(34f) }
+    //mutableFloatStateOf guarda el numero directo, sin envolverlo en un objeto cada vez que cambia
+    var fontSize by remember(text) { mutableFloatStateOf(34f) }
     var ready by remember(text) { mutableStateOf(false) }
     Text(text = text, style = MaterialTheme.typography.headlineLarge.copy(fontSize = fontSize.sp, lineHeight = (fontSize + 6f).sp), color = TextColor, maxLines = 1, softWrap = false, textAlign = TextAlign.Start, modifier = modifier.drawWithContent { if (ready) drawContent() }, onTextLayout = { layout ->
         if (layout.hasVisualOverflow && fontSize > 20f) fontSize -= 1f else ready = true
