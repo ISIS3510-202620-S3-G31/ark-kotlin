@@ -105,8 +105,10 @@ query*. Una corrida por colección.
 5. Correr `views_tool_sessions.sql` (sesiones completadas de cada herramienta, con su celular y
    su punto de entrada, y las vistas de BQ13, BQ14 y BQ15; usa `tool_interactions`, `test_accounts` y la
    tabla de aperturas de Firestore).
-6. Correr `views_breathing.sql` (sesiones terminadas de Custom Breathing y las vistas de BQ16;
-   usa `to_ts`, `test_accounts` y la tabla de la instancia `firestore-bq-custom-breathing`).
+6. Correr `views_breathing.sql` (sesiones terminadas de Custom Breathing y las vistas de BQ16 y
+   BQ17, cada una con su propia vista de respuesta `bqN_answer`; usa `to_ts`, `test_accounts` y la
+   tabla de la instancia `firestore-bq-custom-breathing`). Para agregar una BQ nueva basta con
+   correr su bloque, sin volver a crear las demás vistas.
 7. Correr `views_answers.sql` al final: escribe la respuesta de cada BQ como texto (ver
    "Respuestas en vivo" en la sección 5).
 
@@ -137,7 +139,10 @@ Quedan en el dataset `ark_dashboards`:
 | `custom_breathing_sessions` | una fila por sesión terminada de Custom Breathing: ciclos, duración, patrón, música, tipo de dispositivo y cuenta de prueba |
 | `bq16_cycles_distribution` | BQ16, sesiones por número de ciclos (1 a 9 y 10+) y las que llegan por lo menos a cada número |
 | `bq16_cycles_summary` | BQ16, total de sesiones, mediana y moda de ciclos por tipo de dispositivo y cuenta de prueba |
-| `bq_answers` | una fila con la respuesta de cada BQ (`bq1_answer` … `bq16_answer`); las de BQ1 a BQ9 empiezan con la fecha del último dato |
+| `bq16_answer` | BQ16, la respuesta escrita (vista aparte para no tocar `bq_answers`) |
+| `bq17_pattern_usage` | BQ17, sesiones terminadas y usuarios distintos por patrón (Box, Relaxing, Quick Calm, Custom), con 0 en los que no se usaron |
+| `bq17_answer` | BQ17, la respuesta escrita (vista aparte para no tocar `bq_answers`) |
+| `bq_answers` | una fila con la respuesta de cada BQ (`bq1_answer` … `bq15_answer`); las de BQ1 a BQ9 empiezan con la fecha del último dato |
 
 Los dos bloques "PASO 2" del final de `views_analytics.sql` ya se corrieron: `tool_load_latency`
 y `app_screen_time` leen de Firestore (llega en segundos) y de Analytics solo lo anterior a la
@@ -173,6 +178,10 @@ celda** (fuente `bq_answers`, dimensión `bqN_answer`, sin métrica). En la fuen
 frescura de 1 minuto. En la tabla: sin encabezado, sin números de fila, con *Wrap text* y sin
 dimensión de rango de fechas. Cada respuesta empieza directo con el dato. En los cuadros de texto
 solo van el título y la pregunta.
+
+Excepción: BQ16 y BQ17 (Custom Breathing) tienen cada una su propia vista de respuesta en
+`views_breathing.sql` (`bq16_answer`, `bq17_answer`), con la misma forma de mostrarla. Así se
+agregan sin volver a crear `bq_answers`, que es de las demás BQ.
 
 ### Página BQ1 (latencia de render de una herramienta)
 
@@ -324,10 +333,22 @@ respiración completan los usuarios por sesión de Custom Breathing? Unidad: una
 4. Curva "llegan por lo menos a N ciclos": línea con dimensión `cycles_label` (orden por
    `cycles_order`) y el campo calculado `SUM(sessions_at_least) / SUM(group_sessions)` con
    formato de porcentaje.
-5. Respuesta en vivo: tabla de una celda con `bq16_answer`.
+5. Respuesta en vivo: tabla de una celda con la fuente `bq16_answer` (su propia vista, no `bq_answers`).
 
 Los datos llegan desde la versión de la app que sube `custom_breathing_sessions`; las sesiones
 anteriores no se cuentan.
+
+### Página BQ17 Breathing Preset Preferences
+
+Fuente `bq17_pattern_usage`. Pregunta: ¿qué patrones de
+respiración (Box Breathing 4-4-4-4, Relaxing 4-7-8, Quick Calm 4-6 o Custom) se usan más en las
+sesiones terminadas? Custom cuenta cuando el usuario eligió Custom, aunque su ritmo sea igual a un
+preset. Sin periodo: cuenta todas las sesiones.
+
+1. Control `device_type` (por defecto `Real phone`).
+2. Barras: dimensión `pattern_label`, métrica `SUM(sessions)`, orden descendente por la métrica.
+3. Anillo: `pattern_label` × `SUM(sessions)`; el anillo calcula el % de cada patrón.
+4. Barras: `pattern_label` × `SUM(users)`: cuántas personas distintas usan cada patrón.
 
 ## Ojo: cuándo sube la app los datos
 
