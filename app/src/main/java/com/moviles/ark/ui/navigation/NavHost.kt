@@ -286,13 +286,17 @@ fun AppNavigation(
                             navController.popBackStack()
                         }
                     },
-                    onOpenFavorites = { navController.navigate("favorite_fortunes_screen") }
+                    onOpenCollection = { tab -> navController.navigate("favorite_fortunes_screen?tab=$tab") }
                 )
             }
-            //pantalla de favoritos y galeria de tarjetas guardadas
-            composable("favorite_fortunes_screen") {
+            //coleccion de la galleta, tab 0 abre kept y tab 1 abre shared
+            composable(
+                route = "favorite_fortunes_screen?tab={tab}",
+                arguments = listOf(navArgument("tab") { type = NavType.IntType; defaultValue = 0 })
+            ) { entry ->
                 FavoriteFortunesRoute(
-                    onBack = { navController.popBackStack() }
+                    onBack = { navController.popBackStack() },
+                    initialTab = entry.arguments?.getInt("tab") ?: 0
                 )
             }
             composable("checkin_screen") {

@@ -1,5 +1,6 @@
 package com.moviles.ark.ui.viewmodels
 
+import kotlinx.coroutines.flow.Flow
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.viewModelScope
@@ -8,6 +9,8 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.moviles.ark.ArkApplication
 import com.moviles.ark.domain.models.FortuneCardModel
 import com.moviles.ark.domain.models.FortuneModel
+import com.moviles.ark.domain.models.FortuneSource
+import com.moviles.ark.domain.models.TableFortune
 import com.moviles.ark.domain.repositories.FortuneRepository
 import com.moviles.ark.domain.repositories.ToolInteractionRepository
 import kotlinx.coroutines.Job
@@ -22,7 +25,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 //viewmodel de la galleta de la fortuna, la pantalla solo lee el estado y llama estas funciones
-class FortuneCookieViewModel(private val fortuneRepository: FortuneRepository, private val toolInteractionRepository: ToolInteractionRepository? = null, private val now: () -> Long = { System.currentTimeMillis() }) : ViewModel() {
+class FortuneCookieViewModel(private val fortuneRepository: FortuneRepository, private val toolInteractionRepository: ToolInteractionRepository? = null, private val connectivity: Flow<Boolean>? = null, private val now: () -> Long = { System.currentTimeMillis() }) : ViewModel() {
 
     private val _uiState = MutableStateFlow(FortuneUiState())
     val uiState: StateFlow<FortuneUiState> = _uiState.asStateFlow()
@@ -41,11 +44,17 @@ class FortuneCookieViewModel(private val fortuneRepository: FortuneRepository, p
         }
         tableJob = viewModelScope.launch {
             val table = fortuneRepository.getTable()
-            _uiState.update { it.copy(table = table) }
+            _uiState.update { it.copy(table = table, offlineNotice = offlineNoticeFor(table)) }
+            //con la mesa lista se llena la reserva para la proxima vez, en otra corrutina para que abrir no la espere
+            viewModelScope.launch { fortuneRepository.refillDeck() }
         }
         //con red se trae lo de la nube y se sube lo pendiente
         viewModelScope.launch {
             fortuneRepository.syncFromRemote()
+            //lo que llego de la cuenta, recientes y galletas de hoy, se muestra de una vez
+            val remaining = fortuneRepository.getRemainingChances()
+            val recents = fortuneRepository.getRecentCookies()
+            _uiState.update { it.copy(remainingChances = remaining, recentFortunes = recents) }
             fortuneRepository.syncPending()
         }
         //favoritas de room en tiempo real, tambien actualiza los corazones de la pantalla
@@ -60,10 +69,32 @@ class FortuneCookieViewModel(private val fortuneRepository: FortuneRepository, p
                 }
             }
         }
+        //conexion en vivo: sin red se explica por que no hay recientes, y al volver se trae lo de la cuenta
+        viewModelScope.launch {
+            connectivity?.collect { online ->
+                val wasOnline = _uiState.value.isOnline
+                _uiState.update { it.copy(isOnline = online) }
+                if (online && !wasOnline) {
+                    fortuneRepository.syncFromRemote()
+                    val recents = fortuneRepository.getRecentCookies()
+                    _uiState.update { it.copy(recentFortunes = recents) }
+                    fortuneRepository.syncPending()
+                }
+            }
+        }
         //imagenes guardadas en room
         viewModelScope.launch {
             fortuneRepository.observeSavedCards().collect { cards -> _uiState.update { it.copy(savedCards = cards) } }
         }
+    }
+
+    //aviso solo cuando no hay internet, y distinto si ya no quedan galletas guardadas y salen las de la app
+    //solo avisa cuando sin red se acabaron las guardadas y toca usar las frases que trae la app
+    private fun offlineNoticeFor(table: List<TableFortune>): String? {
+        if (table.none { it.isOffline }) return null
+        //con frases guardadas en el telefono no hace falta avisar nada
+        if (table.none { it.source == FortuneSource.BUILT_IN }) return null
+        return "You're offline, so today's cookies come from wisdom saved on your phone."
     }
 
     //abre la galleta elegida, solo se puede abrir una por sesion
@@ -71,7 +102,7 @@ class FortuneCookieViewModel(private val fortuneRepository: FortuneRepository, p
         val state = _uiState.value
         if (state.phase != FortunePhase.CHOOSING) return
         if (state.remainingChances == 0) {
-            _uiState.update { it.copy(snackbarMessage = "No cookies left today. New ones arrive tomorrow.") }
+            _uiState.update { it.copy(snackbarMessage = "No cookies left today. Come back tomorrow.") }
             return
         }
         _uiState.update { it.copy(phase = FortunePhase.OPENING, chosenIndex = index) }
@@ -91,16 +122,16 @@ class FortuneCookieViewModel(private val fortuneRepository: FortuneRepository, p
                 _uiState.update { it.copy(phase = FortunePhase.REVEALED, opened = result.first.copy(fortune = data.fortune), remainingChances = data.remainingChances, recentFortunes = recents) }
             } else {
                 val remaining = fortuneRepository.getRemainingChances()
-                _uiState.update { it.copy(phase = FortunePhase.CHOOSING, chosenIndex = -1, remainingChances = remaining, snackbarMessage = "This cookie couldn't open. Try again.") }
+                _uiState.update { it.copy(phase = FortunePhase.CHOOSING, chosenIndex = -1, remainingChances = remaining, snackbarMessage = "This cookie didn't open. Please try another one.") }
             }
         }
     }
 
-    //guarda o quita la frase de favoritas y luego intenta subir el cambio
+    //guarda o quita la frase de kept y luego intenta subir el cambio
     fun toggleFavorite(fortune: FortuneModel) {
         viewModelScope.launch {
             val saved = fortuneRepository.toggleFavorite(fortune)
-            _uiState.update { it.copy(snackbarMessage = if (saved) "Kept in My collection" else "Removed from My collection") }
+            _uiState.update { it.copy(snackbarMessage = if (saved) "Saved to Kept!" else "Removed from Kept") }
             fortuneRepository.syncPending()
         }
     }
@@ -115,15 +146,23 @@ class FortuneCookieViewModel(private val fortuneRepository: FortuneRepository, p
         _uiState.update { it.copy(previewFortune = null) }
     }
 
-    //comparte la frase abierta como imagen
-    fun shareOpened() {
-        val fortune = _uiState.value.opened?.fortune ?: return
+    //comparte una frase como imagen, la abierta o una de las recientes
+    fun shareFortune(fortune: FortuneModel) {
         share(fortune)
     }
 
     //comparte otra vez una imagen de la coleccion
     fun shareCard(card: FortuneCardModel) {
         share(FortuneModel(id = card.cookieId, quote = card.quote))
+    }
+
+    //quita una imagen de shared, la copia de la galeria se queda
+    fun deleteCard(card: FortuneCardModel) {
+        viewModelScope.launch {
+            fortuneRepository.deleteCard(card)
+            _uiState.update { it.copy(snackbarMessage = "Removed from Shared") }
+            fortuneRepository.syncPending()
+        }
     }
 
     //la imagen se crea una sola vez, despues se reutiliza y solo se abre el menu de compartir
@@ -133,10 +172,10 @@ class FortuneCookieViewModel(private val fortuneRepository: FortuneRepository, p
         viewModelScope.launch {
             val result = fortuneRepository.getOrCreateCard(fortune)
             if (result == null) {
-                _uiState.update { it.copy(isSharing = false, snackbarMessage = "The image couldn't be created. Try again.") }
+                _uiState.update { it.copy(isSharing = false, snackbarMessage = "We couldn't create the image. Please try again.") }
                 return@launch
             }
-            val message = if (result.isNew) "Image saved in your gallery and in My collection" else null
+            val message = if (result.isNew) "Image saved to your gallery and to Shared!" else null
             _uiState.update { it.copy(isSharing = false, shareUri = result.uri, snackbarMessage = message ?: it.snackbarMessage) }
             fortuneRepository.syncPending()
         }
@@ -168,13 +207,13 @@ class FortuneCookieViewModel(private val fortuneRepository: FortuneRepository, p
     companion object {
         const val TOOL_ID = "fortune_cookie"
         private const val INTERACTION_TYPE = "touch"
-        //lo que dura la galleta en llegar al centro, temblar y partirse
-        private const val OPENING_MILLIS = 1500L
+        //lo que dura la galleta en subir al centro, temblar, partirse y sacar el papel
+        private const val OPENING_MILLIS = 2700L
 
         val Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as ArkApplication
-                FortuneCookieViewModel(fortuneRepository = app.container.fortuneRepository, toolInteractionRepository = app.container.toolInteractionRepository)
+                FortuneCookieViewModel(fortuneRepository = app.container.fortuneRepository, toolInteractionRepository = app.container.toolInteractionRepository, connectivity = app.container.networkConnectivityObserver.observe())
             }
         }
     }
