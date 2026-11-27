@@ -342,18 +342,17 @@ anteriores no se cuentan.
 
 ### Página BQ17 Breathing Preset Preferences
 
-Fuente `bq17_pattern_usage` (y `bq17_answer` para la respuesta). Pregunta: ¿qué patrones de
+Fuente `bq17_pattern_usage`. Pregunta: ¿qué patrones de
 respiración (Box Breathing 4-4-4-4, Relaxing 4-7-8, Quick Calm 4-6 o Custom) se usan más en las
 sesiones terminadas? Custom cuenta cuando el usuario eligió Custom, aunque su ritmo sea igual a un
 preset. Sin periodo: cuenta todas las sesiones.
 
-1. Controles `device_type` (por defecto `Real phone`) e `is_test_account` (por defecto `false`).
+1. Control `device_type` (por defecto `Real phone`).
 2. Barras: dimensión `pattern_label`, métrica `SUM(sessions)`, orden descendente por la métrica.
 3. Anillo: `pattern_label` × `SUM(sessions)`; el anillo calcula el % de cada patrón.
 4. Barras: `pattern_label` × `SUM(users)`: cuántas personas distintas usan cada patrón.
-5. Respuesta en vivo: tabla de una celda con la fuente `bq17_answer`.
 
-### Página BQ18 Breathing Ambient Music
+### Página BQ18 Ambient Music Usage in Breathing
 
 Fuentes `bq18_music_usage` y `bq18_music_share`. Pregunta: ¿qué porcentaje de las sesiones
 terminadas de Custom Breathing se hacen con música ambiental de fondo y cuántas en silencio?
@@ -361,8 +360,11 @@ Con música = la música sonó en algún momento mientras el ejercicio corría. 
 todas las sesiones.
 
 1. Control `device_type` (por defecto `Real phone`).
-2. Anillo: `music_label` × `SUM(sessions)`; el anillo calcula el % de con música y en silencio.
-3. Barras: `range_label` (orden por `range_order` ascendente) × `SUM(sessions)`: en las sesiones
+2. Scorecard `SUM(sessions)` de `bq18_music_usage`: total de sesiones terminadas.
+3. Columnas: `music_label` (orden por `music_order` ascendente) × `SUM(sessions)`: número de
+   sesiones con música y en silencio.
+4. Anillo: `music_label` × `SUM(sessions)`; el anillo calcula el % de con música y en silencio.
+5. Barras: `range_label` (orden por `range_order` ascendente) × `SUM(sessions)`: en las sesiones
    con música, qué parte del ejercicio sonó.
 
 ## Ojo: cuándo sube la app los datos

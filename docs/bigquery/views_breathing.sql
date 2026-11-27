@@ -57,7 +57,7 @@ sessions AS (
   FROM `ark-mobiles.ark_dashboards.custom_breathing_sessions`
 ),
 -- los grupos que existen (tipo de dispositivo y cuenta de prueba) con su total de sesiones
-groups AS (
+grupos AS (
   SELECT device_type, is_test_account, COUNT(*) AS group_sessions
   FROM sessions
   GROUP BY device_type, is_test_account
@@ -65,7 +65,7 @@ groups AS (
 -- los 10 numeros de ciclos para cada grupo, aunque no tengan sesiones
 all_rows AS (
   SELECT g.device_type, g.is_test_account, g.group_sessions, cycles_order
-  FROM groups AS g
+  FROM grupos AS g
   CROSS JOIN UNNEST(GENERATE_ARRAY(1, 10)) AS cycles_order
 )
 SELECT
@@ -150,14 +150,14 @@ patterns AS (
   ])
 ),
 -- los grupos que existen (tipo de dispositivo y cuenta de prueba)
-groups AS (
+grupos AS (
   SELECT DISTINCT device_type, is_test_account
   FROM `ark-mobiles.ark_dashboards.custom_breathing_sessions`
 ),
 -- los 4 patrones para cada grupo, aunque no tengan sesiones
 all_rows AS (
   SELECT g.device_type, g.is_test_account, p.pattern_type, p.pattern_label, p.pattern_order
-  FROM groups AS g
+  FROM grupos AS g
   CROSS JOIN patterns AS p
 )
 SELECT
@@ -218,14 +218,14 @@ music_options AS (
   ])
 ),
 -- los grupos que existen (tipo de dispositivo y cuenta de prueba)
-session_groups AS (
+grupos AS (
   SELECT DISTINCT device_type, is_test_account
   FROM `ark-mobiles.ark_dashboards.custom_breathing_sessions`
 ),
 -- las dos opciones para cada grupo, aunque no tengan sesiones
 all_rows AS (
   SELECT g.device_type, g.is_test_account, m.with_music, m.music_label, m.music_order
-  FROM session_groups AS g
+  FROM grupos AS g
   CROSS JOIN music_options AS m
 )
 SELECT
@@ -270,14 +270,14 @@ music_sessions AS (
   WHERE with_music AND duration_s > 0
 ),
 -- los grupos que existen (tipo de dispositivo y cuenta de prueba)
-session_groups AS (
+grupos AS (
   SELECT DISTINCT device_type, is_test_account
   FROM `ark-mobiles.ark_dashboards.custom_breathing_sessions`
 ),
 -- los 4 rangos para cada grupo, aunque no tengan sesiones
 all_rows AS (
   SELECT g.device_type, g.is_test_account, r.range_order, r.range_label
-  FROM session_groups AS g
+  FROM grupos AS g
   CROSS JOIN share_ranges AS r
 )
 SELECT
