@@ -1,5 +1,9 @@
 package com.moviles.ark.data.repositories
 
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.CoroutineScope
 import android.net.Uri
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
@@ -46,6 +50,8 @@ class FortuneRepositoryImpl(
 
     //una sola subida a la vez, la pueden pedir la pantalla y la vuelta de la red al mismo tiempo
     private val syncMutex = Mutex()
+    //lo que se sube a la nube despues de abrir una galleta va aparte, asi la frase no espera a la red
+    private val backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     //sin sesion lo guardado queda a nombre de un usuario local
     private fun userId(): String = userIdProvider() ?: LOCAL_USER
@@ -66,38 +72,126 @@ class FortuneRepositoryImpl(
     }
 
     override suspend fun getRecentCookies(): List<FortuneModel> = withContext(Dispatchers.IO) {
-        cacheManager.getRecentCookies().map { it.copy(isFavorite = cacheManager.isFavorite(it.id)) }
+        cacheManager.getRecentCookies(userId()).map { it.copy(isFavorite = cacheManager.isFavorite(it.id)) }
     }
 
-    override suspend fun getRemainingChances(): Int = withContext(Dispatchers.IO) { preferencesManager.getChancesLeft(userId()) }
+    //las galletas de hoy son de la cuenta, asi en otro telefono no se reinician
+    override suspend fun getRemainingChances(): Int = withContext(Dispatchers.IO) {
+        pullDailyChances()
+        preferencesManager.getChancesLeft(userId())
+    }
 
-    //cache falling back to network: si en el telefono hay 3 frases guardadas no se llama al api
+    //documento del dia en la nube, por ejemplo users/abc/fortune_daily/2026-11-25
+    private fun dailyDoc(user: String) = firestore?.collection("users")?.document(user)?.collection("fortune_daily")?.document(preferencesManager.today())
+
+    //trae de la nube cuantas se abrieron hoy y se queda con el numero mayor, sin red sigue con lo del telefono
+    private suspend fun pullDailyChances() {
+        val user = userIdProvider() ?: return
+        val doc = dailyDoc(user) ?: return
+        try {
+            val snapshot = withTimeout(DAILY_TIMEOUT_MS) { doc.get().await() }
+            val remoteUsed = (snapshot.getLong("used") ?: 0L).toInt()
+            preferencesManager.setUsedToday(user, remoteUsed)
+            if (preferencesManager.getUsedToday(user) > remoteUsed || preferencesManager.isDailyPending(user)) pushDailyChances()
+        } catch (_: Exception) {
+            //sin red se usa lo que hay en el telefono
+        }
+    }
+
+    //junta las recientes del telefono con las de la cuenta, se quedan las 5 abiertas mas nuevas en los dos lados
+    private suspend fun mergeRecents() {
+        val user = userIdProvider() ?: return
+        val doc = firestore?.collection("users")?.document(user)?.collection("fortune_daily")?.document("recent") ?: return
+        try {
+            val snapshot = withTimeout(DAILY_TIMEOUT_MS) { doc.get().await() }
+            val remote = (snapshot.get("items") as? List<*>).orEmpty().mapNotNull { item ->
+                val map = item as? Map<*, *> ?: return@mapNotNull null
+                val quote = map["quote"] as? String ?: return@mapNotNull null
+                val id = (map["id"] as? Number)?.toInt() ?: FortuneModel.generateId(quote)
+                FortuneModel(id = id, quote = quote, savedAt = (map["openedAt"] as? Number)?.toLong() ?: 0L)
+            }
+            val local = cacheManager.getRecentCookies(user)
+            val merged = (local + remote).groupBy { it.id }.map { group -> group.value.maxBy { it.savedAt } }.sortedByDescending { it.savedAt }.take(5)
+            cacheManager.setRecentCookies(user, merged)
+            val items = merged.map { mapOf("id" to it.id, "quote" to it.quote, "openedAt" to it.savedAt) }
+            if (merged.map { it.id } != remote.map { it.id }) withTimeout(DAILY_TIMEOUT_MS) { doc.set(mapOf("items" to items)).await() }
+        } catch (_: Exception) {
+            //sin red se quedan las del telefono
+        }
+    }
+
+    //sube cuantas se abrieron hoy, en una transaccion para no bajar el numero si otro telefono abrio mas
+    private suspend fun pushDailyChances() {
+        val user = userIdProvider() ?: return
+        val doc = dailyDoc(user) ?: return
+        val store = firestore ?: return
+        val used = preferencesManager.getUsedToday(user).toLong()
+        try {
+            withTimeout(DAILY_TIMEOUT_MS) {
+                store.runTransaction { transaction ->
+                    val remote = transaction.get(doc).getLong("used") ?: 0L
+                    if (used > remote) transaction.set(doc, mapOf("date" to preferencesManager.today(), "used" to used, "updatedAt" to System.currentTimeMillis()))
+                    null
+                }.await()
+            }
+            preferencesManager.setDailyPending(user, false)
+        } catch (_: Exception) {
+            //queda pendiente y se sube cuando vuelva la red
+        }
+    }
+
+    //cache falling back to network: la reserva del telefono es del dia; si es de hoy y tiene 3 frases no se llama al api
+    //las frases ya abiertas no vuelven a la mesa, y sin red se completa con las de la app (generic fallback)
     override suspend fun getTable(): List<TableFortune> = withContext(Dispatchers.IO) {
-        val deck = cacheManager.getDeck()
-        if (deck.size >= 3) return@withContext deck.take(3).map { TableFortune(withFavorite(it), FortuneSource.PHONE, false) }
+        val seen = cacheManager.getSeenIds(userId())
+        val today = preferencesManager.today()
+        val isNewDay = cacheManager.getDeckDay() != today
+        val deck = cacheManager.getDeck().filter { it.id !in seen }
+        if (!isNewDay && deck.size >= 3) return@withContext deck.take(3).map { TableFortune(withFavorite(it), FortuneSource.PHONE, false) }
 
-        //quedan pocas, se traen 2 de cada api y se guardan en disco
-        val fresh = serviceAdapter.fetchTwoAndTwo()
+        //dia nuevo o quedan pocas: una llamada que trae 4 frases, esperando maximo un momento para que sin red la mesa salga rapido
+        val fresh = withTimeoutOrNull(TABLE_NETWORK_WAIT_MS) { serviceAdapter.fetchTwoAndTwo() }.orEmpty()
         val isOffline = fresh.isEmpty()
-        if (!isOffline) cacheManager.appendDeck(fresh)
+        //en un dia nuevo la reserva se cambia por las frases de hoy; sin red se usan las que quedaron de ayer
+        if (!isOffline && isNewDay) cacheManager.replaceDeck(fresh, seen, today)
+        if (!isOffline && !isNewDay) cacheManager.appendDeck(fresh, seen)
         val freshIds = fresh.map { it.id }.toSet()
-        val table = cacheManager.getDeck().take(3).map { TableFortune(withFavorite(it), if (it.id in freshIds) FortuneSource.INTERNET else FortuneSource.PHONE, isOffline) }.toMutableList()
+        val table = cacheManager.getDeck().filter { it.id !in seen }.take(3).map { TableFortune(withFavorite(it), if (it.id in freshIds) FortuneSource.INTERNET else FortuneSource.PHONE, isOffline) }.toMutableList()
 
-        //si aun faltan galletas se completan con las frases que trae la app
-        for (seed in cacheManager.getSeeds().shuffled()) {
+        //si aun faltan se completan con las frases de la app: primero las que nunca se han abierto, luego las abiertas hace mas tiempo
+        val seeds = cacheManager.getSeeds()
+        val unseenSeeds = seeds.filter { it.id !in seen }.shuffled()
+        val oldestSeenSeeds = seen.mapNotNull { id -> seeds.find { it.id == id } }
+        for (seed in unseenSeeds + oldestSeenSeeds) {
             if (table.size >= 3) break
             if (table.none { it.fortune.quote == seed.quote }) table.add(TableFortune(withFavorite(seed), FortuneSource.BUILT_IN, isOffline))
         }
         table
     }
 
+    //si a la reserva de hoy le quedan menos de 3 frases se piden 4 mas, una sola llamada y sin que la pantalla espere
+    override suspend fun refillDeck() = withContext(Dispatchers.IO) {
+        val seen = cacheManager.getSeenIds(userId())
+        if (cacheManager.getDeckDay() == preferencesManager.today() && cacheManager.getDeck().count { it.id !in seen } >= 3) return@withContext
+        val fresh = withTimeoutOrNull(REFILL_WAIT_MS) { serviceAdapter.fetchTwoAndTwo() }.orEmpty()
+        if (fresh.isEmpty()) return@withContext
+        if (cacheManager.getDeckDay() == preferencesManager.today()) cacheManager.appendDeck(fresh, seen) else cacheManager.replaceDeck(fresh, seen, preferencesManager.today())
+    }
+
     //abre una galleta, solo esa sale del disco y las otras dos se quedan para la proxima vez
     override suspend fun openCookie(cookie: TableFortune): Result<FortuneCrackResult> = withContext(Dispatchers.IO) {
         if (preferencesManager.getChancesLeft(userId()) <= 0) return@withContext Result.failure(Exception("no cookies left today"))
         cacheManager.removeFromDeck(cookie.fortune.id)
+        cacheManager.markSeen(userId(), cookie.fortune.id)
         val remaining = preferencesManager.decrementChances(userId())
-        val fortune = withFavorite(cookie.fortune)
-        cacheManager.addRecentCookie(fortune)
+        //savedAt queda como la hora en que se abrio, asi se ordenan las recientes entre telefonos
+        val fortune = withFavorite(cookie.fortune).copy(savedAt = System.currentTimeMillis())
+        cacheManager.addRecentCookie(userId(), fortune)
+        //la nube se actualiza aparte; sin red queda pendiente y la frase sale de una vez
+        backgroundScope.launch {
+            pushDailyChances()
+            mergeRecents()
+        }
         Result.success(FortuneCrackResult(fortune, remaining))
     }
 
@@ -121,22 +215,34 @@ class FortuneRepositoryImpl(
     override suspend fun getOrCreateCard(fortune: FortuneModel): FortuneShareResult? {
         val user = userId()
         val saved = withContext(Dispatchers.IO) { savedFortuneCardDao.getCard(user, fortune.id) }
-        if (saved != null && withContext(Dispatchers.IO) { cardExporter.exists(saved.localImageUri) }) return FortuneShareResult(Uri.parse(saved.localImageUri), false)
+        val isCurrent = preferencesManager.isCardCurrent(user, fortune.id)
+        if (saved != null && isCurrent && withContext(Dispatchers.IO) { cardExporter.exists(saved.localImageUri) }) return FortuneShareResult(Uri.parse(saved.localImageUri), false)
 
         val savedAt = saved?.savedAt ?: System.currentTimeMillis()
         val bitmap = withContext(Dispatchers.Default) { cardExporter.renderCardBitmap(fortune, savedAt) }
         val uri = withContext(Dispatchers.IO) { cardExporter.saveCardToGallery(bitmap) } ?: return null
         withContext(Dispatchers.IO) {
-            val card = SavedFortuneCardEntity(id = saved?.id ?: 0, cookieId = fortune.id, userId = user, quote = fortune.quote, localImageUri = uri.toString(), remoteImageUrl = saved?.remoteImageUrl, savedAt = savedAt, isSynced = saved?.isSynced ?: false)
+            //si era una imagen vieja se vuelve a subir con el diseno nuevo
+            val card = SavedFortuneCardEntity(id = saved?.id ?: 0, cookieId = fortune.id, userId = user, quote = fortune.quote, localImageUri = uri.toString(), remoteImageUrl = saved?.remoteImageUrl, savedAt = savedAt, isSynced = (saved?.isSynced ?: false) && isCurrent)
             savedFortuneCardDao.insertCard(card)
+            preferencesManager.markCardCurrent(user, fortune.id)
         }
         return FortuneShareResult(uri, saved == null)
+    }
+
+    //quita la imagen del telefono, si ya estaba en la nube queda anotada para borrarla alla
+    override suspend fun deleteCard(card: FortuneCardModel) = withContext(Dispatchers.IO) {
+        val user = userId()
+        savedFortuneCardDao.deleteCard(user, card.cookieId)
+        if (card.isBackedUp) preferencesManager.addDeletedCard(user, card.cookieId)
     }
 
     //sube lo pendiente, si algo falla se para y se reintenta cuando vuelva la red
     override suspend fun syncPending() = withContext(Dispatchers.IO) {
         val user = userIdProvider() ?: return@withContext
         if (firestore == null || storage == null) return@withContext
+        //las galletas abiertas sin red
+        if (preferencesManager.isDailyPending(user)) pushDailyChances()
         syncMutex.withLock {
             try {
                 for (favorite in favoriteFortuneCookieDao.getUnsynced(user)) {
@@ -148,6 +254,15 @@ class FortuneRepositoryImpl(
                         withTimeout(TIMEOUT_MS) { doc.set(favorite.toDto().toMap()).await() }
                         favoriteFortuneCookieDao.markSynced(user, favorite.id)
                     }
+                }
+                //imagenes quitadas sin red, se borran el archivo y el documento de la nube
+                for (cookieId in preferencesManager.getDeletedCards(user)) {
+                    val ref = storage.reference.child("users/$user/fortune_cards/card_${cookieId}.png")
+                    //si el archivo ya no existe en la nube se sigue igual
+                    try { withTimeout(TIMEOUT_MS) { ref.delete().await() } } catch (_: Exception) { }
+                    val cardDoc = firestore.collection("users").document(user).collection("saved_fortune_cards").document(cookieId.toString())
+                    withTimeout(TIMEOUT_MS) { cardDoc.delete().await() }
+                    preferencesManager.removeDeletedCard(user, cookieId)
                 }
                 for (card in savedFortuneCardDao.getUnsynced(user)) {
                     //la imagen se vuelve a dibujar desde la frase, asi se sube aunque la borren de la galeria
@@ -178,9 +293,13 @@ class FortuneRepositoryImpl(
                 if (dto.quote.isNotEmpty() && favoriteFortuneCookieDao.getFavorite(user, dto.id) == null) favoriteFortuneCookieDao.insertFavorite(dto.toEntity(user))
             }
             cacheManager.loadFavoriteIds(favoriteFortuneCookieDao.getFavoriteIds(user))
+            mergeRecents()
+            pullDailyChances()
             val cards = withTimeout(TIMEOUT_MS) { firestore.collection("users").document(user).collection("saved_fortune_cards").get().await() }
+            val deleted = preferencesManager.getDeletedCards(user)
             for (doc in cards.documents) {
                 val dto = doc.toObject(FortuneCardDto::class.java) ?: continue
+                if (dto.cookieId in deleted) continue
                 if (dto.remoteImageUrl.isNotEmpty() && savedFortuneCardDao.getCard(user, dto.cookieId) == null) savedFortuneCardDao.insertCard(dto.toEntity(user))
             }
         } catch (_: Exception) {
@@ -192,5 +311,9 @@ class FortuneRepositoryImpl(
         private const val LOCAL_USER = "local_user"
         private const val TIMEOUT_MS = 10_000L
         private const val UPLOAD_TIMEOUT_MS = 30_000L
+        private const val DAILY_TIMEOUT_MS = 3_000L
+        //lo maximo que la mesa espera al api antes de usar las frases de la app
+        private const val TABLE_NETWORK_WAIT_MS = 1_500L
+        private const val REFILL_WAIT_MS = 8_000L
     }
 }

@@ -21,7 +21,7 @@ data class TableFortune(val fortune: FortuneModel, val source: FortuneSource, va
 data class FortuneCrackResult(val fortune: FortuneModel, val remainingChances: Int)
 
 //imagen de una frase guardada en la galeria y en la nube
-data class FortuneCardModel(val id: Long, val cookieId: Int, val quote: String, val imageUri: String, val savedAt: Long, val isBackedUp: Boolean)
+data class FortuneCardModel(val id: Long, val cookieId: Int, val quote: String, val imageUri: String, val savedAt: Long, val isBackedUp: Boolean, val remoteImageUrl: String? = null)
 
 //imagen lista para compartir, isNew es true si se acaba de crear
 data class FortuneShareResult(val uri: Uri, val isNew: Boolean)

@@ -26,6 +26,10 @@ interface SavedFortuneCardDao {
     @Query("UPDATE saved_fortune_cards SET remoteImageUrl = :remoteUrl, isSynced = 1 WHERE id = :id")
     suspend fun markSynced(id: Long, remoteUrl: String)
 
+    //borra la imagen de una frase
+    @Query("DELETE FROM saved_fortune_cards WHERE userId = :userId AND cookieId = :cookieId")
+    suspend fun deleteCard(userId: String, cookieId: Int)
+
     //las que faltan por subir
     @Query("SELECT * FROM saved_fortune_cards WHERE userId = :userId AND isSynced = 0")
     suspend fun getUnsynced(userId: String): List<SavedFortuneCardEntity>

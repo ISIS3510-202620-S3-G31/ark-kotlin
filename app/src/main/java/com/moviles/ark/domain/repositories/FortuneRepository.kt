@@ -27,6 +27,9 @@ interface FortuneRepository {
     //arma las 3 galletas de la mesa con cache falling back to network
     suspend fun getTable(): List<TableFortune>
 
+    //trae frases nuevas a la reserva del telefono cuando hay red, en segundo plano
+    suspend fun refillDeck()
+
     //abre una galleta de la mesa, las otras dos se quedan guardadas
     suspend fun openCookie(cookie: TableFortune): Result<FortuneCrackResult>
 
@@ -35,6 +38,9 @@ interface FortuneRepository {
 
     //devuelve la imagen de la frase, si no existe la crea una sola vez
     suspend fun getOrCreateCard(fortune: FortuneModel): FortuneShareResult?
+
+    //quita una imagen de shared en el telefono, en la nube se borra cuando haya red
+    suspend fun deleteCard(card: FortuneCardModel)
 
     //sube a la nube lo que quedo pendiente sin internet
     suspend fun syncPending()
