@@ -1,5 +1,8 @@
 package com.moviles.ark.ui.components
 
+import androidx.lifecycle.compose.currentStateAsState
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
 import kotlin.math.roundToInt
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.layout.offset
@@ -12,12 +15,8 @@ import android.media.AudioTrack
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -232,9 +231,22 @@ fun FortuneStage(phase: FortunePhase, chosenIndex: Int, hasChances: Boolean, pre
     }
     val cookiesAlpha by animateFloatAsState(if (previewing) 0f else 1f, tween(300), label = "cookiesAlpha")
 
-    //balanceo suave de las galletas mientras se elige, cada una con su propio ritmo
-    val idle = rememberInfiniteTransition(label = "idle")
-    val wave by idle.animateFloat(0f, (2 * PI).toFloat(), infiniteRepeatable(tween(1500, easing = LinearEasing), RepeatMode.Restart), label = "wave")
+    //las galletas solo flotan mientras se ven: al escoger, sin una reciente abierta y con la pantalla activa
+    //al leer la frase, al ver una reciente o con el menu de compartir encima la animacion se detiene
+    val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+    val cookiesOnScreen = phase == FortunePhase.CHOOSING && !previewing && lifecycleState.isAtLeast(Lifecycle.State.RESUMED)
+
+    //una vuelta del flotar cada 1.5 segundos, de 0 a 2 pi
+    val floating = remember { Animatable(0f) }
+    LaunchedEffect(cookiesOnScreen) {
+        //si las galletas no se ven no se anima nada, y asi no se piden cuadros nuevos
+        if (!cookiesOnScreen) return@LaunchedEffect
+        while (true) {
+            floating.animateTo((2 * PI).toFloat(), tween(1500, easing = LinearEasing))
+            floating.snapTo(0f)
+        }
+    }
+    val wave = floating.value
 
     BoxWithConstraints(modifier = modifier.fillMaxWidth().height(stageHeight)) {
         val localDensity = LocalDensity.current
