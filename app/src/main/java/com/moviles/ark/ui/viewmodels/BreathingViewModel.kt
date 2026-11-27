@@ -16,6 +16,7 @@ import com.moviles.ark.domain.models.BreathingPhase
 import com.moviles.ark.domain.models.AmbientTrackModel
 import com.moviles.ark.domain.models.BreathingPreset
 import com.moviles.ark.domain.models.BreathingSession
+import com.moviles.ark.domain.models.MusicTimeCounter
 import com.moviles.ark.domain.models.ToolLatencyTracker
 import com.moviles.ark.domain.repositories.BreathingRepository
 import kotlinx.coroutines.Dispatchers
@@ -58,6 +59,8 @@ class BreathingViewModel(
     private var phaseElapsedMs: Long = 0L
     //tiempo que el temporizador ha corrido en esta sesion, sin contar las pausas
     private var sessionRunningMs: Long = 0L
+    //tiempo que sono la musica mientras el temporizador corria (se guarda como musicSeconds)
+    private val musicTimeCounter = MusicTimeCounter()
     private var phaseStartRealtime: Long = 0L
     private var sessionStartRealtime: Long = 0L
 
@@ -301,6 +304,7 @@ class BreathingViewModel(
         val now = SystemClock.elapsedRealtime()
         phaseStartRealtime = now - phaseElapsedMs
         sessionStartRealtime = now - sessionRunningMs
+        musicTimeCounter.onExerciseStarted(now)
 
         _uiState.value = _uiState.value.copy(
             isRunning = true,
@@ -317,6 +321,8 @@ class BreathingViewModel(
             val now = SystemClock.elapsedRealtime()
             phaseElapsedMs = (now - phaseStartRealtime).coerceAtLeast(0L)
             sessionRunningMs = (now - sessionStartRealtime).coerceAtLeast(0L)
+            //el pedacito desde el ultimo paso del temporizador hasta la pausa
+            musicTimeCounter.onTick(now, _uiState.value.isMusicPlaying)
         }
         _uiState.value = _uiState.value.copy(isRunning = false)
     }
@@ -423,6 +429,7 @@ class BreathingViewModel(
                 val now = SystemClock.elapsedRealtime()
                 phaseElapsedMs = (now - phaseStartRealtime).coerceAtLeast(0L)
                 sessionRunningMs = (now - sessionStartRealtime).coerceAtLeast(0L)
+                musicTimeCounter.onTick(now, _uiState.value.isMusicPlaying)
 
                 val currentPhase = _uiState.value.phase
                 val targetDurationSeconds = getPhaseDuration(currentPhase)
@@ -487,15 +494,20 @@ class BreathingViewModel(
         pause()
         val state = _uiState.value
         val durationSeconds = (sessionRunningMs / 1000L).toInt()
+        //la musica no puede haber sonado mas tiempo que el ejercicio
+        val musicSeconds = musicTimeCounter.musicSeconds().coerceAtMost(durationSeconds)
         val session = BreathingSession(
             completedCycles = state.completedCycles,
             durationSeconds = durationSeconds,
             timestamp = System.currentTimeMillis(),
             pattern = BreathingSession.patternOf(state.inhaleDuration, state.holdDuration, state.exhaleDuration, state.holdPostExhaleDuration),
-            finishedByUser = finishedByUser
+            finishedByUser = finishedByUser,
+            patternType = BreathingSession.patternTypeOf(state.isCustomSelected, state.selectedPreset),
+            musicSeconds = musicSeconds
         )
         //se reinicia el tiempo para que la misma sesion no se guarde dos veces
         sessionRunningMs = 0L
+        musicTimeCounter.clear()
         //si el temporizador nunca corrio no hubo sesion: abrir y cerrar la pantalla no cuenta como abandono
         val repository = breathingRepository
         if (durationSeconds > 0 && repository != null) {

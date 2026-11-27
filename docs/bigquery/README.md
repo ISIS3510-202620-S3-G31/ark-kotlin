@@ -42,7 +42,7 @@ históricos).
 ## 2. Instalar la extensión (una vez por colección)
 
 Firebase console > *Extensions* > **Stream Firestore to BigQuery** > *Install*. Una instalación
-por colección, cambiando solo la colección y la tabla. Hoy hay 6:
+por colección, cambiando solo la colección y la tabla. Hoy hay 8:
 
 | Instancia (ID) | Collection path | Table ID |
 |---|---|---|
@@ -53,6 +53,7 @@ por colección, cambiando solo la colección y la tabla. Hoy hay 6:
 | `firestore-bq-tool-load-latency` | `users/{uid}/tool_load_latency` | `tool_load_latency` |
 | `firestore-bigquery-export-h3lz` | `users/{uid}/screen_time` | `screen_time` |
 | `firestore-bq-stats-daily-visits` | `users/{uid}/stats_daily_visits` | `stats_daily_visits` |
+| `firestore-bq-custom-breathing` | `users/{uid}/custom_breathing_sessions` | `custom_breathing_sessions` |
 
 Las dos últimas necesitan que `firestore.rules` permita `tool_load_latency` y `screen_time`
 (ya publicadas).
@@ -104,7 +105,11 @@ query*. Una corrida por colección.
 5. Correr `views_tool_sessions.sql` (sesiones completadas de cada herramienta, con su celular y
    su punto de entrada, y las vistas de BQ13, BQ14 y BQ15; usa `tool_interactions`, `test_accounts` y la
    tabla de aperturas de Firestore).
-6. Correr `views_answers.sql` al final: escribe la respuesta de cada BQ como texto (ver
+6. Correr `views_breathing.sql` (sesiones terminadas de Custom Breathing y las vistas de BQ16,
+   BQ17 y BQ18; BQ16 y BQ17 tienen su propia vista de respuesta `bqN_answer`; usa `to_ts`, `test_accounts` y la
+   tabla de la instancia `firestore-bq-custom-breathing`). Para agregar una BQ nueva basta con
+   correr su bloque, sin volver a crear las demás vistas.
+7. Correr `views_answers.sql` al final: escribe la respuesta de cada BQ como texto (ver
    "Respuestas en vivo" en la sección 5).
 
 Quedan en el dataset `ark_dashboards`:
@@ -131,6 +136,14 @@ Quedan en el dataset `ark_dashboards`:
 | `bq13_weekly_tool_completions` | BQ13, sesiones completadas por herramienta en cada uno de los 4 bloques de 7 días de los últimos 28 días (con 0 en las semanas sin sesiones) |
 | `bq14_tool_duration_brackets` | BQ14, sesiones completadas por herramienta en 3 rangos de duración (menos de 1 min, 1 a 3 min, más de 3 min) |
 | `bq15_entry_points` | BQ15, sesiones completadas por punto de entrada (3 tarjetas del Home, catálogo o no registrado) y herramienta |
+| `custom_breathing_sessions` | una fila por sesión terminada de Custom Breathing: ciclos, duración, patrón, música, tipo de dispositivo y cuenta de prueba |
+| `bq16_cycles_distribution` | BQ16, sesiones por número de ciclos (1 a 9 y 10+) y las que llegan por lo menos a cada número |
+| `bq16_cycles_summary` | BQ16, total de sesiones, mediana y moda de ciclos por tipo de dispositivo y cuenta de prueba |
+| `bq16_answer` | BQ16, la respuesta escrita (vista aparte para no tocar `bq_answers`) |
+| `bq17_pattern_usage` | BQ17, sesiones terminadas y usuarios distintos por patrón (Box, Relaxing, Quick Calm, Custom), con 0 en los que no se usaron |
+| `bq17_answer` | BQ17, la respuesta escrita (vista aparte para no tocar `bq_answers`) |
+| `bq18_music_usage` | BQ18, sesiones terminadas con música de fondo y en silencio |
+| `bq18_music_share` | BQ18, sesiones con música por qué parte del ejercicio sonó (menos de 25 %, 25 a 50 %, 50 a 75 %, 75 a 100 %) |
 | `bq_answers` | una fila con la respuesta de cada BQ (`bq1_answer` … `bq15_answer`); las de BQ1 a BQ9 empiezan con la fecha del último dato |
 
 Los dos bloques "PASO 2" del final de `views_analytics.sql` ya se corrieron: `tool_load_latency`
@@ -167,6 +180,10 @@ celda** (fuente `bq_answers`, dimensión `bqN_answer`, sin métrica). En la fuen
 frescura de 1 minuto. En la tabla: sin encabezado, sin números de fila, con *Wrap text* y sin
 dimensión de rango de fechas. Cada respuesta empieza directo con el dato. En los cuadros de texto
 solo van el título y la pregunta.
+
+Excepción: BQ16 y BQ17 (Custom Breathing) tienen cada una su propia vista de respuesta en
+`views_breathing.sql` (`bq16_answer`, `bq17_answer`), con la misma forma de mostrarla. Así se
+agregan sin volver a crear `bq_answers`, que es de las demás BQ.
 
 ### Página BQ1 (latencia de render de una herramienta)
 
@@ -304,6 +321,51 @@ de octubre) van como `Not recorded`.
 Los campos nuevos (`entry_point`, `first_open`, `app_screen_time`, `user_id`, las colecciones
 `tool_load_latency` y `screen_time`) solo llegan desde la versión de la app que los trae; antes
 de eso `entry_point` sale como `unknown`.
+
+### Página BQ16 Breathing Cycle Depth
+
+Fuentes `bq16_cycles_distribution` y `bq16_cycles_summary`. Pregunta: ¿cuántos ciclos de
+respiración completan los usuarios por sesión de Custom Breathing? Unidad: una sesión terminada
+(el usuario tocó Finish después de al menos un ciclo). Sin periodo: cuenta todas las sesiones.
+
+1. Controles `device_type` (por defecto `Real phone`) e `is_test_account` (por defecto `false`).
+2. Barras: dimensión `cycles_label`, orden por `cycles_order` ascendente, métrica `SUM(sessions)`.
+3. Scorecards de `bq16_cycles_summary`: `total_sessions`, `median_cycles` y `mode_cycles`, con
+   agregación **Max** (hay una fila por grupo y los controles dejan una sola).
+4. Curva "llegan por lo menos a N ciclos": línea con dimensión `cycles_label` (orden por
+   `cycles_order`) y el campo calculado `SUM(sessions_at_least) / SUM(group_sessions)` con
+   formato de porcentaje.
+5. Respuesta en vivo: tabla de una celda con la fuente `bq16_answer` (su propia vista, no `bq_answers`).
+
+Los datos llegan desde la versión de la app que sube `custom_breathing_sessions`; las sesiones
+anteriores no se cuentan.
+
+### Página BQ17 Breathing Preset Preferences
+
+Fuente `bq17_pattern_usage`. Pregunta: ¿qué patrones de
+respiración (Box Breathing 4-4-4-4, Relaxing 4-7-8, Quick Calm 4-6 o Custom) se usan más en las
+sesiones terminadas? Custom cuenta cuando el usuario eligió Custom, aunque su ritmo sea igual a un
+preset. Sin periodo: cuenta todas las sesiones.
+
+1. Control `device_type` (por defecto `Real phone`).
+2. Barras: dimensión `pattern_label`, métrica `SUM(sessions)`, orden descendente por la métrica.
+3. Anillo: `pattern_label` × `SUM(sessions)`; el anillo calcula el % de cada patrón.
+4. Barras: `pattern_label` × `SUM(users)`: cuántas personas distintas usan cada patrón.
+
+### Página BQ18 Ambient Music Usage in Breathing
+
+Fuentes `bq18_music_usage` y `bq18_music_share`. Pregunta: ¿qué porcentaje de las sesiones
+terminadas de Custom Breathing se hacen con música ambiental de fondo y cuántas en silencio?
+Con música = la música sonó en algún momento mientras el ejercicio corría. Sin periodo: cuenta
+todas las sesiones.
+
+1. Control `device_type` (por defecto `Real phone`).
+2. Scorecard `SUM(sessions)` de `bq18_music_usage`: total de sesiones terminadas.
+3. Columnas: `music_label` (orden por `music_order` ascendente) × `SUM(sessions)`: número de
+   sesiones con música y en silencio.
+4. Anillo: `music_label` × `SUM(sessions)`; el anillo calcula el % de con música y en silencio.
+5. Barras: `range_label` (orden por `range_order` ascendente) × `SUM(sessions)`: en las sesiones
+   con música, qué parte del ejercicio sonó.
 
 ## Ojo: cuándo sube la app los datos
 

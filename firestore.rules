@@ -153,7 +153,7 @@ service cloud.firestore {
 
       // Private data of each user
       // Flutter: photos, breathing_sessions, tear_entries, tool_sessions, stats, feedback, analytics_events
-      // Kotlin: favorite_fortunes, saved_fortune_cards, mood_checkins, photos, tool_interactions, stats_summary, useful_insights, tool_load_latency, screen_time, stats_daily_visits, cookies, fortune_daily, wishes
+      // Kotlin: favorite_fortunes, saved_fortune_cards, mood_checkins, photos, tool_interactions, stats_summary, useful_insights, tool_load_latency, screen_time, stats_daily_visits, cookies, fortune_daily, wishes, custom_breathing_sessions
       match /{collection}/{docId} {
         allow read, write: if isOwner(userId)
           && collection in ['photos', 'breathing_sessions', 'mood_checkins', 'tear_entries',
@@ -161,7 +161,8 @@ service cloud.firestore {
                             'analytics_events',
                             'tool_interactions', 'stats_summary', 'useful_insights',
                             'tool_load_latency', 'screen_time', 'cookies',
-                            'favorite_fortunes', 'saved_fortune_cards', 'fortune_daily', 'wishes'];
+                            'favorite_fortunes', 'saved_fortune_cards', 'fortune_daily', 'wishes',
+                            'custom_breathing_sessions'];
       }
     }
 

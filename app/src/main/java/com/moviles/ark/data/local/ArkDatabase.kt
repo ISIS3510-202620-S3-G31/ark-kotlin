@@ -50,7 +50,7 @@ import com.moviles.ark.data.local.entities.WishEntity
         WishEntity::class,
         SentGiftEntity::class,
     ],
-    version = 16,
+    version = 17,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -180,6 +180,19 @@ abstract class ArkDatabase : RoomDatabase() {
             }
         }
 
+        //version 17: las sesiones de respiracion terminadas se suben a firestore (custom_breathing_sessions)
+        //con el patron elegido y los segundos de musica (las tres preguntas de respiracion)
+        //las filas que ya estaban no tienen usuario, asi que quedan como subidas y no se envian
+        val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE breathing_sessions ADD COLUMN patternType TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE breathing_sessions ADD COLUMN musicSeconds INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE breathing_sessions ADD COLUMN userId TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE breathing_sessions ADD COLUMN isSynced INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("UPDATE breathing_sessions SET isSynced = 1")
+            }
+        }
+
         //singleton con doble comprobacion para que toda la app comparta un unico pool de conexiones
         fun getInstance(context: Context): ArkDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -188,7 +201,7 @@ abstract class ArkDatabase : RoomDatabase() {
                     ArkDatabase::class.java,
                     "ark.db"
                 )
-                .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
+                .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17)
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
                 .also { INSTANCE = it }

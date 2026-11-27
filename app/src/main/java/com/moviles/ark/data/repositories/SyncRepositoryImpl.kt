@@ -8,6 +8,7 @@ import com.google.android.gms.tasks.Task
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
+import com.moviles.ark.data.local.daos.BreathingSessionDao
 import com.moviles.ark.data.local.daos.EmotionCheckInDao
 import com.moviles.ark.data.local.daos.FeedbackDao
 import com.moviles.ark.data.local.daos.PhotoEntryDao
@@ -52,7 +53,9 @@ class SyncRepositoryImpl(
     //cuantas galletas faltan por subir (CookieRepository.pendingUploadCount)
     private val pendingCookieCount: suspend () -> Int = { 0 },
     //deseos del farol de deseos (tabla wishes)
-    private val wishDao: WishDao? = null
+    private val wishDao: WishDao? = null,
+    //sesiones terminadas de Custom Breathing (tabla breathing_sessions)
+    private val breathingSessionDao: BreathingSessionDao? = null
 ) : SyncRepository {
 
     //una sola subida a la vez: el check-in pide subida al guardarse y el SyncManager al volver la red
@@ -93,6 +96,7 @@ class SyncRepositoryImpl(
             feedbackDao.getUnsyncedFeedback(userId).size +
             (statsDailyVisitDao?.getUnsyncedVisits(userId)?.size ?: 0) +
             (wishDao?.getUnsyncedWishes(userId)?.size ?: 0) +
+            (breathingSessionDao?.getUnsyncedSessions(userId)?.size ?: 0) +
             (if (hasPendingProfile()) 1 else 0) +
             pendingCookieCount()
     }
@@ -260,6 +264,12 @@ class SyncRepositoryImpl(
             syncWishes(tally)
         }
 
+        // 6c. Subir las sesiones terminadas de Custom Breathing pendientes (isSynced = 0)
+        //cada sesion va a users/{uid}/custom_breathing_sessions/{timestamp}: si se sube dos veces queda un solo documento
+        tally.step("syncBreathingSessions", currentUserId) {
+            syncBreathingSessions(tally)
+        }
+
         // 7. Sincronizar fotos pendientes (isSynced = 0)
         //solo las del usuario con sesion: las reglas de firestore no dejan escribir en la carpeta de otro;
         //las de otra cuenta esperan a que esa cuenta vuelva a entrar
@@ -294,6 +304,32 @@ class SyncRepositoryImpl(
         Log.d("SyncRepository", "Synced ${tally.synced} pending items to Firebase, ${tally.failed} failed")
         if (tally.failed > 0) throw PendingUploadsException(tally.synced, tally.failed)
         tally.synced
+    }
+
+    //sube las sesiones de respiracion terminadas que faltan; quedan en el telefono marcadas como subidas
+    private suspend fun syncBreathingSessions(tally: SyncTally) {
+        val dao = breathingSessionDao
+        if (dao == null) {
+            return
+        }
+        //sin sesion no se sube nada: las reglas de firestore no dejan escribir en la carpeta de otro
+        val sessionUserId = auth.currentUser?.uid
+        if (sessionUserId == null) {
+            return
+        }
+
+        val pendingSessions = dao.getUnsyncedSessions(sessionUserId)
+        for (session in pendingSessions) {
+            tally.upload("breathing session id=${session.id}") {
+                firestore.collection("users")
+                    .document(sessionUserId)
+                    .collection("custom_breathing_sessions")
+                    .document(session.documentId())
+                    .set(session.toDto(sessionUserId, Build.MODEL))
+                    .awaitWithTimeout()
+                dao.markAsSynced(session.id)
+            }
+        }
     }
 
     //sube los deseos pendientes del usuario con sesion
