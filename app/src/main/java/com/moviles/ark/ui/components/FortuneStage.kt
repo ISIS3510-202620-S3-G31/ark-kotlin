@@ -248,6 +248,10 @@ fun FortuneStage(phase: FortunePhase, chosenIndex: Int, hasChances: Boolean, pre
     }
     val wave = floating.value
 
+    //las luces de las 3 galletas se arman una sola vez; al dibujar leen el flotar, sin crear objetos en cada cuadro
+    val floorLights = remember { CookieLights.map { color -> Modifier.cookieFloorLight(color) { lightStrength(floating.value) } } }
+    val beamLights = remember { CookieLights.map { color -> Modifier.cookieBeamLight(color) { lightStrength(floating.value) } } }
+
     BoxWithConstraints(modifier = modifier.fillMaxWidth().height(stageHeight)) {
         val localDensity = LocalDensity.current
         //las galletas son un poco mas grandes que sus luces
@@ -272,11 +276,7 @@ fun FortuneStage(phase: FortunePhase, chosenIndex: Int, hasChances: Boolean, pre
 
         //primero los discos del piso, asi quedan detras de todas las galletas
         for (index in 0..2) {
-            val bob = sin(wave)
-            Canvas(modifier = Modifier.align(Alignment.Center).then(lightModifier(index))) {
-                //la luz respira con el flotar de su galleta
-                drawCookieFloor(CookieLights[index], 0.85f + 0.15f * bob)
-            }
+            Box(modifier = Modifier.align(Alignment.Center).then(lightModifier(index)).then(floorLights[index]))
         }
 
         for (index in 0..2) {
@@ -329,10 +329,7 @@ fun FortuneStage(phase: FortunePhase, chosenIndex: Int, hasChances: Boolean, pre
 
         //el cilindro de luz va encima de las galletas y las tine de su color, igual que en la animacion
         for (index in 0..2) {
-            val bob = sin(wave)
-            Canvas(modifier = Modifier.align(Alignment.Center).then(lightModifier(index))) {
-                drawCookieBeam(CookieLights[index], 0.85f + 0.15f * bob)
-            }
+            Box(modifier = Modifier.align(Alignment.Center).then(lightModifier(index)).then(beamLights[index]))
         }
 
         //el papel queda en el centro y las mitades a los lados, encima de sus puntas
