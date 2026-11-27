@@ -49,6 +49,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -229,7 +230,8 @@ private fun FloatingLantern(
     onTap: () -> Unit
 ) {
     val floatTransition = rememberInfiniteTransition(label = "floatingLantern")
-    val floatDistance by floatTransition.animateFloat(
+    //sin "by": se guarda la animacion y su valor se lee mas abajo, solo al dibujar el farol
+    val floatDistance = floatTransition.animateFloat(
         initialValue = 0f,
         targetValue = 8f,
         animationSpec = infiniteRepeatable(animation = tween(durationMillis = floatDurationMillis), repeatMode = RepeatMode.Reverse),
@@ -253,9 +255,17 @@ private fun FloatingLantern(
 
     Box(
         modifier = Modifier
-            .offset(x = x, y = y + floatDistance.dp)
+            //el lugar fijo del farol en el cielo
+            .offset(x = x, y = y)
             .size(width = lanternWidth, height = lanternWidth * 1.25f)
-            .alpha(visibility.value),
+            //lo que sube y baja y la transparencia se leen dentro de { }, solo al dibujar
+            //asi el farol no se vuelve a armar ni a acomodar en cada frame, solo se vuelve a pintar
+            .graphicsLayer {
+                //se redondea a pixeles enteros, como lo hacia offset
+                //con fracciones de pixel la gpu no puede reutilizar el dibujo del farol y crea texturas nuevas
+                translationY = floatDistance.value.dp.roundToPx().toFloat()
+                alpha = visibility.value
+            },
         contentAlignment = Alignment.Center
     ) {
         if (isHighlighted) {
