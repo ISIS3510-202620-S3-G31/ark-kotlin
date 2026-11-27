@@ -100,7 +100,8 @@ fun WishLanternRoute(
             onLanternReleased = viewModel::onLanternReleased,
             onWriteWish = viewModel::openEditorForNewWish,
             onSeeAllWishes = viewModel::openList,
-            onFinish = finish
+            onFinish = finish,
+            onSkySizeMeasured = viewModel::onSkySizeMeasured
         )
     }
 

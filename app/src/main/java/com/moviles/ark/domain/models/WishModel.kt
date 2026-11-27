@@ -23,5 +23,9 @@ data class WishModel(
 
         //maximo de faroles encendidos al mismo tiempo (tamano del lru)
         const val MAX_LIT_LANTERNS = 8
+
+        //maximo de faroles que se ven en el fondo del cielo (encendidos + apagados)
+        //con mas, el cielo se llena demasiado y no caben sin tocarse
+        const val MAX_SKY_LANTERNS = 20
     }
 }

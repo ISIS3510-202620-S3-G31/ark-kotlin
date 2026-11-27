@@ -15,6 +15,8 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -50,6 +52,12 @@ class WishLanternViewModel(
     //true mientras se estan recuperando los deseos de firestore, para no hacerlo dos veces al mismo tiempo
     private var isRestoring = false
 
+    //decide que 20 faroles se ven en el cielo y donde va cada uno sin tocarse
+    private val lanternPlacer = SkyLanternPlacer()
+
+    //tamano del cielo en dp (ancho y alto); lo manda la pantalla cuando lo mide
+    private val skySize = MutableStateFlow<Pair<Float, Float>?>(null)
+
     init {
         restoreWishesAndLightLanterns()
         listenToSkyLanterns()
@@ -76,19 +84,62 @@ class WishLanternViewModel(
         }
     }
 
-    //cada vez que cambian los deseos (guardar, editar o borrar) llegan los ids nuevos
-    //y los faroles del cielo se vuelven a armar
+    //los faroles del cielo se vuelven a acomodar cada vez que:
+    //- cambian los deseos (guardar, editar o borrar)
+    //- se enciende o se apaga un farol (el cielo muestra primero los encendidos)
+    //- la pantalla mide el tamano del cielo
     private fun listenToSkyLanterns() {
         viewModelScope.launch {
-            wishRepository.getWishIds().collect { wishIds ->
-                //calcular la posicion de muchos faroles es trabajo de cpu: se hace en Dispatchers.Default
+            combine(wishRepository.getWishIds(), wishRepository.getLitWishIds(), skySize) { wishIds, litIds, size ->
+                SkyInput(wishIds, litIds, size)
+            }.collect { input ->
+                //acomodar muchos faroles es trabajo de cpu: se hace en Dispatchers.Default
                 //asi el hilo principal (Main) queda libre para las animaciones
-                val lanterns = withContext(defaultDispatcher) {
-                    createSkyLanterns(wishIds)
+                val layout = withContext(defaultDispatcher) {
+                    placeSkyLanterns(input)
                 }
-                _uiState.update { it.copy(skyLanterns = lanterns, isSkyLoading = false) }
+                _uiState.update {
+                    it.copy(
+                        skyLanterns = layout.lanterns,
+                        leavingLanterns = layout.leavingLanterns,
+                        isSkyLoading = false
+                    )
+                }
+                forgetLeavingLanternsLater(layout.leavingLanterns)
             }
         }
+    }
+
+    //corre en Dispatchers.Default
+    private fun placeSkyLanterns(input: SkyInput): SkyLayout {
+        val size = input.skySize
+        if (size != null) {
+            lanternPlacer.setSkySize(widthDp = size.first, heightDp = size.second)
+        }
+        return lanternPlacer.placeLanterns(input.wishIds, input.litIds)
+    }
+
+    //los faroles que se fueron se dibujan un momento mientras se desvanecen y luego se quitan
+    private fun forgetLeavingLanternsLater(leavingLanterns: List<SkyLantern>) {
+        if (leavingLanterns.isEmpty()) {
+            return
+        }
+        viewModelScope.launch {
+            delay(LEAVING_ANIMATION_MILLIS)
+            _uiState.update {
+                //solo se quitan si no llegaron otros mientras tanto
+                if (it.leavingLanterns == leavingLanterns) {
+                    it.copy(leavingLanterns = emptyList())
+                } else {
+                    it
+                }
+            }
+        }
+    }
+
+    //la pantalla midio el cielo (en dp); con eso se calcula bien que faroles se tocan
+    fun onSkySizeMeasured(widthDp: Float, heightDp: Float) {
+        skySize.value = Pair(widthDp, heightDp)
     }
 
     //lista completa con el texto de cada deseo; room la lee en IO y el repositorio la ordena en Default
@@ -102,33 +153,6 @@ class WishLanternViewModel(
                 _uiState.update { it.copy(wishes = wishes, isListLoading = false) }
             }
         }
-    }
-
-    //arma un farol por cada deseo con su lugar en el cielo
-    //corre en Dispatchers.Default
-    private fun createSkyLanterns(wishIds: List<String>): List<SkyLantern> {
-        val lanterns = mutableListOf<SkyLantern>()
-        for (wishId in wishIds) {
-            lanterns.add(createSkyLantern(wishId))
-        }
-        return lanterns
-    }
-
-    //el lugar sale del id del deseo, asi cada farol queda siempre en el mismo lugar
-    private fun createSkyLantern(wishId: String): SkyLantern {
-        //numero entre 0 y 9999 que siempre es el mismo para el mismo id
-        val number = Math.floorMod(wishId.hashCode(), 10000)
-        val x = (number % 100) / 100f
-        val y = (number / 100) / 100f
-        //entre 2 y 3.5 segundos para subir y bajar
-        val floatDuration = 2000 + Math.floorMod(wishId.hashCode(), 1500)
-
-        return SkyLantern(
-            wishId = wishId,
-            x = x,
-            y = y,
-            floatDurationMillis = floatDuration
-        )
     }
 
     //cada vez que se enciende o se apaga un farol llegan los ids encendidos
@@ -176,8 +200,22 @@ class WishLanternViewModel(
 
     //el farol grande termino de volar: ya hace parte del cielo
     //no se guarda nada aqui porque el deseo ya quedo guardado al presionar guardar
+    //el farol nuevo brilla unos segundos en su lugar del cielo, para que el usuario vea donde quedo
     fun onLanternReleased() {
-        _uiState.update { it.copy(wishToRelease = null) }
+        val releasedWishId = _uiState.value.wishToRelease?.id
+        _uiState.update { it.copy(wishToRelease = null, highlightedWishId = releasedWishId) }
+
+        viewModelScope.launch {
+            delay(HIGHLIGHT_MILLIS)
+            _uiState.update {
+                //solo se apaga el brillo si no se lanzo otro farol mientras tanto
+                if (it.highlightedWishId == releasedWishId) {
+                    it.copy(highlightedWishId = null)
+                } else {
+                    it
+                }
+            }
+        }
     }
 
     // ---------- navegacion entre vistas ----------
@@ -348,7 +386,22 @@ class WishLanternViewModel(
         return durationSeconds
     }
 
+    //lo que necesita el cielo para acomodar los faroles
+    private data class SkyInput(
+        //todos los ids, del mas nuevo al mas viejo
+        val wishIds: List<String>,
+        //ids de los faroles encendidos
+        val litIds: Set<String>,
+        //ancho y alto del cielo en dp; null mientras la pantalla no lo haya medido
+        val skySize: Pair<Float, Float>?
+    )
+
     companion object {
+        //cuanto brilla el farol recien lanzado, en milisegundos
+        private const val HIGHLIGHT_MILLIS = 3000L
+        //cuanto tarda en desvanecerse un farol que sale del cielo (igual que en la pantalla)
+        const val LEAVING_ANIMATION_MILLIS = 1000L
+
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as ArkApplication
