@@ -15,6 +15,9 @@ interface AnalyticsRepository {
     //evento app_screen_time (day, duration_ms, start_hour), pregunta de negocio del tiempo de pantalla diario
     fun logScreenTime(entry: ScreenTimeEntry)
 
+    //evento cookie_created (has_photo, dictated), BQ28: cuantas galletas nuevas llevan foto y cuantas se dictaron
+    fun logCookieCreated(hasPhoto: Boolean, dictated: Boolean)
+
     //asocia los eventos siguientes a la cuenta (uid de firebase auth) para poder sumar por usuario; null al cerrar sesion
     fun setUserId(userId: String?)
 }

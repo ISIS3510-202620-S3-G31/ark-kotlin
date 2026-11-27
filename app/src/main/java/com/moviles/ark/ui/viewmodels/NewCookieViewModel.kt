@@ -12,6 +12,7 @@ import com.moviles.ark.domain.exceptions.InvalidCookieImageException
 import com.moviles.ark.domain.exceptions.NotEnoughSpaceException
 import com.moviles.ark.domain.models.CookieMessages
 import com.moviles.ark.domain.models.CookieModel
+import com.moviles.ark.domain.repositories.AnalyticsRepository
 import com.moviles.ark.domain.repositories.CookieRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -39,6 +40,7 @@ sealed interface NewCookieEvent {
 class NewCookieViewModel(
     private val cookieRepository: CookieRepository,
     private val imageLoader: CookieImageLoader<Bitmap>,
+    private val analyticsRepository: AnalyticsRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NewCookieUiState())
@@ -117,6 +119,11 @@ class NewCookieViewModel(
         }
     }
 
+    //la caja de texto avisa cuando llega texto dictado; basta con una vez para contar la galleta como dictada
+    fun onDictationUsed() {
+        _uiState.update { it.copy(usedDictation = true) }
+    }
+
     fun onRemoveImage() {
         previewJob?.cancel()
         discardCameraFile()
@@ -137,6 +144,8 @@ class NewCookieViewModel(
             cookieRepository.createCookie(state.title, state.text, state.imageUri)
                 .onSuccess { cookie ->
                     discardCameraFile()
+                    //BQ28: solo se cuenta la galleta que si quedo guardada
+                    analyticsRepository.logCookieCreated(hasPhoto = state.imageUri != null, dictated = state.usedDictation)
                     _uiState.update { it.copy(isSaving = false) }
                     events.send(NewCookieEvent.Saved(state.title, cookie))
                 }
@@ -179,6 +188,7 @@ class NewCookieViewModel(
                 NewCookieViewModel(
                     cookieRepository = app.container.cookieRepository,
                     imageLoader = app.container.cookieImageLoader,
+                    analyticsRepository = app.container.analyticsRepository,
                 )
             }
         }

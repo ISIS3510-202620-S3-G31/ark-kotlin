@@ -10,7 +10,10 @@ import com.moviles.ark.data.remote.dtos.toDto
 import com.moviles.ark.domain.models.ScreenTimeEntry
 import com.moviles.ark.domain.models.ToolLoadLatency
 import com.moviles.ark.domain.repositories.AnalyticsRepository
+import java.text.SimpleDateFormat
 import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 
 //envia los eventos de analitica a firebase analytics
 //la latencia de herramientas y el tiempo de pantalla tambien se guardan en firestore para que lleguen a bigquery en segundos
@@ -75,6 +78,32 @@ class AnalyticsRepositoryImpl(
         }
     }
 
+    //igual que flutter: un documento en users/{uid}/analytics_events, que la extension copia a bigquery
+    //la vista de la BQ28 lee los campos por nombre, por eso se escriben exactamente asi
+    override fun logCookieCreated(hasPhoto: Boolean, dictated: Boolean) {
+        val userId = auth.currentUser?.uid ?: return
+        //texto ISO en UTC, igual que flutter (con minSdk 24 no hay java.time.Instant)
+        val createdAt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
+            .apply { timeZone = TimeZone.getTimeZone("UTC") }
+            .format(Date())
+        firestore.collection("users")
+            .document(userId)
+            .collection(COLLECTION_ANALYTICS_EVENTS)
+            .add(
+                mapOf(
+                    "name" to "tool_step",
+                    "userId" to userId,
+                    "createdAt" to createdAt,
+                    "tool_id" to "cookie_jar",
+                    "step_name" to "cookie_created",
+                    "has_photo" to hasPhoto,
+                    "dictated" to dictated,
+                    "platform" to "kotlin"
+                )
+            )
+            .addOnFailureListener { Log.w("AnalyticsRepository", "Could not save cookie_created", it) }
+    }
+
     companion object {
         //nombres de la pregunta de negocio #1
         const val EVENT_TOOL_LOAD_LATENCY = "tool_load_latency"
@@ -96,5 +125,8 @@ class AnalyticsRepositoryImpl(
         //nombres de la pregunta de negocio #4
         const val EVENT_TOOL_ENTRY_COMPLETED = "tool_entry_completed"
         const val PARAM_TOOL_FORMAT = "tool_format"
+
+        //coleccion users/{uid}/analytics_events en firestore, la misma que usa flutter (BQ28)
+        const val COLLECTION_ANALYTICS_EVENTS = "analytics_events"
     }
 }

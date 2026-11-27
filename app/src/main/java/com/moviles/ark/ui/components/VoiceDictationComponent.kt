@@ -88,7 +88,9 @@ fun ModernVoiceInputBox(
     modifier: Modifier = Modifier,
     minHeight: Dp = 80.dp,
     enabled: Boolean = true,
-    speechToTextHelper: SpeechToTextHelper = rememberSpeechToTextHelper()
+    speechToTextHelper: SpeechToTextHelper = rememberSpeechToTextHelper(),
+    //se llama cada vez que llega texto dictado; por defecto no hace nada
+    onDictated: () -> Unit = {}
 ) {
     val remainingChars = (maxLength - value.length).coerceAtLeast(0)
     val isNearLimit = remainingChars <= (maxLength * 0.20f).toInt().coerceAtLeast(10)
@@ -160,7 +162,10 @@ fun ModernVoiceInputBox(
                 ) {
                     VoiceDictationComponent(
                         currentText = value,
-                        onAppendText = { onValueChange(it.take(maxLength)) },
+                        onAppendText = {
+                            onValueChange(it.take(maxLength))
+                            onDictated()
+                        },
                         maxLength = maxLength,
                         speechToTextHelper = speechToTextHelper,
                         buttonSize = 34.dp,
