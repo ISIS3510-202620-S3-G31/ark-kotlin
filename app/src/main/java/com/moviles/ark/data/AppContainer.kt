@@ -1,6 +1,7 @@
 package com.moviles.ark.data
 
 import android.content.Context
+import android.graphics.Bitmap
 import androidx.room.Room
 import com.google.firebase.Firebase
 import com.google.firebase.analytics.analytics
@@ -10,9 +11,21 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.firestore
 import com.google.firebase.storage.FirebaseStorage
 import com.google.firebase.storage.storage
+import com.moviles.ark.data.workers.RemoteCookieDeleteWorker
 import com.moviles.ark.data.workers.RemotePhotoDeleteWorker
+import com.moviles.ark.data.workers.SharedImageDeleteWorker
 import com.moviles.ark.R
 import com.moviles.ark.data.local.ArkDatabase
+import com.moviles.ark.data.local.CookieSyncPreferences
+import com.moviles.ark.data.local.daos.FavoriteFortuneCookieDao
+import com.moviles.ark.data.local.daos.SavedFortuneCardDao
+import com.moviles.ark.data.local.FortunePreferencesManager
+import com.moviles.ark.data.local.FortuneCardExporter
+import com.moviles.ark.data.local.FortuneCacheManager
+import com.moviles.ark.domain.adapters.FortuneServiceAdapter
+import com.moviles.ark.domain.repositories.FortuneRepository
+import com.moviles.ark.data.remote.apis.FortuneServiceAdapterImpl
+import com.moviles.ark.data.repositories.FortuneRepositoryImpl
 import com.moviles.ark.data.local.daos.FeedbackDao
 import com.moviles.ark.data.local.daos.ToolRecordDao
 import com.moviles.ark.data.local.sensors.AudioPlayerHelper
@@ -24,7 +37,13 @@ import com.moviles.ark.data.local.sensors.SyncManager
 import com.moviles.ark.data.repositories.AnalyticsRepositoryImpl
 import com.moviles.ark.data.repositories.AuthRepositoryImpl
 import com.moviles.ark.data.repositories.BreathingRepositoryImpl
+import com.moviles.ark.data.repositories.CookieRepositoryImpl
 import com.moviles.ark.data.repositories.FeedbackRepositoryImpl
+import com.moviles.ark.data.repositories.FriendRepositoryImpl
+import com.moviles.ark.data.repositories.SharedCookieRepositoryImpl
+import com.moviles.ark.data.remote.CookieCloudStore
+import com.moviles.ark.data.remote.FriendCloudStore
+import com.moviles.ark.data.remote.SharedCookieCloudStore
 import com.moviles.ark.data.repositories.ToolRepositoryImpl
 import com.moviles.ark.data.repositories.LocationRepositoryImpl
 import com.moviles.ark.data.repositories.MoodRepositoryImpl
@@ -33,18 +52,24 @@ import com.moviles.ark.data.repositories.StatsRepositoryImpl
 import com.moviles.ark.data.repositories.SyncRepositoryImpl
 import com.moviles.ark.data.repositories.ToolInteractionRepositoryImpl
 import com.moviles.ark.data.repositories.UserRepositoryImpl
+import com.moviles.ark.domain.adapters.CookieImageLoader
+import com.moviles.ark.domain.models.Avatar
 import com.moviles.ark.domain.models.ToolLatencyTracker
 import com.moviles.ark.domain.repositories.AnalyticsRepository
 import com.moviles.ark.domain.repositories.AuthRepository
 import com.moviles.ark.domain.repositories.BreathingRepository
+import com.moviles.ark.domain.repositories.CookieRepository
 import com.moviles.ark.domain.repositories.FeedbackRepository
+import com.moviles.ark.domain.repositories.FriendRepository
 import com.moviles.ark.domain.repositories.LocationRepository
 import com.moviles.ark.domain.repositories.MoodRepository
 import com.moviles.ark.domain.repositories.PhotoEntryRepository
+import com.moviles.ark.domain.repositories.SharedCookieRepository
 import com.moviles.ark.domain.repositories.StatsRepository
 import com.moviles.ark.domain.repositories.SyncRepository
 import com.moviles.ark.domain.repositories.ToolInteractionRepository
 import com.moviles.ark.domain.repositories.UserRepository
+import kotlinx.coroutines.flow.first
 
 interface AppContainer {
     val auth: FirebaseAuth
@@ -57,6 +82,10 @@ interface AppContainer {
     val toolInteractionRepository: ToolInteractionRepository
     val statsRepository: StatsRepository
     val photoRepository: PhotoEntryRepository
+    val cookieRepository: CookieRepository
+    val cookieImageLoader: CookieImageLoader<Bitmap>
+    val friendRepository: FriendRepository
+    val sharedCookieRepository: SharedCookieRepository
     val analyticsRepository: AnalyticsRepository
     val toolLatencyTracker: ToolLatencyTracker
     val screenTimeTracker: com.moviles.ark.domain.models.ScreenTimeTracker
@@ -67,6 +96,7 @@ interface AppContainer {
     val feedbackRepository: FeedbackRepository
     val breathingRepository: BreathingRepository
     val screamTankRepository: com.moviles.ark.domain.repositories.ScreamTankRepository
+    val wishRepository: com.moviles.ark.domain.repositories.WishRepository
     val audioPlayerHelper: AudioPlayerHelper
     val hapticFeedback: com.moviles.ark.domain.adapters.HapticFeedbackAdapter
     val networkConnectivityObserver: NetworkConnectivityObserver
@@ -74,6 +104,13 @@ interface AppContainer {
     val syncManager: SyncManager
     val environmentalSensorManager: EnvironmentalSensorManager
     val speechToTextHelper: SpeechToTextHelper
+    val favoriteFortuneCookieDao: FavoriteFortuneCookieDao
+    val savedFortuneCardDao: SavedFortuneCardDao
+    val fortunePreferencesManager: FortunePreferencesManager
+    val fortuneCardExporter: FortuneCardExporter
+    val fortuneCacheManager: FortuneCacheManager
+    val fortuneServiceAdapter: FortuneServiceAdapter
+    val fortuneRepository: FortuneRepository
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -132,6 +169,54 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             onRemoteDeleteNeeded = { userId, takenAt -> RemotePhotoDeleteWorker.enqueue(context, userId, takenAt) }
         )
     }
+    // cookie jar: datos en room (tabla cookies) e imagen comprimida en filesDir/cookies, por usuario (uid de firebase)
+    // con copia en firestore users/{uid}/cookies y storage users/{uid}/cookies/{id}.jpg
+    override val cookieRepository: CookieRepository by lazy {
+        CookieRepositoryImpl(
+            cookieDao = database.cookieDao(),
+            imageStore = cookieImageStore,
+            imageCompressor = com.moviles.ark.data.local.CookieImageCompressor(context),
+            cameraHelper = com.moviles.ark.data.local.sensors.CameraHelper(context),
+            userIdProvider = { auth.currentUser?.uid },
+            //cada cambio (crear, comer, devolver) pide una subida; sin red queda en workmanager para cuando vuelva
+            onCookieChanged = { syncManager.requestSync() },
+            //borrar para siempre: la copia de la nube se borra con workmanager aunque se cierre la app
+            onRemoteDeleteNeeded = { userId, cookieId -> RemoteCookieDeleteWorker.enqueue(context, userId, cookieId) },
+            cloudStore = CookieCloudStore(firestore, storage),
+            pendingRemoteDeletes = { RemoteCookieDeleteWorker.pendingCookieIds(context) },
+            syncPreferences = CookieSyncPreferences(context)
+        )
+    }
+    // amigos del cookie jar (solo 18+): usernames, perfiles publicos, solicitudes, amistades y bloqueos en firestore
+    override val friendRepository: FriendRepository by lazy {
+        FriendRepositoryImpl(
+            cloud = FriendCloudStore(firestore),
+            userIdProvider = { auth.currentUser?.uid },
+            //el perfil publico lleva el avatar de la lista, nunca la foto
+            avatarIdProvider = {
+                val profile = userRepository.observeProfile().first()
+                Avatar.idOrDefault(profile?.avatarId)
+            }
+        )
+    }
+    // regalos del cookie jar: bandeja en vivo desde firestore, regalos enviados en room, aceptados entran a cookieRepository
+    override val sharedCookieRepository: SharedCookieRepository by lazy {
+        SharedCookieRepositoryImpl(
+            cloud = SharedCookieCloudStore(firestore, storage),
+            cookieRepository = cookieRepository,
+            sentGiftDao = database.sentGiftDao(),
+            userIdProvider = { auth.currentUser?.uid },
+            myUsername = { friendRepository.myUsername() },
+            //una foto de regalo que no se pudo borrar la borra workmanager cuando haya red
+            onOrphanImage = { userId, shareId -> SharedImageDeleteWorker.enqueue(context, userId, shareId) }
+        )
+    }
+    // imagenes del cookie jar leidas del almacenamiento privado y decodificadas para la pantalla
+    override val cookieImageLoader: CookieImageLoader<Bitmap> by lazy {
+        com.moviles.ark.data.local.CookieImageLoaderImpl(context, cookieImageStore)
+    }
+    // una sola carpeta filesDir/cookies para el repositorio y el cargador de imagenes
+    private val cookieImageStore by lazy { com.moviles.ark.data.local.CookiePrivateImageStore(context.filesDir) }
     override val analyticsRepository: AnalyticsRepository by lazy { AnalyticsRepositoryImpl(Firebase.analytics, auth, firestore) }
     // one tracker for the whole app: the tap on a tool and its screen live in different places
     override val toolLatencyTracker: ToolLatencyTracker by lazy { ToolLatencyTracker(analyticsRepository) }
@@ -181,6 +266,18 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             onInteractionSaved = { syncManager.requestSync() }
         )
     }
+    // farol de deseos: los deseos se guardan en room (tabla wishes), por usuario (uid de firebase)
+    // es uno solo para toda la app, asi los faroles encendidos se mantienen al salir y volver a entrar a la herramienta
+    override val wishRepository: com.moviles.ark.domain.repositories.WishRepository by lazy {
+        com.moviles.ark.data.repositories.WishRepositoryImpl(
+            wishDao = database.wishDao(),
+            userIdProvider = { auth.currentUser?.uid },
+            onWishChanged = { syncManager.requestSync() },
+            firestore = firestore,
+            wishPreferences = com.moviles.ark.data.local.WishPreferences(context),
+            isOnline = networkConnectivityObserver::isConnected
+        )
+    }
     override val audioPlayerHelper: AudioPlayerHelper by lazy { AudioPlayerHelper(context) }
     // vibracion de la respiracion guiada
     override val hapticFeedback: com.moviles.ark.domain.adapters.HapticFeedbackAdapter by lazy { com.moviles.ark.data.local.sensors.HapticFeedbackHelper(context) }
@@ -199,16 +296,46 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             feedbackDao = database.feedbackDao(),
             statsDailyVisitDao = database.statsDailyVisitDao(),
             syncPendingProfile = { userRepository.syncPendingProfile() },
-            hasPendingProfile = { userRepository.hasPendingProfileChanges() }
+            hasPendingProfile = { userRepository.hasPendingProfileChanges() },
+            syncPendingCookies = { cookieRepository.uploadPending() },
+            pendingCookieCount = { cookieRepository.pendingUploadCount() },
+            wishDao = database.wishDao(),
+            breathingSessionDao = database.breathingSessionDao()
         )
     }
     override val syncManager: SyncManager by lazy {
         //al arrancar con red y cada vez que vuelve la conexion se trae el catalogo de herramientas: antes solo
         //llegaba por push (FCM) y si el push no llegaba el catalogo quedaba viejo hasta el siguiente
-        SyncManager(context, networkConnectivityObserver, syncRepository, onOnline = { toolRepository.refreshTools().isSuccess })
+        SyncManager(context, networkConnectivityObserver, syncRepository, onOnline = { fortuneRepository.syncPending(); toolRepository.refreshTools().isSuccess })
     }
     // sensor de luz + hora del dia para recomendaciones segun el entorno; uno para toda la app
     override val environmentalSensorManager: EnvironmentalSensorManager by lazy { EnvironmentalSensorManager(context) }
     // ayudante reutilizable de speech-to-text nativo de android para dictado offline
     override val speechToTextHelper: SpeechToTextHelper by lazy { SpeechToTextHelper(context) }
+    // dao local de room para consultar y guardar frases favoritas de la galleta de la fortuna
+    override val favoriteFortuneCookieDao: FavoriteFortuneCookieDao by lazy { database.favoriteFortuneCookieDao() }
+    // dao local de room para trazabilidad de tarjetas de la fortuna guardadas en galeria y nube
+    override val savedFortuneCardDao: SavedFortuneCardDao by lazy { database.savedFortuneCardDao() }
+    // gestor de intentos diarios con sharedpreferences para la galleta de la fortuna
+    override val fortunePreferencesManager: FortunePreferencesManager by lazy { FortunePreferencesManager(context) }
+    // exportador de tarjetas de la fortuna a la galeria publica
+    override val fortuneCardExporter: FortuneCardExporter by lazy { FortuneCardExporter(context) }
+    // gestor de cache en memoria y disco para la galleta de la fortuna
+    override val fortuneCacheManager: FortuneCacheManager by lazy { FortuneCacheManager(context) }
+    // adaptador de la api remota de consejos y frases de sabiduria
+    override val fortuneServiceAdapter: FortuneServiceAdapter by lazy { FortuneServiceAdapterImpl() }
+    // repositorio principal de la galleta de la fortuna que reparte trabajo en hilos
+    override val fortuneRepository: FortuneRepository by lazy {
+        FortuneRepositoryImpl(
+            favoriteFortuneCookieDao = favoriteFortuneCookieDao,
+            savedFortuneCardDao = savedFortuneCardDao,
+            preferencesManager = fortunePreferencesManager,
+            cacheManager = fortuneCacheManager,
+            cardExporter = fortuneCardExporter,
+            serviceAdapter = fortuneServiceAdapter,
+            firestore = firestore,
+            storage = storage,
+            userIdProvider = { auth.currentUser?.uid }
+        )
+    }
 }

@@ -14,8 +14,16 @@ data class BreathingSession(
     //patron usado en segundos, por ejemplo "4-7-8"
     val pattern: String = "",
     //true si el usuario toco Finish; false si salio de la herramienta (la abandono)
-    val finishedByUser: Boolean = true
+    val finishedByUser: Boolean = true,
+    //opcion elegida en el selector: "BOX", "RELAXING", "QUICK_CALM" o "CUSTOM"
+    val patternType: String = "",
+    //segundos que sono la musica mientras el temporizador corria
+    val musicSeconds: Int = 0
 ) {
+    //true si se escucho musica en algun momento del ejercicio
+    val withMusic: Boolean
+        get() = musicSeconds > 0
+
     //reglas de negocio: cuenta como terminada si el usuario toco Finish despues de al menos un ciclo
     fun isComplete(): Boolean {
         return finishedByUser && canFinish(completedCycles) && durationSeconds > 0
@@ -44,6 +52,18 @@ data class BreathingSession(
         const val INTERACTION_TYPE = "TOUCH"
 
         const val MIN_COMPLETED_CYCLES = 1
+
+        //patternType cuando el usuario eligio Custom, aunque su ritmo sea igual al de un preset
+        const val PATTERN_TYPE_CUSTOM = "CUSTOM"
+
+        //nombre del patron para guardar: CUSTOM si eligio Custom; si no, el preset ("BOX", "RELAXING" o "QUICK_CALM")
+        fun patternTypeOf(isCustomSelected: Boolean, selectedPreset: BreathingPreset): String {
+            return if (isCustomSelected) {
+                PATTERN_TYPE_CUSTOM
+            } else {
+                selectedPreset.name
+            }
+        }
 
         //el boton Finish se habilita desde el primer ciclo completo
         fun canFinish(completedCycles: Int): Boolean = completedCycles >= MIN_COMPLETED_CYCLES

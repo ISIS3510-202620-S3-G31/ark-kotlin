@@ -27,10 +27,16 @@ import com.moviles.ark.domain.models.ToolCategory
 import com.moviles.ark.ui.components.BottomNavItem
 import com.moviles.ark.ui.components.BottomNavigationBar
 import com.moviles.ark.ui.components.OfflineBannerComponent
+import com.moviles.ark.ui.screens.CookieFriendsRoute
+import com.moviles.ark.ui.screens.CookieInboxRoute
+import com.moviles.ark.ui.screens.CookieJarRoute
 import com.moviles.ark.ui.screens.CustomBreathingRoute
+import com.moviles.ark.ui.screens.FavoriteFortunesRoute
+import com.moviles.ark.ui.screens.FortuneCookieRoute
 import com.moviles.ark.ui.screens.HomeRoute
 import com.moviles.ark.ui.screens.LoginRoute
 import com.moviles.ark.ui.screens.MoodCheckInScreen
+import com.moviles.ark.ui.screens.NewCookieRoute
 import com.moviles.ark.ui.screens.PhotoOfTheDayRoute
 import com.moviles.ark.ui.screens.PostToolFeedbackRoute
 import com.moviles.ark.ui.screens.ProfileRoute
@@ -38,8 +44,11 @@ import com.moviles.ark.ui.screens.RegisterScreen
 import com.moviles.ark.ui.screens.ScreamTankRoute
 import com.moviles.ark.ui.screens.StatsScreen
 import com.moviles.ark.ui.screens.ToolsCatalogRoute
+import com.moviles.ark.ui.screens.WishLanternRoute
 import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.viewmodels.AppViewModel
+import com.moviles.ark.ui.viewmodels.CookieJarViewModel
+import com.moviles.ark.ui.viewmodels.CookieSocialViewModel
 
 @Composable
 fun AppNavigation(
@@ -121,6 +130,9 @@ fun AppNavigation(
                             "photo_of_the_day" -> navController.navigate("photo_of_the_day_screen")
                             "custom_breathing" -> navController.navigate("custom_breathing_screen")
                             "scream_tank" -> navController.navigate("scream_tank_screen")
+                            "cookie_jar" -> navController.navigate("cookie_jar_screen")
+                            "fortune_cookie" -> navController.navigate("fortune_cookie_screen")
+                            "wish_lantern" -> navController.navigate("wish_lantern_screen")
                             //el catalogo es una pestana: se abre igual que desde la barra para no dejar el stack trabado
                             "tools_catalog_screen" -> navController.navigateToTab("tools_catalog_screen")
                         }
@@ -147,6 +159,9 @@ fun AppNavigation(
                             "photo_of_the_day" -> navController.navigate("photo_of_the_day_screen")
                             "custom_breathing" -> navController.navigate("custom_breathing_screen")
                             "scream_tank" -> navController.navigate("scream_tank_screen")
+                            "cookie_jar" -> navController.navigate("cookie_jar_screen")
+                            "fortune_cookie" -> navController.navigate("fortune_cookie_screen")
+                            "wish_lantern" -> navController.navigate("wish_lantern_screen")
                         }
                     }
                 )
@@ -205,6 +220,84 @@ fun AppNavigation(
                         navController.popBackStack()
                     }
                 })
+            }
+            //herramienta farol de deseos; el chulito navega a feedback y atras (salir) vuelve sin feedback
+            composable("wish_lantern_screen") {
+                WishLanternRoute(onBack = { wasCompleted, duration ->
+                    if (wasCompleted) {
+                        navController.navigate("post_tool_feedback/wish_lantern?duration=$duration") {
+                            popUpTo("wish_lantern_screen") { inclusive = true }
+                        }
+                    } else {
+                        navController.popBackStack()
+                    }
+                })
+            }
+            //cookie jar; si se creo o se comio alguna galleta navega a feedback y si no vuelve sin feedback
+            composable("cookie_jar_screen") {
+                CookieJarRoute(
+                    onBack = { wasCompleted, duration ->
+                        if (wasCompleted) {
+                            navController.navigate("post_tool_feedback/cookie_jar?duration=$duration") {
+                                popUpTo("cookie_jar_screen") { inclusive = true }
+                            }
+                        } else {
+                            navController.popBackStack()
+                        }
+                    },
+                    onNewCookie = { navController.navigate("new_cookie_screen") },
+                    onOpenFriends = { navController.navigate("cookie_friends_screen") { launchSingleTop = true } },
+                    onOpenInbox = { navController.navigate("cookie_inbox_screen") { launchSingleTop = true } }
+                )
+            }
+            //amigos y bandeja de regalos (solo 18+): comparten el viewmodel social del jarro, asi el listener de la bandeja
+            //y los avisos siguen al pasar de una pantalla a otra
+            composable("cookie_friends_screen") { backStackEntry ->
+                val jarEntry = remember(backStackEntry) { navController.getBackStackEntry("cookie_jar_screen") }
+                val socialViewModel: CookieSocialViewModel = viewModel(jarEntry, factory = CookieSocialViewModel.Factory)
+                CookieFriendsRoute(socialViewModel = socialViewModel, onBack = { navController.popBackStack() })
+            }
+            composable("cookie_inbox_screen") { backStackEntry ->
+                val jarEntry = remember(backStackEntry) { navController.getBackStackEntry("cookie_jar_screen") }
+                val socialViewModel: CookieSocialViewModel = viewModel(jarEntry, factory = CookieSocialViewModel.Factory)
+                CookieInboxRoute(socialViewModel = socialViewModel, onBack = { navController.popBackStack() })
+            }
+            //galleta nueva: comparte el viewmodel del jarro para que el aviso de guardado se vea alla
+            composable("new_cookie_screen") { backStackEntry ->
+                val jarEntry = remember(backStackEntry) { navController.getBackStackEntry("cookie_jar_screen") }
+                val jarViewModel: CookieJarViewModel = viewModel(jarEntry, factory = CookieJarViewModel.Factory)
+                NewCookieRoute(
+                    onBack = { navController.popBackStack() },
+                    onSaved = { typedTitle, cookie ->
+                        jarViewModel.onCookieSaved(typedTitle, cookie)
+                        navController.popBackStack()
+                    }
+                )
+            }
+            //herramienta fortune cookie; al terminar navega a feedback y si no vuelve sin feedback
+            composable("fortune_cookie_screen") {
+                FortuneCookieRoute(
+                    onBack = { wasCompleted, duration ->
+                        if (wasCompleted) {
+                            navController.navigate("post_tool_feedback/fortune_cookie?duration=$duration") {
+                                popUpTo("fortune_cookie_screen") { inclusive = true }
+                            }
+                        } else {
+                            navController.popBackStack()
+                        }
+                    },
+                    onOpenCollection = { tab -> navController.navigate("favorite_fortunes_screen?tab=$tab") }
+                )
+            }
+            //coleccion de la galleta, tab 0 abre kept y tab 1 abre shared
+            composable(
+                route = "favorite_fortunes_screen?tab={tab}",
+                arguments = listOf(navArgument("tab") { type = NavType.IntType; defaultValue = 0 })
+            ) { entry ->
+                FavoriteFortunesRoute(
+                    onBack = { navController.popBackStack() },
+                    initialTab = entry.arguments?.getInt("tab") ?: 0
+                )
             }
             composable("checkin_screen") {
                 MoodCheckInScreen(

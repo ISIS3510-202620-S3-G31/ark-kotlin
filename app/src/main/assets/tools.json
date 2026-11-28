@@ -54,5 +54,29 @@
     "category": "behavioral_activation",
     "format": "photo",
     "iconName": "ic_tool_photo_of_the_day"
+  },
+  {
+    "id": "wish_lantern",
+    "name": "Wish lantern",
+    "description": "Write a wish, light it up and let it fly.",
+    "category": "behavioral_activation",
+    "format": "text",
+    "iconName": "ic_tool_wish_lantern"
+  },
+  {
+    "id": "cookie_jar",
+    "name": "Cookie jar",
+    "description": "Keep your best memories. Eat one when you need it.",
+    "category": "behavioral_activation",
+    "format": "text",
+    "iconName": "ic_tool_cookie_jar"
+  },
+  {
+    "id": "fortune_cookie",
+    "name": "Fortune cookie",
+    "description": "Open a fortune cookie and take a moment with its message.",
+    "category": "emotional_awareness",
+    "format": "touch",
+    "iconName": "ic_tool_fortune_cookie"
   }
 ]

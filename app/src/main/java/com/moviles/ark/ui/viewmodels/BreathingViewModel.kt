@@ -16,15 +16,20 @@ import com.moviles.ark.domain.models.BreathingPhase
 import com.moviles.ark.domain.models.AmbientTrackModel
 import com.moviles.ark.domain.models.BreathingPreset
 import com.moviles.ark.domain.models.BreathingSession
+import com.moviles.ark.domain.models.MusicTimeCounter
 import com.moviles.ark.domain.models.ToolLatencyTracker
 import com.moviles.ark.domain.repositories.BreathingRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -38,16 +43,24 @@ class BreathingViewModel(
     //vibracion al pasar de hold a exhale; null en previews
     private val hapticFeedback: HapticFeedbackAdapter? = null,
     //cierra la medicion de latencia que empezo con el toque en el home
-    private val toolLatencyTracker: ToolLatencyTracker? = null
+    private val toolLatencyTracker: ToolLatencyTracker? = null,
+    //true / false cada vez que el celular gana o pierde internet; vacio en previews
+    private val connectivity: Flow<Boolean> = emptyFlow()
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(BreathingUiState())
     val uiState: StateFlow<BreathingUiState> = _uiState.asStateFlow()
 
+    //avisos de una sola vez para el snackbar; un channel los entrega una vez y no se repiten al girar la pantalla
+    private val _messages = Channel<String>(Channel.BUFFERED)
+    val messages: Flow<String> = _messages.receiveAsFlow()
+
     private var timerJob: Job? = null
     private var phaseElapsedMs: Long = 0L
     //tiempo que el temporizador ha corrido en esta sesion, sin contar las pausas
     private var sessionRunningMs: Long = 0L
+    //tiempo que sono la musica mientras el temporizador corria (se guarda como musicSeconds)
+    private val musicTimeCounter = MusicTimeCounter()
     private var phaseStartRealtime: Long = 0L
     private var sessionStartRealtime: Long = 0L
 
@@ -63,6 +76,59 @@ class BreathingViewModel(
             _uiState.update { it.copy(ambientTracks = listOf(track), defaultTrackId = track.id, selectedTrack = track) }
         }
         loadAmbientTracks()
+        observeConnectivity()
+    }
+
+    //sigue la red mientras la pantalla esta abierta: sin internet las pistas de jamendo se deshabilitan
+    //y al volver se habilitan otra vez y se piden las que no se pudieron cargar
+    private fun observeConnectivity() {
+        viewModelScope.launch {
+            connectivity.collect { isConnected ->
+                onConnectivityChanged(isConnected)
+            }
+        }
+    }
+
+    private fun onConnectivityChanged(isConnected: Boolean) {
+        val wasOnline = _uiState.value.isOnline
+        _uiState.update { it.copy(isOnline = isConnected) }
+
+        //el observer puede repetir el mismo valor; solo se reacciona cuando de verdad cambia
+        if (isConnected == wasOnline) return
+
+        if (isConnected) {
+            onBackOnline()
+        } else {
+            onWentOffline()
+        }
+    }
+
+    //se fue la red (o se entro sin ella): se avisa una vez que solo suenan las pistas descargadas
+    private fun onWentOffline() {
+        _messages.trySend(OFFLINE_MUSIC_NOTICE)
+        stopRemoteTrackThatWasLoading()
+    }
+
+    //si una pista de jamendo seguia cargando por streaming se suelta de una vez en vez de esperar el error
+    private fun stopRemoteTrackThatWasLoading() {
+        val state = _uiState.value
+        val selectedTrack = state.selectedTrack
+        if (selectedTrack == null) return
+        if (!state.isTrackBuffering) return
+        //si la pista ya esta en el telefono puede seguir cargando sin internet
+        if (state.canPlay(selectedTrack)) return
+
+        playbackJob?.cancel()
+        audioPlayerHelper?.pause()
+        onTrackPlaybackFailed(selectedTrack, wasStreaming = true)
+    }
+
+    //volvio la red: el aviso de que no se pudo reproducir era por la conexion, y si jamendo no respondio se pide otra vez
+    private fun onBackOnline() {
+        _uiState.update { it.copy(unplayableTrackId = null) }
+        if (_uiState.value.tracksLoadFailed) {
+            loadAmbientTracks()
+        }
     }
 
     //carga las canciones relajantes desde el repositorio de respiracion (jamendo o, sin conexion, la cache)
@@ -72,6 +138,9 @@ class BreathingViewModel(
 
         _uiState.update { it.copy(isLoadingTracks = true, tracksLoadFailed = false) }
         viewModelScope.launch {
+            //primero las que ya estan en el telefono: sin internet jamendo puede tardar varios segundos en fallar
+            val offlineTracks = repository.getOfflineTracks()
+            addOfflineTracksToList(offlineTracks)
             val catalog = repository.getAmbientTracks()
             _uiState.update { current ->
                 current.copy(
@@ -84,6 +153,20 @@ class BreathingViewModel(
                     tracksLoadFailed = !catalog.isOnline
                 )
             }
+        }
+    }
+
+    //agrega a la lista de la hoja las pistas del telefono que todavia no estaban, sin mover las que ya se ven
+    private fun addOfflineTracksToList(offlineTracks: List<AmbientTrackModel>) {
+        _uiState.update { current ->
+            val tracksToShow = current.ambientTracks.toMutableList()
+            for (offlineTrack in offlineTracks) {
+                val alreadyShown = tracksToShow.any { it.id == offlineTrack.id }
+                if (!alreadyShown) {
+                    tracksToShow.add(offlineTrack)
+                }
+            }
+            current.copy(ambientTracks = tracksToShow)
         }
     }
 
@@ -109,6 +192,11 @@ class BreathingViewModel(
     //reproduce la pista en bucle hasta que el usuario la pause, elija otra o salga de la pantalla
     private fun playTrack(track: AmbientTrackModel) {
         val audioPlayer = audioPlayerHelper ?: return
+        //sin internet una pista que solo esta en jamendo no se intenta: el streaming solo terminaria en error
+        if (!_uiState.value.canPlay(track)) {
+            _messages.trySend(TRACK_NEEDS_INTERNET_NOTICE)
+            return
+        }
         playbackJob?.cancel()
         if (track.id != loadedTrackId) {
             //la pista anterior se calla de una vez para que no siga avisando que suena mientras carga la nueva
@@ -123,6 +211,8 @@ class BreathingViewModel(
         //la misma pista que estaba en pausa sigue desde donde iba
         if (track.id == loadedTrackId && audioPlayer.resume()) return
 
+        //si la pista no esta en el telefono suena por streaming desde jamendo
+        val isStreaming = !track.isAvailableOffline
         playbackJob = viewModelScope.launch {
             val audioUrl = breathingRepository?.resolveTrackAudio(track) ?: track.audioUrl
             loadedTrackId = track.id
@@ -131,7 +221,7 @@ class BreathingViewModel(
                 onPlaybackStateChanged = { isPlaying ->
                     _uiState.update { it.copy(isMusicPlaying = isPlaying, isTrackBuffering = false) }
                 },
-                onError = { onTrackPlaybackFailed(track) }
+                onError = { onTrackPlaybackFailed(track, wasStreaming = isStreaming) }
             )
             //mientras suena por streaming se guarda en la cache del disco para que quede disponible sin internet
             if (!track.isAvailableOffline) saveTrackForOffline(track)
@@ -156,9 +246,29 @@ class BreathingViewModel(
     }
 
     //no se pudo reproducir (por ejemplo se perdio la conexion en pleno streaming): se avisa en su fila y no se cambia sola
-    private fun onTrackPlaybackFailed(track: AmbientTrackModel) {
+    //si sonaba por streaming y mientras tanto termino de descargarse, sigue sonando desde el archivo del telefono
+    private fun onTrackPlaybackFailed(track: AmbientTrackModel, wasStreaming: Boolean) {
         loadedTrackId = null
+        if (wasStreaming) {
+            val downloadedTrack = findDownloadedCopy(track)
+            if (downloadedTrack != null) {
+                playTrack(downloadedTrack)
+                return
+            }
+        }
         _uiState.update { it.copy(isMusicPlaying = false, isTrackBuffering = false, unplayableTrackId = track.id) }
+    }
+
+    //busca la misma pista en la lista ya marcada como descargada; null si no se descargo
+    //o si el usuario ya eligio otra (en ese caso no se vuelve a poner esta)
+    private fun findDownloadedCopy(track: AmbientTrackModel): AmbientTrackModel? {
+        val state = _uiState.value
+        if (state.selectedTrack?.id != track.id) return null
+
+        val trackInList = state.ambientTracks.firstOrNull { it.id == track.id }
+        if (trackInList == null) return null
+        if (!trackInList.isAvailableOffline) return null
+        return trackInList
     }
 
     //abre la hoja con las pistas; si la ultima carga fallo (por ejemplo se abrio sin internet) se vuelve a intentar
@@ -194,6 +304,7 @@ class BreathingViewModel(
         val now = SystemClock.elapsedRealtime()
         phaseStartRealtime = now - phaseElapsedMs
         sessionStartRealtime = now - sessionRunningMs
+        musicTimeCounter.onExerciseStarted(now)
 
         _uiState.value = _uiState.value.copy(
             isRunning = true,
@@ -210,6 +321,8 @@ class BreathingViewModel(
             val now = SystemClock.elapsedRealtime()
             phaseElapsedMs = (now - phaseStartRealtime).coerceAtLeast(0L)
             sessionRunningMs = (now - sessionStartRealtime).coerceAtLeast(0L)
+            //el pedacito desde el ultimo paso del temporizador hasta la pausa
+            musicTimeCounter.onTick(now, _uiState.value.isMusicPlaying)
         }
         _uiState.value = _uiState.value.copy(isRunning = false)
     }
@@ -316,6 +429,7 @@ class BreathingViewModel(
                 val now = SystemClock.elapsedRealtime()
                 phaseElapsedMs = (now - phaseStartRealtime).coerceAtLeast(0L)
                 sessionRunningMs = (now - sessionStartRealtime).coerceAtLeast(0L)
+                musicTimeCounter.onTick(now, _uiState.value.isMusicPlaying)
 
                 val currentPhase = _uiState.value.phase
                 val targetDurationSeconds = getPhaseDuration(currentPhase)
@@ -380,15 +494,20 @@ class BreathingViewModel(
         pause()
         val state = _uiState.value
         val durationSeconds = (sessionRunningMs / 1000L).toInt()
+        //la musica no puede haber sonado mas tiempo que el ejercicio
+        val musicSeconds = musicTimeCounter.musicSeconds().coerceAtMost(durationSeconds)
         val session = BreathingSession(
             completedCycles = state.completedCycles,
             durationSeconds = durationSeconds,
             timestamp = System.currentTimeMillis(),
             pattern = BreathingSession.patternOf(state.inhaleDuration, state.holdDuration, state.exhaleDuration, state.holdPostExhaleDuration),
-            finishedByUser = finishedByUser
+            finishedByUser = finishedByUser,
+            patternType = BreathingSession.patternTypeOf(state.isCustomSelected, state.selectedPreset),
+            musicSeconds = musicSeconds
         )
         //se reinicia el tiempo para que la misma sesion no se guarde dos veces
         sessionRunningMs = 0L
+        musicTimeCounter.clear()
         //si el temporizador nunca corrio no hubo sesion: abrir y cerrar la pantalla no cuenta como abandono
         val repository = breathingRepository
         if (durationSeconds > 0 && repository != null) {
@@ -411,6 +530,9 @@ class BreathingViewModel(
     }
 
     companion object {
+        const val OFFLINE_MUSIC_NOTICE = "You're offline: showing only your downloaded music"
+        const val TRACK_NEEDS_INTERNET_NOTICE = "This track needs internet. Pick a downloaded one or connect to play it"
+
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as ArkApplication
@@ -418,7 +540,8 @@ class BreathingViewModel(
                     breathingRepository = app.container.breathingRepository,
                     audioPlayerHelper = app.container.audioPlayerHelper,
                     hapticFeedback = app.container.hapticFeedback,
-                    toolLatencyTracker = app.container.toolLatencyTracker
+                    toolLatencyTracker = app.container.toolLatencyTracker,
+                    connectivity = app.container.networkConnectivityObserver.observe()
                 )
             }
         }

@@ -48,6 +48,9 @@ data class UserProfile(
     //calcula la edad a partir de la fecha de nacimiento; si no hay fecha, usa la edad guardada
     fun getCalculatedAge(): Int = UserModel.ageOf(birthDate) ?: age
 
+    //amigos, regalos y bandeja del cookie jar: solo 18+; los de 13 a 17 usan el jarro en modo personal
+    fun canUseFriends(): Boolean = UserModel.isAdult(birthDate, age)
+
     //si no hay nombre (sin internet la primera vez), se usa la parte del correo antes de la @
     fun displayName(): String = name.ifBlank { email.substringBefore("@") }
 

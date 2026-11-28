@@ -8,16 +8,19 @@ import com.google.android.gms.tasks.Task
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
+import com.moviles.ark.data.local.daos.BreathingSessionDao
 import com.moviles.ark.data.local.daos.EmotionCheckInDao
 import com.moviles.ark.data.local.daos.FeedbackDao
 import com.moviles.ark.data.local.daos.PhotoEntryDao
 import com.moviles.ark.data.local.daos.StatsDailyVisitDao
 import com.moviles.ark.data.local.daos.ToolRecordDao
+import com.moviles.ark.data.local.daos.WishDao
 import com.moviles.ark.data.local.entities.PhotoEntryEntity
 import com.moviles.ark.data.remote.CrashlyticsHelper
 import com.moviles.ark.data.remote.dtos.documentId
 import com.moviles.ark.data.remote.dtos.toDto
 import com.moviles.ark.data.workers.RemotePhotoDeleteWorker
+import com.moviles.ark.domain.models.CookieUploadResult
 import com.moviles.ark.domain.models.ProfileSyncResult
 import com.moviles.ark.domain.repositories.SyncRepository
 import kotlinx.coroutines.CancellationException
@@ -44,7 +47,15 @@ class SyncRepositoryImpl(
     //sube el perfil y la foto de perfil que se cambiaron sin internet (UserRepository.syncPendingProfile)
     private val syncPendingProfile: suspend () -> ProfileSyncResult = { ProfileSyncResult() },
     //true si el perfil o la foto de perfil tienen cambios sin subir (UserRepository.hasPendingProfileChanges)
-    private val hasPendingProfile: suspend () -> Boolean = { false }
+    private val hasPendingProfile: suspend () -> Boolean = { false },
+    //sube las galletas del cookie jar pendientes, imagen y documento (CookieRepository.uploadPending)
+    private val syncPendingCookies: suspend () -> CookieUploadResult = { CookieUploadResult() },
+    //cuantas galletas faltan por subir (CookieRepository.pendingUploadCount)
+    private val pendingCookieCount: suspend () -> Int = { 0 },
+    //deseos del farol de deseos (tabla wishes)
+    private val wishDao: WishDao? = null,
+    //sesiones terminadas de Custom Breathing (tabla breathing_sessions)
+    private val breathingSessionDao: BreathingSessionDao? = null
 ) : SyncRepository {
 
     //una sola subida a la vez: el check-in pide subida al guardarse y el SyncManager al volver la red
@@ -84,7 +95,10 @@ class SyncRepositoryImpl(
             emotionCheckInDao.getUnsyncedCheckIns(userId).size +
             feedbackDao.getUnsyncedFeedback(userId).size +
             (statsDailyVisitDao?.getUnsyncedVisits(userId)?.size ?: 0) +
-            (if (hasPendingProfile()) 1 else 0)
+            (wishDao?.getUnsyncedWishes(userId)?.size ?: 0) +
+            (breathingSessionDao?.getUnsyncedSessions(userId)?.size ?: 0) +
+            (if (hasPendingProfile()) 1 else 0) +
+            pendingCookieCount()
     }
 
     //cuantas filas se subieron y cuantas fallaron; con fallos el sync devuelve error y el SyncWorker reintenta con espera
@@ -236,7 +250,27 @@ class SyncRepositoryImpl(
             tally.failed += result.failed
         }
 
-        // 6. Sincronizar fotos pendientes (isSynced = 0)
+        // 6a. Subir las galletas del cookie jar pendientes (isSynced = 0): primero la imagen y luego el documento
+        //las cuenta el repositorio de galletas; si alguna falla el SyncWorker reintenta con backoff
+        tally.step("syncCookies", currentUserId) {
+            val result = syncPendingCookies()
+            tally.synced += result.synced
+            tally.failed += result.failed
+        }
+
+        // 6b. Sincronizar los deseos del farol pendientes (isSynced = 0): nuevos, editados o borrados
+        //cada deseo va a users/{uid}/wishes/{id del deseo}: si se sube dos veces queda un solo documento
+        tally.step("syncWishes", currentUserId) {
+            syncWishes(tally)
+        }
+
+        // 6c. Subir las sesiones terminadas de Custom Breathing pendientes (isSynced = 0)
+        //cada sesion va a users/{uid}/custom_breathing_sessions/{timestamp}: si se sube dos veces queda un solo documento
+        tally.step("syncBreathingSessions", currentUserId) {
+            syncBreathingSessions(tally)
+        }
+
+        // 7. Sincronizar fotos pendientes (isSynced = 0)
         //solo las del usuario con sesion: las reglas de firestore no dejan escribir en la carpeta de otro;
         //las de otra cuenta esperan a que esa cuenta vuelva a entrar
         tally.step("syncPhotos", currentUserId) {
@@ -270,6 +304,67 @@ class SyncRepositoryImpl(
         Log.d("SyncRepository", "Synced ${tally.synced} pending items to Firebase, ${tally.failed} failed")
         if (tally.failed > 0) throw PendingUploadsException(tally.synced, tally.failed)
         tally.synced
+    }
+
+    //sube las sesiones de respiracion terminadas que faltan; quedan en el telefono marcadas como subidas
+    private suspend fun syncBreathingSessions(tally: SyncTally) {
+        val dao = breathingSessionDao
+        if (dao == null) {
+            return
+        }
+        //sin sesion no se sube nada: las reglas de firestore no dejan escribir en la carpeta de otro
+        val sessionUserId = auth.currentUser?.uid
+        if (sessionUserId == null) {
+            return
+        }
+
+        val pendingSessions = dao.getUnsyncedSessions(sessionUserId)
+        for (session in pendingSessions) {
+            tally.upload("breathing session id=${session.id}") {
+                firestore.collection("users")
+                    .document(sessionUserId)
+                    .collection("custom_breathing_sessions")
+                    .document(session.documentId())
+                    .set(session.toDto(sessionUserId, Build.MODEL))
+                    .awaitWithTimeout()
+                dao.markAsSynced(session.id)
+            }
+        }
+    }
+
+    //sube los deseos pendientes del usuario con sesion
+    //- deseo nuevo o editado: se guarda en firestore y se marca como sincronizado
+    //- deseo borrado: se borra de firestore y despues se borra la fila del telefono
+    private suspend fun syncWishes(tally: SyncTally) {
+        val dao = wishDao
+        if (dao == null) {
+            return
+        }
+        //sin sesion no se sube nada: las reglas de firestore no dejan escribir en la carpeta de otro
+        val sessionUserId = auth.currentUser?.uid
+        if (sessionUserId == null) {
+            return
+        }
+
+        val pendingWishes = dao.getUnsyncedWishes(sessionUserId)
+        for (wish in pendingWishes) {
+            tally.upload("wish id=${wish.id}") {
+                val document = firestore.collection("users")
+                    .document(sessionUserId)
+                    .collection("wishes")
+                    .document(wish.id)
+
+                if (wish.isDeleted) {
+                    //borrar en firestore algo que no existe no da error, asi que sirve aunque nunca se haya subido
+                    document.delete().awaitWithTimeout()
+                    dao.deleteForever(wish.id)
+                } else {
+                    document.set(wish.toDto()).awaitWithTimeout()
+                    //solo queda sincronizado si nadie lo cambio mientras subia; si cambio, se sube en el siguiente sync
+                    dao.markAsSynced(wish.id, wish.updatedAt)
+                }
+            }
+        }
     }
 
     companion object {

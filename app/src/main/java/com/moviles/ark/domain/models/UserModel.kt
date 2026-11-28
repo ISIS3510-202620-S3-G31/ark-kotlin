@@ -39,6 +39,8 @@ data class UserModel(
         //el mismo limite en el registro y en el perfil; firestore acepta hasta 100, asi que cabe
         const val MAX_NAME_LENGTH = 50
         const val MIN_AGE = 13
+        //amigos y regalos del cookie jar solo desde esta edad (datos de menores, ley 1581)
+        const val ADULT_AGE = 18
         const val MAX_AGE = 120
         const val MIN_PASSWORD_LENGTH = 8
         //largo del texto de una fecha YYYY-MM-DD
@@ -145,6 +147,15 @@ data class UserModel(
             if (!birthDate.matches(DATE_REGEX)) return null
             val birthCalendar = calendarOf(birthDate) ?: return null
             return ageBetween(birthCalendar, Calendar.getInstance())
+        }
+
+        //true si tiene 18 o mas: manda la fecha; el age es respaldo de perfiles viejos de flutter (0 = no se sabe)
+        //si no se puede calcular la edad no se habilita
+        fun isAdult(birthDate: String, age: Int): Boolean {
+            val ageFromBirthDate = ageOf(birthDate.trim())
+            if (ageFromBirthDate != null) return ageFromBirthDate >= ADULT_AGE
+            if (age <= 0) return false
+            return age >= ADULT_AGE
         }
 
         //fecha real del calendario o null; isLenient = false rechaza dias como el 30 de febrero
