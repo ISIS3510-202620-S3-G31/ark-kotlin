@@ -24,11 +24,12 @@ import com.moviles.ark.ui.theme.BackgroundColor
 import com.moviles.ark.ui.theme.SecondaryColor
 import com.moviles.ark.ui.theme.TextColor
 
-//pestanas de la barra, en el orden en que se ven: stats | home | profile
+//pestanas de la barra, en el orden en que se ven: home | stats | tools | profile
+//home va primero porque es la pantalla principal y la que se abre al entrar
 //route es la ruta del NavHost que abre cada una
 enum class BottomNavItem(val route: String, val label: String, val icon: ImageVector) {
-    STATS("stats_screen", "Stats", Icons.Filled.BarChart),
     HOME("home_screen", "Home", Icons.Filled.Home),
+    STATS("stats_screen", "Stats", Icons.Filled.BarChart),
     TOOLS("tools_catalog_screen", "Tools", Icons.Filled.GridView),
     PROFILE("profile_screen", "Profile", Icons.Filled.Person);
 
