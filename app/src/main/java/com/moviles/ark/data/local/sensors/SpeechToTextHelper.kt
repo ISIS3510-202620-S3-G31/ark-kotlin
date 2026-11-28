@@ -253,6 +253,8 @@ class SpeechToTextHelper(
                 return@post
             }
 
+            //un "processing" viejo que todavia esperaba no debe cerrar esta nueva sesion
+            mainHandler.removeCallbacks(processingTimeout)
             _errorMessage.value = null
             _transcription.value = ""
             sessionText = ""
@@ -303,14 +305,38 @@ class SpeechToTextHelper(
             keepListening = false
             if (_state.value == SpeechRecognitionState.LISTENING) {
                 _state.value = SpeechRecognitionState.PROCESSING
+                //si se toco parar justo mientras el reconocedor se reiniciaba no hay nadie que responda: se termina ya
+                if (speechRecognizer == null) {
+                    finishProcessing()
+                    return@post
+                }
                 try {
                     speechRecognizer?.stopListening()
                 } catch (e: Exception) {
                     Log.w("SpeechToTextHelper", "Error stopping speech recognizer", e)
                     _state.value = SpeechRecognitionState.IDLE
                 }
+                //a veces android nunca llama onResults ni onError y "processing" quedaba para siempre
+                //si pasado un rato sigue procesando, se termina con lo que ya estaba escrito
+                mainHandler.removeCallbacks(processingTimeout)
+                mainHandler.postDelayed(processingTimeout, PROCESSING_TIMEOUT_MILLIS)
             }
         }
+    }
+
+    //se llama si el reconocedor no contesto a tiempo despues de tocar parar
+    private val processingTimeout = Runnable { finishProcessing() }
+
+    //termina el "processing": guarda el ultimo texto parcial que se veia y deja el microfono listo otra vez
+    private fun finishProcessing() {
+        if (_state.value != SpeechRecognitionState.PROCESSING) return
+        Log.w("SpeechToTextHelper", "Recognizer did not answer after stop, finishing with the text we have")
+        sessionText = joinText(sessionText, lastPartial)
+        lastPartial = ""
+        _transcription.value = sessionText
+        _soundLevel.value = 0f
+        destroyInternal()
+        _state.value = SpeechRecognitionState.IDLE
     }
 
     //la caja de texto se va (se sale del feedback o del check-in): se apaga el microfono aunque siga escuchando
@@ -325,6 +351,7 @@ class SpeechToTextHelper(
     fun cancel() {
         mainHandler.post {
             keepListening = false
+            mainHandler.removeCallbacks(processingTimeout)
             sessionText = ""
             lastPartial = ""
             _transcription.value = ""
@@ -508,6 +535,8 @@ class SpeechToTextHelper(
         const val VOICE_UNAVAILABLE_NOTICE = "Voice not available. Please type."
         const val OFFLINE_NOT_READY_NOTICE = "Offline voice not ready. Please type."
         private const val RESTART_DELAY_MILLIS = 250L
+        //cuanto se espera la respuesta del reconocedor despues de tocar parar
+        private const val PROCESSING_TIMEOUT_MILLIS = 5_000L
         private const val CONNECT_DELAY_MILLIS = 1_500L
         private const val PREFS_NAME = "speech_to_text"
         private const val PACK_REQUESTED_KEY = "offline_pack_requested"
